@@ -1,0 +1,623 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 10: YOLO and Semantic Segmentation</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 10: You Only Look Once (YOLO)</h1>
+
+<p>You’ve seen how easy it was to add a bounding box predictor to the model: simply add a new output layer that predicts four numbers. But it was also pretty limited — this model only predicts the location for a single object. It doesn’t work so well when there are multiple objects of interest in the image.
+</p>
+<p>You might think that you could just add more of these output layers, or perhaps predict 8 numbers for two bounding boxes, or 12 for three bounding boxes, etc. Good try, but unfortunately that doesn’t work so well in practice.
+</p>
+<p>Each bounding box predictor will end up learning the same thing and, as a result, makes the same predictions. Instead of finding the locations of multiple objects, such a model will predict the same bounding box multiple times. And chances are, these bounding boxes will not actually enclose any of the objects but all end up somewhere in the middle of the image as a compromise.
+</p>
+<p>To make a proper object detector, you need to encourage the different bounding box predictors to learn different things.
+</p>
+<p>An old-school approach to object detection is to divide up the input image into many smaller, partially overlapping regions of different sizes, and then run a regular image classifier on each of these regions. This definitely works, but it gives a lot of duplicate detections. Even worse: It’s really slow. You need to run the classifier many, many, many times for each image.
+</p>
+<p>A slightly smarter approach is to first try and figure out which parts of the image are potential <em>regions of interest</em>. This is the approach taken by the popular R-CNN family of models. The classifier is still run on multiple image regions, but now only on regions that are at least somewhat likely to have an object in them.
+</p>
+<p>To predict which regions are potentially interesting, the Faster R-CNN model uses a <em>Region Proposal Network</em>, which sounds impressive but is really just a bunch of layers on top of the feature extractor — hey, what did you expect? Unfortunately, even though it has “Faster” in its name, this model is still on the slow side and not really suitable for mobile devices.
+</p>
+<p>For speed freaks and mobile device users, the so-called <em>one-shot detectors</em> are very appealing. As the name implies, these model types just run the classifier once on the input image and do all of the work in a single pass. Examples of one-shot object detectors are <em>YOLO</em> (You Only Look Once), <em>SSD</em> (Single Shot multi-box Detector) and <em>DetectNet</em>.
+</p>
+<p>Turi Create lets you train a YOLO model with just a few lines of code, so that’s what you’ll do next.
+</p>
+<h2 class="segment-chapter">One-shot detectors</h2>
+
+<p>The simplest form of a one-shot detector, and the one you’ll be training looks like this:
+</p><div class="image-100"><img src="graphics/img170.png"  alt="" title="" /></div>
+<p>Again, there’s a feature extractor plus a few layers on top. The YOLO feature extractor is called <em>Darknet</em>, and it’s not so different from the feature extractors you’ve seen before: Darknet consists of convolution layers, followed by batch normalization and the ReLU activation function, with pooling layers in between.
+</p>
+<div class="note">
+<p><em>Note</em>: The activation function used by Darknet is actually a variation of ReLU, known as <em>leaky ReLU</em>. Where a regular ReLU completely removes any values that are less than zero, the leaky version makes negative values a lot smaller but still lets them “leak through.”
+</p></div>
+
+<p>The extra layers are all convolutional. Unlike before, where the output of the model was either a vector containing a probability distribution or the coordinates for the bounding box, the output of YOLO is a three-dimensional tensor of size 13 × 13 × 375 that we’ll refer to as the <em>grid</em>.
+</p>
+<p>YOLO takes a 416×416 pixel image as input. That’s larger than what you typically use for classification. This way, small details don’t get lost. There are five pooling layers in Darknet that each halve the spatial dimensions of the image, for a total reduction factor of 32. Since 416/32 = 13, the final grid is 13×13 pixels.
+</p>
+<p>Looking at this the other way around, each of the cells in this grid refers to a 32×32 block of pixels in the original image. Each cell is therefore responsible for detecting objects in or around that particular 32×32 region of the input image.
+</p><div class="image-70"><img src="graphics/img171.png"  alt="" title="Each cell in the grid is responsible for its own region in the original image" /></div>
+<p>YOLO, therefore, has 13×13 = 169 different bounding box predictors, and each of these is assigned to look only at a specific location in the image. Actually, this isn’t entirely true: Each grid cell has not just one but 15 different predictors, for a total of 169×15 = 2,535 bounding box predictors across the entire image. That’s quite an upgrade over the simple model you made previously!
+</p>
+<p>Having multiple predictors per grid cell means you can let bounding box predictors specialize in different shapes and sizes of objects. Each cell will have a predictor that looks for small objects, a different predictor that looks for large objects, one that looks for wide but flat objects, one that looks for narrow but tall objects, and so on.
+</p>
+<p>This is where the number 375 comes from, the depth dimension of the output grid: Each grid cell has 15 predictors that each output 25 numbers. Why 25? This is made up of the probability distribution over our snack classes, so that’s 20 numbers. It also includes four numbers for the bounding box coordinates. Finally, YOLO also predicts a confidence score for the bounding box: how likely it thinks this bounding box actually contains an object. So there are two confidences being predicted here: one for the class, and one for the bounding box.
+</p>
+<p>Because the output of YOLO is a 13×13×375 tensor, it’s important to realize it <i>always</i> predicts 2,535 bounding boxes for every image you give it. Even if the image doesn’t contain any recognizable objects at all, YOLO still outputs 2,535 bounding boxes — whether you want them or not.
+</p>
+<p>That’s why the confidence score is important: It tells you which boxes you can ignore. In an image with no or just a few objects, the vast majority of predicted boxes will have low confidence scores. So at least YOLO is kind enough to tell you which of these 2,535 predictions are rubbish.
+</p>
+<p>Even after you filter out all the boxes with low confidence scores — for example, anything with a score less than 0.25 — you’ll still end up with too many predictions. This kind of situation is typical:
+</p><div class="image-50"><img src="graphics/img172.png"  alt="" title="I’m only counting one dog and cat, not three!" /></div>
+<p>These are all bounding boxes that the model feels good about since they have high scores, but as a consumer of an object detection model, you really want to have only a single bounding box for each object in the image. This sort of thing happens because nearby cells may all make a prediction for the same object — especially when the object is larger than 32×32 pixels.
+</p>
+<p>To filter out these overlapping predictions, a post-processing technique called <em>non-maximum suppression</em> or NMS is used to remove such duplicates. The NMS algorithm keeps the predictions with the highest confidence scores and removes any other boxes that overlap the ones with higher scores by more than a certain threshold, say an IOU of 45% or more. The model created by Turi Create automatically takes care of this post-processing step for you, so you don’t have to worry about any of this.
+</p>
+<div class="note">
+<p><em>Note</em>: Turi’s object detection model is known as <em>TinyYOLO</em> because it’s smaller than the full YOLO. The full version of YOLO has multiple output grids of varying dimensions in order to handle different object sizes better, but this model is also larger and slower. Another popular one-shot detector is SSD. Architecturally, YOLO and SSD are very similar in design and differ only in the details. SSD does not have its own feature extractor and can be used with many different convnets. Particularly suitable for use on mobile is the combination of SSD and MobileNet.
+</p></div>
+
+<h2 class="segment-chapter">Hello Turi, my old friend</h2>
+
+<p>Create a new Jupyter notebook and import the needed packages. You can also follow along with <em>YOLO.ipynb</em>:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> os, sys, math
+<span class="hljs-keyword">import</span> pandas <span class="hljs-keyword">as</span> pd
+<span class="hljs-keyword">import</span> turicreate <span class="hljs-keyword">as</span> tc</pre>
+<p>Training an object detection model with Turi Create is straightforward, but you do need to tell it about the bounding box annotations for the training images.
+</p>
+<p>Turi gets its training data from an <code>SFrame</code> object. You will have to add the ground-truth bounding boxes in a new column named <code>annotations</code>. Unlike with Keras, where each row from the Pandas <code>DataFrame</code> was a separate annotation, in the Turi <code>SFrame</code> there is only one row per image. The <code>annotations</code> column must have all the ground-truth boxes for that image. You do this by putting the image’s bounding box information into a list of dictionaries, like so:
+</p><pre class="code-block">[ {<span class="hljs-string">'coordinates'</span>: {<span class="hljs-string">'height'</span>: <span class="hljs-number">129</span>, <span class="hljs-string">'width'</span>: <span class="hljs-number">151</span>, <span class="hljs-string">'x'</span>: <span class="hljs-number">75</span>, <span class="hljs-string">'y'</span>: <span class="hljs-number">186</span>},
+   <span class="hljs-string">'label'</span>: <span class="hljs-string">'juice'</span>},
+  {<span class="hljs-string">'coordinates'</span>: {<span class="hljs-string">'height'</span>: <span class="hljs-number">130</span>, <span class="hljs-string">'width'</span>: <span class="hljs-number">170</span>, <span class="hljs-string">'x'</span>: <span class="hljs-number">228</span>, <span class="hljs-string">'y'</span>: <span class="hljs-number">191</span>},
+   <span class="hljs-string">'label'</span>: <span class="hljs-string">'juice'</span>},
+  {<span class="hljs-string">'coordinates'</span>: {<span class="hljs-string">'height'</span>: <span class="hljs-number">129</span>, <span class="hljs-string">'width'</span>: <span class="hljs-number">153</span>, <span class="hljs-string">'x'</span>: <span class="hljs-number">76</span>, <span class="hljs-string">'y'</span>: <span class="hljs-number">191</span>},
+   <span class="hljs-string">'label'</span>: <span class="hljs-string">'juice'</span>} ],</pre>
+<p>There is a separate dictionary for each annotation. It has two keys: <code>coordinates</code>, which in turn is another dictionary that holds the bounding box coordinates, and <code>label</code>, which is the class name of the object inside the bounding box. The above annotations are for a single image, ID 06d9c7df75a1a12f, that has three bounding boxes.
+</p>
+<p>The first order of business is to write some code that loads the annotations CSV files and puts them into the format Turi Create expects. Since this is a fairly large function, we’ll describe it here in parts:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">load_images_with_annotations</span><span class="hljs-params">(images_dir, annotations_file)</span>:</span>
+    <span class="hljs-comment"># Load the images into a Turi SFrame.</span>
+    data = tc.image_analysis.load_images(images_dir, with_path=<span class="hljs-keyword">True</span>)
+
+    <span class="hljs-comment"># Load the annotations CSV file into a Pandas dataframe.</span>
+    csv = pd.read_csv(annotations_file)</pre>
+<p>First, you create a new <code>SFrame</code> by loading all the images from the specified folder. This is the same as what you did back in Chapter 4, “Getting Started with Python &amp; Turi Create.” The new <code>SFrame</code> contains two columns: <code>image</code> with the image object and <code>path</code> with the image’s folder and filename.
+</p>
+<p>The second line loads the CSV file into a Pandas <code>DataFrame</code> like you did in the previous chapter. Now, you will combine these two sources of data into a single <code>SFrame</code> that Turi can use for training. The function continues:
+</p><pre class="code-block">    all_annotations = []
+    <span class="hljs-keyword">for</span> i, item <span class="hljs-keyword">in</span> enumerate(data):
+        <span class="hljs-comment"># Grab image info from the SFrame.</span>
+        img_path = item[<span class="hljs-string">"path"</span>]
+        img_width = item[<span class="hljs-string">"image"</span>].width
+        img_height = item[<span class="hljs-string">"image"</span>].height
+
+        <span class="hljs-comment"># Find the corresponding row(s) in the CSV's dataframe.</span>
+        image_id = os.path.basename(img_path)[:<span class="hljs-number">-4</span>]
+        rows = csv[csv[<span class="hljs-string">"image_id"</span>] == image_id]</pre>
+<p>The <code>for</code> loop looks at all images in the <code>SFrame</code> and then tries to find the corresponding annotations from the CSV’s <code>DataFrame</code>. The match is performed on the <code>image_id</code> field. This field does not exist in the <code>SFrame</code> but you can use <code>os.path.basename()</code> to get the name of the file from the full path, and use Python’s special <code>[:-4]</code> indexing syntax to strip off the last four characters that say <code>.jpg</code>.
+</p>
+<p>Then <code>csv[&quot;image_id&quot;] == image_id</code> finds all the rows in the Pandas <code>DataFrame</code> that match this ID. Now, this doesn’t give you yet what you’re looking for. It returns a new Pandas object with the same number of rows as <code>csv</code> but with every row having the value <code>True</code> or <code>False</code>, depending on whether or not the row matched the predicate.
+</p>
+<p>To get just the rows with the specified image ID, you need to filter <code>csv</code> again based on this True/False mask by writing <code>csv[csv[&quot;image_id&quot;] == image_id]</code>. The variable <code>rows</code> is now a brand new dataframe with the actual annotations for just this image.
+</p>
+<p>The loop continues:
+</p><pre class="code-block">        img_annotations = []
+        <span class="hljs-keyword">for</span> row <span class="hljs-keyword">in</span> rows.itertuples():
+            xmin = int(round(row[<span class="hljs-number">2</span>] * img_width))
+            xmax = int(round(row[<span class="hljs-number">3</span>] * img_width))
+            ymin = int(round(row[<span class="hljs-number">4</span>] * img_height))
+            ymax = int(round(row[<span class="hljs-number">5</span>] * img_height))
+
+            <span class="hljs-comment"># Convert to center coordinate and width/height:</span>
+            width = xmax - xmin
+            height = ymax - ymin
+            x = xmin + math.floor(width / <span class="hljs-number">2</span>)
+            y = ymin + math.floor(height / <span class="hljs-number">2</span>)
+            class_name = row[<span class="hljs-number">6</span>]
+
+            img_annotations.append({<span class="hljs-string">"coordinates"</span>:
+                  {<span class="hljs-string">"height"</span>: height, <span class="hljs-string">"width"</span>: width, <span class="hljs-string">"x"</span>: x, <span class="hljs-string">"y"</span>: y},
+                  <span class="hljs-string">"label"</span>: class_name})</pre>
+<p>This looks like a lot of code but it simply reads the bounding box coordinates from <code>rows</code> and converts them into the format that Turi expects. Recall that the CSV file stores the coordinates as normalized numbers between 0 and 1, but Turi wants them in pixel space, so you need to multiply them by the image width and height. Also, Turi describes the bounding boxes using a center coordinate and a width and height. A bit of basic math is needed to convert the bounding boxes from one format to the other.
+</p>
+<p>Once all the annotations for the current image have been converted and added to the <code>img_annotations</code> list, you append it to the grand list of all annotations:
+</p><pre class="code-block">        <span class="hljs-keyword">if</span> len(img_annotations) &gt; <span class="hljs-number">0</span>:
+            all_annotations.append(img_annotations)
+        <span class="hljs-keyword">else</span>:
+            all_annotations.append(<span class="hljs-keyword">None</span>)</pre>
+<p>If there were no annotations, you still need to append something to <code>all_annotations</code>, so that this list has exactly the same number of rows as the <code>SFrame</code>. In that case, you append <code>None</code>, which is Python’s version of Swift’s <code>nil</code>.
+</p>
+<p>Finally, once you’ve looped through all images, the <code>all_annotations</code> list contains all their ground-truth bounding boxes in Turi format. You put this into an <code>SArray</code> object and assign it to a new column in the <code>SFrame</code> named <code>&quot;annotations&quot;</code>:
+</p><pre class="code-block">    data[<span class="hljs-string">"annotations"</span>] = tc.SArray(data=all_annotations, dtype=list)
+    <span class="hljs-keyword">return</span> data.dropna()</pre>
+<p>There’s one more thing to do, here. Recall that not all images will have annotations. For such images, the <code>annotations</code> field in the <code>SFrame</code> will be <code>None</code>. You don’t want to include these images during training.
+</p>
+<p>The easiest way to remove those images from the <code>SFrame</code> is to call <code>data.dropna()</code>. This filters out any rows with missing values.
+</p>
+<p>And that’s it for <code>load_images_with_annotations()</code>. Now you can load the training images and their bounding boxes:
+</p><pre class="code-block">data_dir = <span class="hljs-string">"snacks"</span>
+train_dir = os.path.join(data_dir, <span class="hljs-string">"train"</span>)
+
+train_data = load_images_with_annotations(train_dir,
+                    data_dir + <span class="hljs-string">"/annotations-train.csv"</span>)</pre>
+<p>It might take a short while to load all the images. When it’s done, <code>len(train_data)</code> should print 4265 because that’s how many training images you have annotations for.
+</p>
+<p><code>train_data.head()</code> should show the following:
+</p><div class="image-70"><img src="graphics/img173.png"  alt="" title="The SFrame now contains the annotations dictionaries" /></div>
+<p>To view the annotations for a specific training image in more detail you can tun a cell that prints <code>train_data[some_index]</code>, but even better is Turi’s built-in visualization tool:
+</p><pre class="code-block">train_data[<span class="hljs-string">"image_with_ground_truth"</span>] =
+    tc.object_detector.util.draw_bounding_boxes(train_data[<span class="hljs-string">"image"</span>],
+                                                train_data[<span class="hljs-string">"annotations"</span>])
+train_data.explore()</pre>
+<p>This adds another column to the <code>SFrame</code> named <code>image_with_ground_truth</code> that does exactly what it says: It contains the images with the ground-truth bounding boxes drawn on top.
+</p>
+<p>Now that the data is in order, you’re ready to start training the model.
+</p><div class="image-100"><img src="graphics/img174.png"  alt="" title="Viewing the ground-truth boxes on the training images" /></div>
+<h3 class="segment-chapter">Training the model</h3>
+
+<p>It just takes a single line of code and a whole lot of patience:
+</p><pre class="code-block">model = tc.object_detector.create(train_data, feature=<span class="hljs-string">"image"</span>,
+                                  annotations=<span class="hljs-string">"annotations"</span>)</pre>
+<p>If this is your first time training this kind of model, Turi Create will first download the pre-trained weights for the Darknet feature extractor. And then it starts training:
+</p><pre class="code-block">Setting &apos;batch_size&apos; to 32
+Using GPU to create model (GeForce GTX 1080 Ti)
+Setting &apos;max_iterations&apos; to 13000
++--------------+--------------+--------------+
+| Iteration    | Loss         | Elapsed Time |
++--------------+--------------+--------------+
+| 1            | 11.276       | 12.7         |
+| 36           | 10.892       | 22.8         |
+| 71           | 10.506       | 32.8         |
+| 107          | 10.517       | 43.1         |
+...
+| 12999        | 2.106        | 3755.3       |
++--------------+--------------+--------------+</pre>
+<p>Needless to say, having a GPU for training this model is a must. The author trained on Linux with an NVIDIA GPU, but Turi Create can also use your Mac’s AMD GPU if you have a recent Mac running macOS Mojave. Even on the powerful 1080 Ti, it still took over an hour to train this model. Training on the CPU takes ages — at about eight seconds per iteration, doing 13,000 iterations would need about 29 hours.
+</p>
+<p>Once the model is done training, you can save it:
+</p><pre class="code-block">model.save(<span class="hljs-string">"SnackDetector.model"</span>)</pre>
+<p>Also, export the model to Core ML. It’s possible you get some warnings at this point from coremltools. You can safely ignore these.
+</p><pre class="code-block">model.export_coreml(<span class="hljs-string">"SnackDetector.mlmodel"</span>)</pre>
+<p>Before you put this model into an app, let’s use Turi Create to evaluate how well it does on the test set.
+</p>
+<h3 class="segment-chapter">How good is it?</h3>
+
+<p>In case you don’t have the hardware or the time to train this model yourself, we’ve included the trained model in the downloads as a .zip file, <em>SnackDetector.model.zip</em>. Unzip this model and then load it into the notebook:
+</p><pre class="code-block">model = tc.load_model(<span class="hljs-string">"SnackDetector.model"</span>)</pre>
+<p>Also, load the test images and their annotations:
+</p><pre class="code-block">test_dir = os.path.join(data_dir, <span class="hljs-string">"test"</span>)
+test_data = load_images_with_annotations(test_dir,
+                   data_dir + <span class="hljs-string">"/annotations-test.csv"</span>)</pre>
+<p>Then call <code>model.evaluate()</code> on the <code>test_data</code> SFrame:
+</p><pre class="code-block">scores = model.evaluate(test_data)</pre>
+<p>This predicts the bounding boxes for every image in the test set and then compares these predictions against the ground-truths. It can take a few minutes if you’re running this on a CPU. When it’s done, <code>scores</code> looks something like this:
+</p><pre class="code-block">{<span class="hljs-string">'average_precision_50'</span>: {
+  <span class="hljs-string">'apple'</span>: <span class="hljs-number">0.52788541232511876</span>,
+  <span class="hljs-string">'banana'</span>: <span class="hljs-number">0.41939129680862453</span>,
+  <span class="hljs-string">'cake'</span>: <span class="hljs-number">0.38973319479991153</span>,
+  <span class="hljs-string">'candy'</span>: <span class="hljs-number">0.36857447872282678</span>,
+  ...
+  <span class="hljs-string">'watermelon'</span>: <span class="hljs-number">0.37970409310715819</span>},
+ <span class="hljs-string">'mean_average_precision_50'</span>: <span class="hljs-number">0.38825907147323535</span>}</pre>
+<p>In the previous chapter, you used the IOU or Intersection-over-Union metric to determine how good the predictions were, but Turi uses a different metric. It computes the <em>average precision</em> for each class, as well as the overall average of these average precisions — yes, you read that right — known as the <em>mean average precision</em>, or mAP.
+</p>
+<p>What’s important for these average precision metrics is that higher is better. If you were to train a different model on this same dataset and it gave a better mAP score, then you can safely draw the conclusion this new model is indeed better than the old one.
+</p>
+<p>IOU only measures by how much the predicted object overlaps the real object. It doesn’t say anything about the classification accuracy — if a predicted box for class “orange” overlaps a ground-truth box for class “apple” with 95% then the bounding box is very accurate, but the class is totally wrong. For a realistic metric, you want to make sure the class matches, too.
+</p>
+<p>Also, when evaluating an object detector, you want to get some idea of whether the model actually finds all the objects in the image (the <em>recall</em>). The mAP metric combines these different criteria into a single number. It’s not necessarily a very intuitive metric, but it’s useful to rank the quality of different models on a given dataset.
+</p>
+<div class="note">
+<p><em>Note</em>: The <em>Pascal VOC dataset</em> <a href="http://host.robots.ox.ac.uk/pascal/VOC/">host.robots.ox.ac.uk/pascal/VOC</a> is one of the standard datasets that people use to benchmark object detectors. At the time of writing, the top-scoring model on Pascal VOC was named DOLO and had an mAP of 81.3. The runner-up was a variant of Faster R-CNN with a score of 81.1. For comparison, YOLO v2 scores “only” 48.8 and SSD scores 64.0. You can view the leaderboards at this link: <a href="https://bit.ly/2ET24Ym">bit.ly/2ET24Ym</a>. Another popular object detection dataset is COCO: <a href="http://cocodataset.org/#detection-leaderboard">cocodataset.org/#detection-leaderboard</a>.
+</p></div>
+
+<p>For more insight into how well your model is doing, take a look at the individual predictions for the test images, using <code>model.predict()</code>:
+</p><pre class="code-block">test_data[<span class="hljs-string">"predictions"</span>] = model.predict(test_data)</pre>
+<p>This adds a new column to the <code>test_data</code> SFrame. The data in this column looks very similar to the annotations column from <code>train_data</code>, but in addition to the predicted coordinates and class label there is now also the confidence score:
+</p><pre class="code-block">[{<span class="hljs-string">'confidence'</span>: <span class="hljs-number">0.7225357099539148</span>,
+  <span class="hljs-string">'coordinates'</span>: {<span class="hljs-string">'height'</span>: <span class="hljs-number">73.92794444010806</span>,
+                  <span class="hljs-string">'width'</span>: <span class="hljs-number">90.45315889211807</span>,
+                  <span class="hljs-string">'x'</span>: <span class="hljs-number">262.2198759929745</span>,
+                  <span class="hljs-string">'y'</span>: <span class="hljs-number">155.496952970812</span>},
+  <span class="hljs-string">'label'</span>: <span class="hljs-string">'dog'</span>,
+  <span class="hljs-string">'type'</span>: <span class="hljs-string">'rectangle'</span>},
+ ...]</pre>
+<p>Again, it’s a lot nicer to look a this data using Turi’s visualization tool:
+</p><pre class="code-block">test_data[<span class="hljs-string">"image_with_predictions"</span>] =
+    tc.object_detector.util.draw_bounding_boxes(test_data[<span class="hljs-string">"image"</span>],
+                                                test_data[<span class="hljs-string">"predictions"</span>])
+test_data.explore()</pre>
+<p>It looks like this:
+</p><div class="image-100"><img src="graphics/img175.png"  alt="" title="Viewing the predicted bounding boxes" /></div>
+<p>That’s not half bad! The YOLO model does a pretty good job at finding — and properly classifying — the objects in the test images. It doesn’t always find all objects, and sometimes its predictions are plain wrong, but overall this is a very good result. By the way, if Turi didn’t find any objects in a test image, the <code>predictions</code> column contains an empty list <code>[]</code>.
+</p>
+<p>These test set results are all fine and good, so now it’s time to take the model out of the lab and onto the streets, and see how well it does on live video!
+</p>
+<h2 class="segment-chapter">The demo app</h2>
+
+<p>This is a book about machine learning on iOS, and it’s been a while since we’ve seen the inside of Xcode, so let’s put the trained YOLO model into an app. The book downloads contain a demo app named <em>ObjectDetection</em>.
+</p>
+<div class="note">
+<p><em>Note</em>: This example app only works on iOS 12 / Xcode 10 and later.
+</p></div>
+
+<p>Open the project in Xcode. This already includes the finished <em>SnackDetector.mlmodel</em> file that was exported from Turi Create.
+</p>
+<p>Select the .mlmodel file in the Project navigator to take a closer look:
+</p><div class="image-100"><img src="graphics/img176.png"  alt="" title="The YOLO model in Core ML" /></div>
+<p>The model description indeed says this is an object detector using Darknet and YOLO, with non-maximum suppression.
+</p>
+<p>The type of the model is not a neural network but a <em>pipeline</em>. In machine learning terms, a pipeline is several models that are glued together so that the output of one model is used as the input for the next model in the pipeline. In this case, the object detection model is followed by a <em>non-maximum suppression (NMS)</em> model.
+</p>
+<p>Also, note that the SnackDetector model has three inputs and two outputs. In addition to the regular <code>image</code> input for a 416×416 color image, there are two new inputs named <code>iouThreshold</code> and <code>confidenceThreshold</code>. These two values are used by NMS to decide which bounding boxes it should keep.
+</p>
+<p>The higher you set the confidence threshold, the larger the confidence score on a predicted box has to be in order to keep that box. The IOU threshold determines when overlapping two boxes are too similar. A lower value means that even boxes that only overlap a little bit are considered to be duplicates.
+</p>
+<p>Even though you saw earlier that YOLO produces a single tensor of size 13×13×375, the Core ML model actually has two outputs. That’s because the Core ML pipeline applies NMS to the predictions from YOLO and only outputs the best bounding boxes. That’s also why the first dimension is 0, or <em>unknown</em> because NMS will return a different number of boxes depending on how many objects are in the image. For convenience, Core ML provides the class predictions and coordinates as separate values.
+</p>
+<p>However, you don’t have to worry about these inputs and outputs because you’re going to be using this model through the Vision framework.
+</p>
+<p>Most of the source code in <em>ViewController.swift</em> is exactly the same as in the previous example apps. You make the <code>VNCoreMLModel</code> and <code>VNCoreMLRequest</code> objects the same way as before. You still start the request using the <code>VNImageRequestHandler</code>. The only thing that’s different is the result object returned by Vision.
+</p>
+<p>Previously the result objects were of type <code>VNClassificationObservation</code>, but now they are <code>VNRecognizedObjectObservation</code> objects. This is a new class that was added to Vision with iOS 12, and it exists specifically to handle the results from Turi Create’s YOLO model. All your app needs to do is handle these <code>VNRecognizedObjectObservation</code> instances. In the demo app, we draw a rectangle around any detected objects.
+</p>
+<p>The fun stuff happens in <code>processObservations(for:error:)</code>, which is called from the completion handler for the Vision request. This function receives an array of zero or more <code>VNRecognizedObjectObservation</code> instances. If the array is empty, no objects were found. In that case, the app removes any previous rectangles from the screen.
+</p>
+<p>The logic for interpreting the Vision results lives inside the <code>show(predictions:)</code> method. This simply loops through the <code>VNRecognizedObjectObservation</code> instances, converts the predicted coordinates to screen coordinates, and shows rectangles for the detected objects using the <code>BoundingBoxView</code> class.
+</p>
+<ul>
+<li>
+<p>The <code>VNRecognizedObjectObservation</code> class has a <code>labels</code> property containing a list of familiar <code>VNClassificationObservation</code> instances, sorted from highest probability to lowest, telling you the most likely classes for the object inside the bounding box. The app simply grabs the first <code>VNClassificationObservation</code> from the list, as this is the best prediction, and puts its <code>identifier</code> and <code>confidence</code> into the rectangle’s label.
+</p></li>
+
+<li>
+<p>There is also a <code>boundingBox</code> property, a <code>CGRect</code> object that tells you where in the image the object is located. This uses normalized coordinates again, but with the origin of the <code>CGRect</code> in the lower-left corner. That’s a little awkward, but it’s just how Vision does things. In order to draw a rectangle around this object, you need to transform the normalized coordinates to screen coordinates and also flip the y-axis.
+</p></li>
+</ul>
+
+<p>Here is a screenshot of the app in action:
+</p><div class="image-40"><img src="graphics/img177.png"  alt="" title="The YOLO model in action on the iPhone" /></div>
+<p>Just an FYI: This picture was taken while pointing the iPhone at a picture on a Mac. This is a quick way of testing that the model works — just look up some test pictures on Google Images — but be aware that the interaction of the LEDs in the computer display with the camera’s sensor may cause artefacts to appear in the image that can throw off the model. If users pointing their phones at computer screens is going to be a major use case for your own apps, then you’ll need to train the model to ignore those artifacts and distortions.
+</p>
+<p>With a bit of effort, it’s also possible to make YOLO work on iOS 11. In that case, Vision does not give you the convenient <code>VNRecognizedObjectObservation</code> instances but a <code>VNCoreMLFeatureValueObservation</code> with the contents of the 13×13×375 grid. You’ll have to decode these contents into actual bounding boxes and perform NMS yourself to find the best boxes. The YOLO models built with Turi Create aren’t compatible with iOS 11, but there are also Keras versions of YOLO available. For an example of how to do run a YOLO model on iOS 11, see <a href="https://github.com/hollance/YOLO-CoreML-MPSNNGraph">github.com/hollance/YOLO-CoreML-MPSNNGraph</a>.
+</p>
+<div class="note">
+<p><em>Note</em>: This was only a brief introduction to object detection. As you can imagine, there is a lot going on under the hood that we glossed over here. If you want to learn more about how these one-shot object detectors are trained, see the author’s in-depth blog post at <a href="http://machinethink.net/blog/object-detection/">machinethink.net/blog/object-detection/</a>.
+</p></div>
+
+<h2 class="segment-chapter">Semantic segmentation</h2>
+
+<p>You’ve seen how to do classification of the image as a whole, as well as classification of the contents of bounding boxes, but it’s also possible to make a separate classification prediction for each individual pixel in the image. This is called semantic segmentation. Here’s what it looks like:
+</p><div class="image-70"><img src="graphics/img178.png"  alt="" title="Semantic segmentation makes a class prediction for every pixel" /></div>
+<p>On the right is the <em>segmentation mask</em> for this photo. It shows a different color for each class. Pixels that belong to the class “human” are yellow, pixels that belong to the class “motorbike” are purple. Pixels that don’t belong to any kind of object we care about are classified as belonging to the special <em>background</em> class.
+</p>
+<p>Whereas object detection only gives you a rough idea of where objects are in the image, semantic segmentation tells you exactly what the objects are shaped like.
+</p>
+<p>In this section, you’ll look at a top-of-the-line semantic segmentation model called DeepLab v3+. One of the possible applications of semantic segmentation is replacing a photo’s background with another picture. You’ll see how to do that in the included demo app.
+</p>
+<p>The DeepLab model looks like this:
+</p><div class="image-100"><img src="graphics/img179.png"  alt="" title="DeepLab on top of MobileNetV2" /></div>
+<p>Not surprisingly, the first part of the neural network is comprised of a feature extractor. Here, you’re using version 2 of MobileNet, which is more powerful and more efficient — but also a little more complicated — than V1. On top of the feature extractor are the layers that perform the segmentation task.
+</p>
+<p>An interesting twist is that for segmentation you want the output of the model to be an image with the same dimensions as the input image. DeepLab expects the input image to be 513×513 pixels and so the predicted segmentation mask should be 513×513 also.
+</p>
+<p>But as you’ve seen, most feature extractors will gradually reduce the spatial dimensions of the images, usually by a factor of 32, using pooling or convolutions with a stride of 2. If that were the case here, too, you’d end up with an output of 16×16 pixels, which is not nearly accurate enough to function as the final segmentation map for the image.
+</p>
+<p>To avoid this, the version of MobileNet used by DeepLab only has an <em>output stride</em> of 8 instead of 32. This means that, instead of five times, it only chops the tensors in half three times, scaling down the input by a factor of 8 instead of 32. Rounded off, that makes the output of the feature extractor 65×65 pixels. The semantic segmentation layers that follow the feature extractor then do their work on this 65×65-pixel tensor, which still has plenty of detail.
+</p>
+<div class="note">
+<p><em>Note</em>: DeepLab uses odd image sizes because some of the convolution layers are <em>atrous</em> or <em>dilated</em>, meaning they have holes in them. This is necessary to achieve that output stride of 8. With an odd number of pixels, there’s always a center pixel, and so the math works out better this way. You may immediately forget this.
+</p></div>
+
+<p>Finally, there is an <em>upsampling</em> layer at the end of the model that scales the 65×65 tensor back up to 513×513 pixels using bilinear resizing. Obviously, you lose some of the finer details because of this upscaling, which is why, if you look closely at the edges of the objects in the segmentation map, you’ll see that they’re smoothed out.
+</p>
+<p>The output of DeepLab is then an output “image” with the same width and height as the input image, 513×513. However, it does not have three color channels like a regular image. The version of DeepLab that you’re using here is trained on the Pascal VOC dataset of 20 classes, and so the output is a 513×513×21 tensor.
+</p>
+<p>Every pixel has its own 21-element probability distribution from a softmax, because DeepLab does a class prediction for each individual pixel. Why 21 probabilities and not 20? Recall that you need an extra class to signify “background,” for pixels that don’t belong to any of the 20 regular classes.
+</p>
+<div class="note">
+<p><em>Note</em>: We’re not going to show you how to train this semantic segmentation model on the snacks dataset. It’s not particularly difficult to train these kinds of models, but unfortunately, we don’t have any ground-truth segmentation masks for the training images. Still, we wanted to show you that semantic segmentation is just another variation of the kinds of models you’ve already seen.
+</p></div>
+
+<h3 class="segment-chapter">Converting the model</h3>
+
+<p>You’re going to be using a pre-trained version of DeepLab that is made freely available as part of the TensorFlow Models repository, at: <a href="https://github.com/tensorflow/models/tree/master/research/deeplab">github.com/tensorflow/models/tree/master/research/deeplab</a>.
+</p>
+<p>This model was trained on the Pascal VOC dataset and can recognize the following 20 classes: person, bird, cat, cow, dog, horse, sheep, aeroplane, bicycle, boat, bus, car, motorbike, train, bottle, chair, dining table, potted plant, sofa and tv/monitor.
+</p>
+<p>The demo app already includes the converted .mlmodel file, but it’s a good idea to try converting this model by yourself.
+</p>
+<p>First, download the pre-trained model file.
+</p>
+<p>We used <em>mobilenetv2</em><em>_</em><em>coco</em><em>_</em><em>voc</em><em>_</em><em>trainval</em> from the link <a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">download.tensorflow.org/models/deeplabv3</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">_</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">mnv2</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">_</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">pascal</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">_</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">trainval</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">_</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">2018</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">_</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">01</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">_</a><a href="http://download.tensorflow.org/models/deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz">29.tar.gz</a>.
+</p>
+<p>After you unzip the download, look for the file <em>frozen</em><em>_</em><em>inference</em><em>_</em><em>graph.pb</em>. The extension <em>pb</em> stands for protobuf, which is the format that TensorFlow models — or graphs as they are called — are saved in.
+</p>
+<p>This particular file is a “frozen” graph that has been optimized for inference; all the operations for training have been removed from this graph.
+</p>
+<p>Netron can open such <em>pb</em> files, so take a look inside.
+</p>
+<p>The particular section of the graph shown in the figure on the next page, has the layers that are responsible for performing the semantic segmentation. These are all layer types you’ve seen before: convolution, batch normalization, ReLU and average pooling.
+</p>
+<p>There isn’t some special <em>semantic segmentation</em> layer that performs all the magic — this neural network uses the same building blocks that they all do.
+</p><div class="image-100"><img src="graphics/img180.png"  alt="" title="Part of the frozen inference graph in Netron" /></div>
+<p>So how come these layers know how to perform the segmentation task — as opposed to classification or object detection or something else? The reason is the training data. During training, the output of the network is compared to the ground-truth segmentation masks from the training data, using a suitable loss function. The training process drives the loss to be lower and lower, and so the longer you train, the more the output of the network starts to resemble the ground-truth masks.
+</p>
+<p>Of course, you can be clever in your choice of layers — for example, in the illustration above you see that DeepLab uses a branching structure called <em>spatial pyramid pooling</em> that makes predictions at different image scales, to capture detail at different levels.
+</p>
+<p>But the point here is that it’s not so much the design of the network that makes it do a task; it’s the data you use to train it. In this case, the training targets were segmentation masks, and so the network has learned to perform semantic segmentation. It’s really that simple.
+</p>
+<p>Usually <code>coremltools</code> is the go-to package for converting models to Core ML. You used it to convert your Keras model in the previous chapter. The bad news is that <code>coremltools</code> does not directly support TensorFlow graphs.
+</p>
+<p>The good news is that Apple and Google have collaborated to bring us <code>tfcoreml</code>, a TensorFlow to Core ML converter. This is an additional Python package that you need to install alongside <code>coremltools</code>.
+</p>
+<div class="note">
+<p><em>Note</em>: TensorFlow works at a much lower level of abstraction than Core ML and Keras. With TensorFlow, you build computational graphs that consist of primitive operations such as addition, multiplication, matrix math, array manipulations and so on.
+</p></div>
+
+<p>Core ML and Keras, on the other hand, only know about neural network layers. That’s why it’s easy to convert from Keras to Core ML. But it’s not always possible to convert TensorFlow graphs to Core ML. You can only convert graphs that use operations that Core ML supports. The tf-coreml website, <a href="https://github.com/tf-coreml/tf-coreml">github.com/tf-coreml/tf-coreml</a>, lists the supported operations.
+</p>
+<p>If you haven’t already, install the latest version of <code>tfcoreml</code> into your environment:
+</p><pre class="code-block">$ pip3 install -U tfcoreml</pre>
+<p>You may also need to install the most recent version of <code>coremltools</code>. If using the one from pip gives errors, here’s a handy trick for installing the very latest version straight from GitHub:
+</p><pre class="code-block">$ pip3 install -U git+https://github.com/apple/coremltools.git</pre>
+<p>Now, create a new text file, <em>convert</em><em>_</em><em>deeplab.py</em>, and write the following:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> tfcoreml <span class="hljs-keyword">as</span> tf_converter
+
+input_path = <span class="hljs-string">"deeplabv3_mnv2_pascal_trainval/frozen_inference_graph.pb"</span>
+output_path = <span class="hljs-string">"DeepLab.mlmodel"</span>
+input_tensor = <span class="hljs-string">"ImageTensor:0"</span>
+input_name = <span class="hljs-string">"ImageTensor__0"</span>
+output_tensor = <span class="hljs-string">"ResizeBilinear_3:0"</span>
+
+tf_converter.convert(tf_model_path=input_path,
+         mlmodel_path=output_path,
+         output_feature_names=[output_tensor],
+         input_name_shape_dict={input_tensor : [<span class="hljs-number">1</span>, <span class="hljs-number">513</span>, <span class="hljs-number">513</span>, <span class="hljs-number">3</span>]},
+         image_input_names=input_name)</pre>
+<p>That’s all you need to convert the model. Pretty simple, right? The trick is getting all the arguments to <code>tf_converter.convert()</code> correct.
+</p>
+<p>Most importantly, you need to tell tf-coreml what the model’s input and output tensors are. For DeepLab, those are <code>&quot;ImageTensor:0&quot;</code> and <code>&quot;ResizeBilinear_3:0&quot;</code>, respectively. See if you can find these tensors in the graph using Netron.
+</p>
+<p>TensorFlow operators can have multiple outputs and you need to specify which one you want to use. The <code>:0</code> in the name tells TensorFlow that you want to use the tensor from the operator’s first output.
+</p>
+<p>Think of it as special syntax for indexing an array at element <code>0</code>. It’s only a detail but if you forget the <code>:0</code> behind the name, tf-coreml won’t be able to find the tensor in the graph.
+</p>
+<p>The <code>input_name_shape_dict</code> argument tells tf-coreml what the size of the input image will be: 513×513 pixels.
+</p>
+<p>Just like with the Keras conversion you’ve done before, <code>image_input_names</code> is used to inform Core ML that it should treat the input as a proper image instead of an array of numbers. Note that tf-coreml renames <code>:0</code> to <code>__0</code> in the names of the model’s inputs and outputs, so <code>&quot;ImageTensor:0&quot;</code> is now <code>&quot;ImageTensor__0&quot;</code>.
+</p>
+<p>Run this script from a Terminal:
+</p><pre class="code-block">$ python3 convert_deeplab.py</pre>
+<p>tf-coreml will now load the TensorFlow model, analyze the graph, and convert all the operations to Core ML layers. When it’s done and everything went well, you will have a brand new <em>DeepLab.mlmodel</em> file.
+</p>
+<p>Double-click to open it in Xcode, and this is what you should see:
+</p><div class="image-80"><img src="graphics/img181.png"  alt="" title="The summary page for DeepLab.mlmodel" /></div>
+<p>DeepLab’s output is a <em>MultiArray</em> of size 21×513×513. Multi-array is the term that Core ML uses for tensor. When you need to deal with tensor objects in Core ML, it’s always through the <code>MLMultiArray</code> class. You’ll get a taste of that shortly.
+</p>
+<p>Notice that Core ML puts the number of channels (21) at the front of the tensor, as the outermost dimension. Usually, in this book, we’ve described the size of a tensor as height × width × channels (HWC), but in practice, you’ll also see it done the other way around: channels × height × width (CHW). It’s important to know which format you’re working with at any given time.
+</p>
+<p>Open <em>DeepLab.mlmodel</em> with Netron, too, and put it side-by-side with the original TensorFlow model to see how different/similar the two models are.
+</p>
+<h3 class="segment-chapter">The demo app</h3>
+
+<p>The downloads for this chapter include an app called <em>Segmentation</em>. The code is very similar to that of the HealthySnacks app from a few chapters ago, except now there are two pairs of camera/photo library buttons, allowing you to select a background image and a foreground image.
+</p><div class="image-70"><img src="graphics/img182.png"  alt="" title="The author on well-deserved fake holiday (left), the corresponding segmentation mask (right)" /></div>
+<p>After you’ve selected two images, the app will send the “front” image through DeepLab and uses the predicted segmentation mask to composite all the pixels that are not classified as “background” on top of the other image. Who needs a green screen when you’ve got a segmentation model?
+</p>
+<p>Tap the screen to view the actual segmentation mask (right side of the illustration). Note that the results aren’t perfect — there are a few bits of a painting hanging in the background that got mistakenly classified as “person” and are shining through.
+</p>
+<p>The app uses Vision to run the model, so that’s the same code as usual. But there are some interesting code snippets we can look at in more detail. First, the init method of <em>ViewController.swift</em>:
+</p><pre class="code-block"><span class="hljs-keyword">required</span> <span class="hljs-keyword">init</span>?(coder aDecoder: <span class="hljs-type">NSCoder</span>) {
+  <span class="hljs-keyword">let</span> outputs = deepLab.model.modelDescription.outputDescriptionsByName
+  <span class="hljs-keyword">guard</span> <span class="hljs-keyword">let</span> output = outputs[<span class="hljs-string">"ResizeBilinear_3__0"</span>],
+        <span class="hljs-keyword">let</span> constraint = output.multiArrayConstraint <span class="hljs-keyword">else</span> {
+    <span class="hljs-built_in">fatalError</span>(<span class="hljs-string">"Expected 'ResizeBilinear_3__0' output"</span>)
+  }
+  deepLabHeight = constraint.shape[<span class="hljs-number">1</span>].intValue
+  deepLabWidth = constraint.shape[<span class="hljs-number">2</span>].intValue
+
+  <span class="hljs-keyword">super</span>.<span class="hljs-keyword">init</span>(coder: aDecoder)
+}</pre>
+<p>The size of DeepLab’s output image is 513×513 pixels. You could hard-code this into the app, but it’s better to ask the model what these dimensions are. That way the same code can work with models that output other sizes, too.
+</p>
+<p>Here, <code>deepLab</code> is an instance of <code>DeepLab</code>, the class that Xcode automatically generates from the .mlmodel file. It has a <code>model</code> property for an <code>MLModel</code> object. If you don’t want to use Vision, you can also use the <code>MLModel</code> instance to make predictions directly.
+</p>
+<p>More importantly, for our purposes, you can ask this object about the configuration of the model. Here you grab the <code>modelDescription</code>, which contains all the info you see in Xcode, and from that the <code>outputDescriptionsByName</code>. This is a dictionary describing the model’s outputs.
+</p>
+<p>This model has only one output with the name <code>&quot;ResizeBilinear_3__0&quot;</code>. Note that this used to be called <code>&quot;ResizeBilinear_3:0&quot;</code> in the TensorFlow graph. That output is of type <em>MultiArray</em>, which means you literally get access to the entire 21×513×513 tensor of output values. By grabbing the <code>multiArrayContraint</code> property, you can look at the size and datatype of this array. Here, you care about the size, given by the <code>shape</code> property.
+</p>
+<p>Because the Core ML API was designed to work with both Swift and Objective-C, using some of these classes can be a little elaborate. For example, <code>shape</code> returns an array of <code>NSNumber</code> objects, and so you need to use <code>.intValue</code> to turn these into integers. The <code>shape</code> array has three values in it: <code>[channels, height, width]</code> and you read the height and width into two instance variables so you can use them later.
+</p>
+<p>After Vision successfully performs the request, the prediction results arrive as an array of <code>VNCoreMLFeatureValueObservation</code> objects. You get one of these objects for every output that is of type <em>MultiArray</em>. The actual predictions are inside an <code>MLMultiArray</code> object. This is how you obtain that <code>MLMultiArray</code> from the Vision results:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">processObservations</span><span class="hljs-params">(<span class="hljs-keyword">for</span> request: VNRequest, error: Error?)</span></span> {
+  <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> results = request.results <span class="hljs-keyword">as</span>? [<span class="hljs-type">VNCoreMLFeatureValueObservation</span>],
+     !results.isEmpty,
+     <span class="hljs-keyword">let</span> multiArray = results[<span class="hljs-number">0</span>].featureValue.multiArrayValue {
+
+    <span class="hljs-type">DispatchQueue</span>.main.async {
+      <span class="hljs-keyword">self</span>.show(results: multiArray)
+    }
+  }
+}</pre>
+<p>The <code>show(results)</code> method then decides whether to show the composited image or just the segmentation mask. It uses two helper methods (<code>createMaskImage</code> or <code>matteImages</code>) to do the actual work. Both of these helper methods follow the same approach:
+</p>
+<ol>
+<li>
+<p>Allocate an array of type <code>UInt8</code> that will hold the output pixels. The size of this array is <code>deepLabWidth * deepLabHeight * 4</code> because it will be an RGBA image.
+</p></li>
+
+<li>
+<p>Loop through all the 513×513 pixels in the <code>MLMultiArray</code> that holds DeepLab’s predictions.
+</p></li>
+
+<li>
+<p>For each pixel, find the index of the winning class. This is done by looping over the 21 probability values for that pixel and finding the largest value (the <em>argmax</em>).
+</p></li>
+
+<li>
+<p>To combine the two photos, the color that is used for the output pixel is read from the foreground image if the best class is not 0, the special <em>background</em> class. Otherwise, it is read from the background image. It’s easy to change this logic to only keep certain classes in the image, such as only cats and dogs.
+</p></li>
+
+<li>
+<p>In the other mode, where the app is drawing the segmentation mask, you get the color of the output pixel from a lookup table, using the winning class as the index.
+</p></li>
+
+<li>
+<p>Convert the pixel array into a <code>UIImage</code>.
+</p></li>
+</ol>
+
+<p>You’ll now look at how some of these steps work in detail. The <code>MLMultiArray</code> API is a little tricky to work with. For many model types, such as classification and object detection, Vision will hide away these details from you, but if your model outputs a MultiArray then you have no choice but to get your hands dirty.
+</p>
+<p>In the following code, <code>features</code> is the variable with the <code>MLMultiArray</code> object.
+</p><pre class="code-block"><span class="hljs-keyword">let</span> classes = features.shape[<span class="hljs-number">0</span>].intValue
+<span class="hljs-keyword">let</span> height = features.shape[<span class="hljs-number">1</span>].intValue
+<span class="hljs-keyword">let</span> width = features.shape[<span class="hljs-number">2</span>].intValue
+<span class="hljs-keyword">var</span> pixels = [<span class="hljs-type">UInt8</span>](repeating: <span class="hljs-number">255</span>, <span class="hljs-built_in">count</span>: width * height * <span class="hljs-number">4</span>)</pre>
+<p>Just like the model’s output description had a <code>shape</code>, so does the actual <code>MLMultiArray</code>. You use the width and height from this shape to allocate the <code>pixels</code> array.
+</p>
+<p>For this particular model, the output dimensions are fixed at 513×513, but in the model description for YOLO you saw that the first output dimension was 0, or <em>unknown</em>. In that case, the actual shape of the multi-array object isn’t known yet until runtime and can be different from one invocation of the model to the next.
+</p>
+<p>To read a value from the <code>MLMultiArray</code>, you can write the following:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> value = features[[<span class="hljs-built_in">c</span>, y, x] <span class="hljs-keyword">as</span> [<span class="hljs-type">NSNumber</span>]].doubleValue</pre>
+<p>where <code>c</code> is the channel number (0-20), <code>y</code> is the vertical coordinate (0-512), and <code>x</code> is the horizontal coordinate (also 0-512). Remember that the height dimension comes before the width!
+</p>
+<p>Indexing the multi-array in this manner works fine, but it’s very slow. Note that you’re first creating an array <code>[c, y, x]</code> to hold the three indices. Because this is an Objective-C API, you need to cast that to an array of <code>NSNumber</code>s. <code>MLMultiArray</code> uses this <code>NSNumber</code> array as a subscript, reads the value from the tensor, and returns it as a new <code>NSNumber</code> object that you have to convert back to a <code>Double</code> before you can properly use it.
+</p>
+<p>Now, imagine doing this in a triple nested loop of 21×513×513 iterations. It gets slow really quick.
+</p>
+<p>A better approach is to use a pointer to directly access the <code>MLMultiArray</code>’s memory. After all, it’s just a big array of <code>Double</code> values. Using pointers is not something Swift developers are accustomed to doing, but it’s not a big deal:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> featurePointer = <span class="hljs-type">UnsafeMutablePointer</span>&lt;<span class="hljs-type">Double</span>&gt;(
+                           <span class="hljs-type">OpaquePointer</span>(features.dataPointer))
+<span class="hljs-keyword">let</span> cStride = features.strides[<span class="hljs-number">0</span>].intValue
+<span class="hljs-keyword">let</span> yStride = features.strides[<span class="hljs-number">1</span>].intValue
+<span class="hljs-keyword">let</span> xStride = features.strides[<span class="hljs-number">2</span>].intValue</pre>
+<p>First, you turn <code>features.dataPointer</code>, a <em>raw</em> pointer, into an <code>UnsafeMutablePointer</code> for <code>Double</code> values. To find out where in this memory area the value that you want to read is located, you need to do a little bit of math. That’s what the <code>strides</code> are for. This again is an array of <code>NSNumber</code>s.
+</p>
+<p>The stride for a given dimension tells you how far apart in memory subsequent values from that dimension are. Here, <code>cStride</code> is the stride of the first dimension, which holds the channels. It is 263169 because one channel is made up of 513×513 = 263169 pixel values. The <code>yStride</code> is the distance between two subsequent rows in the image and is 513 because one row contains 513 pixels. And <code>xStride</code> is the distance between two pixels in the same row, which is 1 because they’re right next to each other in memory.
+</p>
+<p>Now, you can forget about these numbers immediately. Important to remember is that the strides are used to index the <code>MLMultiArray</code>’s memory directly when you’re using pointers. Conveniently enough, <code>MLMultiArray</code> has already calculated what the correct stride values are.
+</p>
+<p>To read the value at <code>c, y, x</code>, you can now write:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> value = featurePointer[<span class="hljs-built_in">c</span>*cStride + y*yStride + x*xStride]</pre>
+<p>That’s all you need to do to directly read the <code>Double</code> value from the <code>MLMultiArray</code>’s memory. It doesn’t get much faster than this!
+</p>
+<p>The main processing loop then looks like the following:
+</p><pre class="code-block"><span class="hljs-keyword">for</span> y <span class="hljs-keyword">in</span> <span class="hljs-number">0</span>..&lt;height {
+  <span class="hljs-keyword">for</span> x <span class="hljs-keyword">in</span> <span class="hljs-number">0</span>..&lt;width {
+
+    <span class="hljs-comment">// Take the argmax for this pixel, the index of the largest class.</span>
+    <span class="hljs-keyword">var</span> largestValue: <span class="hljs-type">Double</span> = <span class="hljs-number">0</span>
+    <span class="hljs-keyword">var</span> largestClass = <span class="hljs-number">0</span>
+    <span class="hljs-keyword">for</span> <span class="hljs-built_in">c</span> <span class="hljs-keyword">in</span> <span class="hljs-number">0</span>..&lt;classes {
+      <span class="hljs-keyword">let</span> value = featurePointer[<span class="hljs-built_in">c</span>*cStride + y*yStride + x*xStride]
+      <span class="hljs-keyword">if</span> value &gt; largestValue {
+        largestValue = value
+        largestClass = <span class="hljs-built_in">c</span>
+      }
+    }
+    . . .</pre>
+<p>There are three nested loops: You loop through all the rows (<code>y</code>) and all the columns (<code>x</code>) of the multi-array to look at all the image positions. Each “pixel” is really made up of 21 probability values, and you loop through these (<code>c</code>) to find the largest one. Then you can use the value of <code>largestClass</code> to do something interesting with this pixel.
+</p>
+<div class="note">
+<p><em>Note</em>: We told a small lie earlier. The 21 probability values for each pixel aren’t really probabilities yet, but so-called <em>logits</em>. To save time, DeepLab didn’t actually apply a softmax to these numbers. The softmax computation is kind of slow, and it would have to be done for every individual pixel, that is 513×513 times.
+</p>
+<p>All the softmax does is re-scale the logits so that they sum up to 1, but this doesn’t actually change the relative order of these numbers. If you’d sort the logits from before the softmax, and the probabilities from after the softmax, they’d be in the exact same order. Because you only care here which class has the biggest value, and not what probability that value represents, you can skip the softmax step and save some time.
+</p></div>
+
+<p>Try it out, run the app and see how well the semantic segmentation model works on your own pictures. The app will run on the simulator or on a device with iOS 12 or newer.
+</p>
+<p>By the way, it can take a few seconds for the model to run. Semantic segmentation is a harder job than classification. Also, the code for compositing the two images is not necessarily the most optimal way to do this. We just wanted to keep the example code readable. In practice, you’d use optimized routines from Core Image, the vImage framework, or even Metal GPU shaders to draw these images.
+</p>
+<p>There are also different versions of DeepLab v3+. There is one that uses the Xception network as the feature extractor instead of MobileNet. This gives higher quality results but it also comes at a cost: the MobileNet version of DeepLab is only 8.6 MB, while the Xception version is easily ten times bigger.
+</p>
+<div class="note">
+<p><em>Note</em>: With semantic segmentation, pixels only know which class they belong to. There is also a different kind called <em>instance segmentation</em>, where the pixels not only know their class but also which distinct object they belong to. For example, in a photo of two people who are sitting side by side and are touching, semantic segmentation will only see a single blob in which all the pixels are of class “person.” Instance segmentation will be able to distinguish between person 1 and person 2.
+</p>
+<p>A popular model for instance segmentation is Mask R-CNN, which adds segmentation capabilities to the Faster R-CNN object detector. It makes sense to think of instance segmentation as being a combination of object detection and segmentation. As should be obvious by now, all these techniques are closely related.
+</p></div>
+
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>To create a model that can detect multiple objects, it’s not enough to just add extra bounding box predictors. One-shot detectors like YOLO and SSD put the predictors into a grid so that they only look at specific portions of the input image. They also train different predictors to specialize in various object shapes and sizes.
+</p></li>
+
+<li>
+<p>Non-maximum suppression (NMS) is a post-processing step used to only keep the best bounding box predictions. The YOLO model that is trained by Turi Create will automatically apply NMS.
+</p></li>
+
+<li>
+<p>Semantic segmentation lets you make a unique class prediction for every pixel in the image. Instead of a single probability distribution, this predicts as many probability distributions as there are pixels.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Challenges</h2>
+
+<ul>
+<li>
+<p>Create a dataset for object detection. If you collected your own classification dataset for one of the previous challenges, then use a tool such as RectLabel to add bounding box annotations for these images. RectLabel uses a different file format to store the annotations, but <a href="https://rectlabel.com">rectlabel.com</a> has code examples that show how to use these files with Turi Create.
+</p></li>
+
+<li>
+<p>The size of the YOLO model you trained with Turi Create is 64.6 MB. That’s pretty hefty! This is reaching the upper limit of what is acceptable on mobile devices. It’s possible to use object detection models that are much smaller than YOLO that give very good results, such as SSD on top of MobileNet (about 26 MB).
+</p></li>
+</ul>
+
+<p>Try training MobileNet+SSD on the snacks dataset. The easiest way to do this is with the TensorFlow object detection API at <a href="https://github.com/tensorflow/models/tree/master/research/object_detection">github.com/tensorflow/models/tree/master/research/object</a><a href="https://github.com/tensorflow/models/tree/master/research/object_detection">_</a><a href="https://github.com/tensorflow/models/tree/master/research/object_detection">detection</a>. This is a good project to get some experience working directly with TensorFlow. The main difficulty will be converting the training data into a format that this API understands.
+</p>
+<p>To convert the final TensorFlow model to Core ML, you can use <code>tf-coreml</code> and the following repo: <a href="https://github.com/vonholst/SSDMobileNet_CoreML">github.com/vonholst/SSDMobileNet</a><a href="https://github.com/vonholst/SSDMobileNet_CoreML">_</a><a href="https://github.com/vonholst/SSDMobileNet_CoreML">CoreML</a>.
+</p>
+<p>Compare the mAP of this model with the mAP reported for YOLO earlier this chapter to see if MobileNet+SSD compares favorably or not. Good luck!
+</p>
+<ul>
+<li>
+<p>Change the semantic segmentation demo app to only keep pixels that belong to cats and dogs — or whatever your favorites are from the 20 Pascal VOC classes.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>Congrats, you’ve reached the end of part 1, Machine Learning with Images! Of course, we hope this is really only the beginning of your journey into the wonderful world of computer vision and deep learning.
+</p>
+<p>Some fun new areas to explore are:
+</p>
+<ul>
+<li>
+<p>Models that can create new images. Style transfer is a technique of taking a photo and making it look like a famous painting. Colorization adds color to old black-and-white photos. Generative models can produce totally new works of art, such as an infinite number of unique anime characters, <a href="https://www.youtube.com/watch?v=PUkQbGaL4Fg">youtube.com/watch?v=PUkQbGaL4Fg</a>.
+</p></li>
+
+<li>
+<p>Instead of working with still images you can also add a time dimension and make predictions on video. One example is tracking moving objects, which is like object detection but over time. Another futuristic application — literally! — is predicting what will happen in the next few frames of the video.
+</p></li>
+
+<li>
+<p>Human pose detection. You can use a neural network to find keypoints on the human body, such as where a person’s hands and feet are. It’s even possible to reconstruct realistic 3D models of the human body from photos, see <a href="http://densepose.org">densepose.org</a>.
+</p></li>
+</ul>
+
+<p>And much more... The possibilities are endless!
+</p>
+<p>One cool project that was published recently is <i>Everybody Dance Now</i>, which combines techniques of human pose detection and generative models to copy a professional dancer’s moves onto the body of a regular person, turning anyone into a dancing pro. See the amazing video at <a href="https://www.youtube.com/watch?v=PCBTZh41Ris">youtube.com/watch?v=PCBTZh41Ris</a>.
+</p>
+<p>Believe it or not, you already understand 90% of the techniques used in that project and many others. Everything builds on what you’ve learned in the first part of this book.
+</p>
+<p>If you want to know exactly how <i>Everybody Dance Now</i> works, check out the paper. You can find it here: <a href="https://arxiv.org/pdf/1808.07371.pdf">arxiv.org/pdf/1808.07371.pdf</a>. A lot of the collective knowledge in machine learning isn’t written down in books, articles and blog posts, but in academic research papers. If you’re serious about machine learning, get into the habit of reading those papers.
+</p>
+<p>To be honest, it can be hard to get into reading research papers. It’s quite likely half the stuff in the <i>Everybody Dance Now</i> paper won’t make sense to you at first reading. Don’t fret! Simply read a few other papers on the same topic. Skip the math and any parts that don’t make sense to you yet. Gradually, you’ll get comfortable with the way these papers are written. And once you speak the language of a certain subfield such as human pose detection or generative models, new papers become easier to read.
+</p>
+<p>A good place to find papers is on <a href="https://arxiv.org">arxiv.org</a>. Even better is the Arxiv Sanity Preserver at <a href="http://www.arxiv-sanity.com/">arxiv-sanity.com</a>, which also has a “top hype” section where you can find what the latest buzz is about. To stay up-to-date on what’s happening in machine learning, the papers are where it’s at.
+</p>
+<div class="note">
+<p><em>Note</em>: We heartily recommend watching the <a href="https://fast.ai">fast.ai</a> videos once you’ve finished this book. This is one of the best online courses about computer vision, natural language processing, and other applications of deep learning — and it’s free! Not only will you gain a deeper understanding of machine learning, but this course is also packed with handy tips and tricks, and advice on how to get state-of-the-art results. 5 out of 5 stars!
+</p></div>
+</body></html>

@@ -1,0 +1,873 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 14: Natural Language Classification</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 14: Natural Language Classification</h1>
+
+<p>Earlier in the book, you learned how to classify images — for example, judging whether they were of cats or dogs. You’ve also classified sequences of sensor data as device motions. Text is just another kind of data, and you can classify <i>it</i> as well. But what does a class of text look like?
+</p>
+<p>Is this email legitimate or spam? Are customer messages praising your great work or demanding action to address complaints? What’s the topic of an article, patent or court document? These are just a few examples of text classification tasks.
+</p>
+<p>There are a wide variety of techniques for extracting useful information from text, all falling under the general term <em>natural language processing (NLP)</em>. This chapter focuses on using NLP for classification, specifically using the methods Apple provides as part of its operating systems. You may be familiar with <code>NSLinguisticTagger</code>, which has been available since iOS 5. It supports several NLP tasks and was covered in the “Natural Language Processing” chapter of our <i>iOS 11 by Tutorials</i> book, when Apple rewrote the class to take advantage of Core ML. This chapter does <i>not</i> use that class.
+</p>
+<p>Apple introduced the new Natural Language framework in iOS 12 — and in each of its other device OS revisions that same year — which is meant to improve upon and replace <code>NSLinguisticTagger</code>. That’s the framework you’ll use here, along with Create ML to train your own models.
+</p>
+<p>In this chapter, you’ll build an app to read movie reviews. Along the way, you’ll perform several NLP tasks:
+</p>
+<ul>
+<li>
+<p>Language identification
+</p></li>
+
+<li>
+<p>Named entity recognition
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Lemmatization
+</p></li>
+
+<li>
+<p>Sentiment analysis
+</p></li>
+</ul>
+
+<p>Don’t worry if any of those terms are unfamiliar to you — you’ll get to know them all soon.
+</p>
+<div class="note">
+<p>A special thanks to Michael Katz and the editorial team of <i>iOS 11 by Tutorials</i>. Michael wrote that book’s “Natural Language Processing” chapter, on which this chapter is heavily based. Specifically, we reuse much of the starter project and general structure from that chapter, but we implement things differently, here. This chapter does cover some additional topics, such as training custom models, so we recommend going through it even if you’ve already read that book.
+</p></div>
+
+<h2 class="segment-chapter">Getting started</h2>
+
+<p>Open the <em>SMDB</em> starter project in Xcode. Build and run to check out the app, which starts out looking like this (pull down on the list to reveal the Search bar):
+</p><div class="image-35"><img src="graphics/img210.png"  alt="" title="The SMDB app" /></div>
+<p>The Search feature doesn’t work yet, but you’ll fix that soon. The app contains the following four tabs:
+</p>
+<ul>
+<li>
+<p><em>All</em>: Shows a list of every movie review loaded from the “server.” (To keep things simple, SMDB actually loads from a JSON file included with the project.) You’ll add &quot;heart-eyes&quot; and &quot;sad-face&quot; emojis to the positive and negative reviews, respectively.
+</p></li>
+
+<li>
+<p><em>By Movie</em>: Lists movie names where users can tap a name to only see reviews for that movie. You’ll eventually include tomato ratings showing each movie’s average review sentiment.
+</p></li>
+
+<li>
+<p><em>By Actor</em>: Currently empty, you’ll make it show a list of names automatically discovered from the reviews, along with emoji showing the average sentiment for reviews mentioning each name. Users will be able to tap a name and see all the reviews that mention it.
+</p></li>
+
+<li>
+<p><em>By Language</em>: Currently empty, it will soon list languages detected in the reviews. Users will then be able to tap a language to read all the reviews written in it.
+</p></li>
+</ul>
+
+<p>You’ll add these missing features inside <em>NLPHelper.swift</em>, so open it now. It includes empty stubs for the functions that you’ll implement. Notice that it also imports the Natural Language framework, giving you access to well-trained machine-learning models for several NLP tasks. The first one you’ll take a look at: language identification.
+</p>
+<h2 class="segment-chapter">Language identification</h2>
+
+<p>Your first classification task will be identifying the language of a piece of text. This is a common first step with NLP because different languages often need to be handled differently. For example, English and Chinese sentences are not tokenized in the same way.
+</p>
+<p>This is important enough that classes in the Natural Language framework attempt to automatically identify the language of whatever text they encounter before moving forward with their own work, so in many cases you won’t have to bother with this step. However, detecting languages is also a useful task on its own. For example, to direct support requests to the appropriate staff members, or perhaps — as in this app — to organize documents by language. For times like these, Apple provides <code>NLLanguageRecognizer</code>.
+</p>
+<p>Replace <code>getLanguage(text:)</code> in <em>NLPHelper.swift</em> with the following code:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getLanguage</span><span class="hljs-params">(text: String)</span></span> -&gt; <span class="hljs-type">NLLanguage</span>? {
+  <span class="hljs-keyword">return</span> <span class="hljs-type">NLLanguageRecognizer</span>.dominantLanguage(<span class="hljs-keyword">for</span>: text)
+}</pre>
+<p>This function is only a single line — it takes a <code>String</code> and passes it to <code>NLLanguageRecognizer</code>’s <code>dominantLanguage(for:)</code> function. That call returns an optional <code>NLLanguage</code> object for the language it thinks is most likely in use by the given text. The values are enums with names that match the language they represent, such as <code>.english</code>, <code>.spanish</code> and <code>.german</code>.
+</p>
+<p>In situations wherein portions of the text are in different languages, it returns the language that makes up most of the text. This function returns <code>nil</code> when it can’t determine the language.
+</p>
+<div class="note">
+<p><em>Note</em>: You may be aware that many language names can be abbreviated by a two-character ISO 639-1 code. For example, “en”, “es” and “de” for English, Spanish and German, respectively. You can access the two-character code for the language represented by an <code>NLLanguage</code> object via the object’s <code>rawValue</code> property.
+</p></div>
+
+<p>Build and run the app. Switch to the <em>By Languages</em> tab, which should look like this:
+</p><div class="image-35"><img src="graphics/img211.png"  alt="" title="Languages identified in reviews" /></div>
+<p>The table lists each language identified in the reviews, along with how many reviews use it. Tapping a row shows a list of reviews written in that language. Using the Natural Language framework, you’ve improved the app’s user experience, because now users only have to scroll through reviews they can actually read.
+</p>
+<h3 class="segment-chapter">Additional language identification options</h3>
+
+<p>The <code>NLLanguageRecognizer</code> performs just one task: <em>identifying languages</em> used in text. If you need it, then you’ll most often use it as you did here, via its convenience function <code>dominantLanguage(for:)</code>. However, there are situations that call for more control, and, in those cases, you’ll need to create an <code>NLLanguageRecognizer</code> object and call some of its other methods.
+</p>
+<p>You can pass it text via its <code>processString</code> function, which has no return value but stores the most likely dominant language in its <code>dominantLanguage</code> property. If you want more fine-grained information, you can get specific probabilities for multiple possible languages via its <code>languageHypotheses(withMaximum:)</code> function. The <code>withMaximum</code> parameter lets you specify how many probabilities you want to see — for example, the top five. And prior to processing a string, you can provide hints in the form of a dictionary containing the likelihood of encountering specific languages via the <code>languageHints</code> property. You can also restrict what language responses are possible via the <code>languageConstraints</code> property.
+</p>
+<h2 class="segment-chapter">Finding named entities</h2>
+
+<p>Sometimes, you’ll want to find names mentioned in a piece of text. Maybe you want to sort articles based on who they are about, organize restaurant reviews based on the cities they mention, or extract important information from a document, which often includes names of people, places and organizations. This is called named entity recognition (NER), and it’s a common NLP task with many use cases. It’s also a form of text classification.
+</p>
+<p>When you’re looking for a specific word, a simple search is often enough. However, when there are many such words, and especially when you aren’t sure in advance what those words will be, that’s when machine learning can help. The Natural Language framework provides well-trained models capable of finding names of people, places and organizations.
+</p>
+<p>In this section, you’ll give SMDB the ability to sort reviews based on the people’s names they contain. The app doesn’t know in advance what names might exist, so it has to examine the text and classify words as either names or not names. Apple provides a class that can handle this task — and more — called <code>NLTagger</code>.
+</p>
+<p>Replace <code>getPeopleNames</code> in <em>NLPHelper.swift</em> with the following implementation:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getPeopleNames</span><span class="hljs-params">(text: String, block: <span class="hljs-params">(String)</span></span></span> -&gt; <span class="hljs-type">Void</span>) {
+  <span class="hljs-comment">// 1</span>
+  <span class="hljs-keyword">let</span> tagger = <span class="hljs-type">NLTagger</span>(tagSchemes: [.nameType])
+  tagger.string = text
+  <span class="hljs-comment">// 2</span>
+  <span class="hljs-keyword">let</span> options: <span class="hljs-type">NLTagger</span>.<span class="hljs-type">Options</span> = [
+    .omitWhitespace, .omitPunctuation, .omitOther, .joinNames]
+  <span class="hljs-comment">// 3</span>
+  tagger.enumerateTags(
+    <span class="hljs-keyword">in</span>: text.startIndex..&lt;text.endIndex, unit: .word,
+    scheme: .nameType, options: options) { tag, tokenRange <span class="hljs-keyword">in</span>
+    <span class="hljs-comment">// 4</span>
+    <span class="hljs-keyword">if</span> tag == .personalName {
+      block(<span class="hljs-type">String</span>(text[tokenRange]))
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>
+  }
+}</pre>
+<p>The body of this function shows the general pattern that you’ll follow for many NLP tasks. It goes as follows:
+</p>
+<ol>
+<li>
+<p>Create an <code>NLTagger</code> and pass in an array of <code>NLTagScheme</code> objects telling it what to look for in the text. (More on this later.) Then, you set the text for it to parse via its <code>string</code> property.
+</p></li>
+
+<li>
+<p>Fine-tune what the tagger returns with an array of <code>NLTagger.Options</code> values. In this case, you’re going to skip whitespace, punctuation and non-linguistic tokens such as symbols. You also pass <code>.joinNames</code>, which tells the tagger to combine multi-part names into a single token. For example, “Jane Smith” instead of “Jane” and “Smith.”
+</p></li>
+
+<li>
+<p>Call the tagger’s <code>enumerateTags</code> method to iterate over whatever tokens it can find within the specified range of the text you set earlier, potentially assigning an <code>NLTag</code> to each one. (More on this later.)
+</p></li>
+
+<li>
+<p>Provide <code>enumerateTags</code> a code block to call for each token the tagger processes. In this case, you check that the tag is the name of a person — rather than a place or organization — and, if it is, you pass the identified token as a <code>String</code> into the block passed into <code>getPeopleNames</code>.
+</p></li>
+</ol>
+
+<p>You’ll use that pattern often: Create an <code>NLTagger</code>, use it to assign classes to tokens, and then process important tokens in some application-specific way.
+</p>
+<p>Here are some more details about <code>NLTagger</code> and the code you just added:
+</p>
+<ul>
+<li>
+<p><code>NLTagger</code> operates on tokens, but what a “token” means depends on the value you pass to <code>enumerateTag</code>’s <code>unit</code> parameter. It can be any of <code>.word</code>, <code>.sentence</code>, <code>.paragraph</code> or <code>.document</code>. The tagger will consider text in these unit-sized chunks, broken up using the rules it understands for the text’s language. Some tagging schemes only work with specific units — for example, the <code>.nameType</code> you used here only works with words.
+</p></li>
+
+<li>
+<p>When <code>NLTagger</code> labels a token, it calls the code block you specify with an <code>NLTag</code> object and the range of the tagged token within the source text. The actual value of the <code>NLTag</code> object is based on the tagging scheme — in the case of names, it can be <code>.personalName</code>, <code>.placeName</code> or <code>.organizationName</code>, but there are other possibilities when using different tagging schemes.
+</p></li>
+
+<li>
+<p>You used the <code>.nameType</code> tagging scheme to initialize the tagger to classify names, but Apple provides several different built-in options. You’ll take a look at another one in the next section.
+</p></li>
+
+<li>
+<p><code>NLTagger</code> doesn’t actually do all the work involved with classifying tokens. It’s mostly a wrapper that uses different models based on the particular combination of tagging scheme and token unit you provide. Later in this chapter, you’ll see how to provide custom models to add new types of tagging.
+</p></li>
+
+<li>
+<p>You can initialize a tagger with more than one scheme to support multiple tasks, but <code>enumerateTags</code> only handles one scheme at time so you’ll need to call it separately for each one you want to apply.
+</p></li>
+
+<li>
+<p>Apple doesn’t support every tagging scheme for every language. Call <code>NLTagger.availableTagSchemes(for:language:)</code> to get a list of supported schemes.
+</p></li>
+
+<li>
+<p>Check out <code>NLTagger</code>’s <code>tag(at:unit:scheme:)</code> and <code>tags(in:unit:scheme:options:)</code> functions. They return a tag or tags directly rather than making you iterate over all the tokens with a block.
+</p></li>
+
+<li>
+<p>Pro tip: Don’t forget to set the <code>string</code> property before calling <code>enumerateTags</code>! The tagger won’t complain if you don’t, but it won’t produce any results, either.
+</p></li>
+</ul>
+
+<p>Build and run, again, and take a look at the <em>By Actor</em> tab.
+</p><div class="image-35"><img src="graphics/img212.png"  alt="" title="Names identified in reviews" /></div>
+<p>You’ll see a list of names <code>NSTagger</code> thinks it has identified in the reviews. Tapping one leads to a list of reviews containing that name. The results aren’t perfect, though. For example, it misses the name “Faire Playe,” which appears in two reviews, and it identifies “O” as a name even though it was just part of the term “I/O.” The tagger uses a model that has learned what names generally look like and how they are used in sentences, but in the end it still has to guess about each token it encounters. It will give you good results, but it will never be 100% correct.
+</p>
+<h2 class="segment-chapter">Adding a search feature</h2>
+
+<p>In this next section, you’ll use <code>NLTagger</code> for another task: <em>lemmatization</em>. That’s the process of identifying the root version of a word. For example, consider the sentences, “I am running” and “I was running.” Reducing each term to its root, both sentences become the same: “I be run.” Sure, it no longer reads as correct, but it encapsulates <i>most</i> of the information contained in both sentences.
+</p>
+<p>Historically, it’s been common to preprocess text by lemmatizing it because it reduces the size of the vocabulary necessary to consider. You’ll learn more about vocabulary sizes in the next chapter, but, intuitively, the larger they are the more difficult they are to support. So rather than needing to understand “run,” “runs,” “running” and “ran,” you would just need to handle “run.” However, as you can see in this example, some important contextual information, such as tense, gets lost in the translation. For some tasks, like machine translation, it is now common to use text without first lemmatizing it in order to get more accurate results.
+</p>
+<div class="note">
+<p><em>Note</em>: <em>Stemming versus lemmatization.</em> You’ll probably encounter both of these terms, often used seemingly interchangeably. In the case of stemming, the root is called a stem; in the case of lemmatization, it’s called a lemma. These are essentially the same thing, but the process for generating them is different. Stemming involves basic rules like remove “ing” and “s” from the ends of words, which is fast and easy to implement but doesn‘t always produce the best results. On the other hand, lemmatization involves using a specific vocabulary for a language and applying more complex rules. It’s more involved but usually gives better results.
+</p></div>
+
+<p>You’ll use lemmas in the SMDB app to support more sophisticated searches. When the user types search terms, the app will find all reviews containing those terms. But rather than only supporting exact matches, you’ll broaden the results by using lemmas. So when a user enters a word like “run,” you’ll make sure the app finds reviews using other forms of the word, like “running,” too. Convenient!
+</p>
+<p>Replace the empty <code>getSearchTerms</code> inside <em>NLPHelper.swift</em> with the following:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getSearchTerms</span><span class="hljs-params">(text: String, language: String? = <span class="hljs-literal">nil</span>,
+                    block: <span class="hljs-params">(String)</span></span></span> -&gt; <span class="hljs-type">Void</span>) {
+  <span class="hljs-comment">// 2</span>
+  <span class="hljs-keyword">let</span> tagger = <span class="hljs-type">NLTagger</span>(tagSchemes: [.lemma])
+  tagger.string = text
+  <span class="hljs-keyword">let</span> options: <span class="hljs-type">NLTagger</span>.<span class="hljs-type">Options</span> = [
+    .omitWhitespace, .omitPunctuation, .omitOther, .joinNames]
+  tagger.enumerateTags(
+    <span class="hljs-keyword">in</span>: text.startIndex..&lt;text.endIndex, unit: .word,
+    scheme: .lemma, options: options) { tag, tokenRange <span class="hljs-keyword">in</span>
+    <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> tag = tag {
+      <span class="hljs-comment">// 3</span>
+      <span class="hljs-keyword">let</span> lemma = tag.rawValue.lowercased()
+      block(lemma)
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>
+  }
+}</pre>
+<p>This code looks a lot like <code>getPeopleNames</code> that you added earlier. That’s because it follows the same pattern. Here’s what’s different:
+</p>
+<ol>
+<li>
+<p>The function accepts an additional parameter — an optional language character code. You can ignore this for now.
+</p></li>
+
+<li>
+<p>You’re using the <code>.lemma</code> tagging scheme, which tells the tagger you want it to return the lemma for each token it encounters. Just like when searching for names, the <code>.lemma</code> scheme only works for <code>.word</code> token units.
+</p></li>
+
+<li>
+<p>If the tagger identifies a lemma — it won’t always be able to — then it’s contained in the <code>NLTag</code>’s <code>rawValue</code> property. You extract it, ensure it’s lowercased — this app won’t support case-sensitive search — and then pass it to the block that was passed into <code>getSearchTerms</code>.
+</p></li>
+</ol>
+
+<p>The app’s starter code already calls <code>getSearchTerms</code> for each review, mapping the review to each term generated by this function. Therefore, you only have to build and run the app to try some searches. With the app open, pull down on the table to reveal a search bar where you can enter terms to find within reviews.
+</p><div class="image-40"><img src="graphics/img213.png"  alt="" title="Search results for &apos;sing&apos;" /></div>
+<div class="note">
+<p><em>Note</em>: If you’re curious to see how the app maps reviews to search terms, check out <code>populateSearch</code> in <em>ReviewsManager.swift</em>.
+</p></div>
+
+<p>Throughout this section, you’ll search for a few specific examples to see how the app performs and what motivates each specific code choice. These also serve to demonstrate a few of the difficulties involved when working with text. Try the following:
+</p>
+<ul>
+<li>
+<p>Type <em>sing</em>, and you’ll see three search results, all of which actually contain the word “singing.” However, actually type <em>singing</em> and you get <i>zero</i> results. That’s unsettling.
+</p></li>
+
+<li>
+<p>Type <em>dance</em> and you’ll get one result, which actually contains the word “dancing.” However, type <em>dancing</em> and you’ll get two <i>different</i> results, each of which seems to contain the same word. Suspicious, no?
+</p></li>
+
+<li>
+<p>Type <em>bueno</em> and you’ll get one result, which contains the word “buena.” That’s good — it shows lemmatization works for more than just English. However, type the actual word used in that review — <em>buena</em> — and you’ll get no result. What gives?
+</p></li>
+</ul>
+
+<p>The problem here <i>stems</i> from how you generated the search terms via their lemmas. See what I did there?
+</p>
+<p>Remember the app maps reviews to terms generated by <code>getSearchTerms</code>. But this function returns <em>lemmas</em>, which may not match the original text in the review. For example, in these reviews the lemma of the word “singing” is “sing,” so that’s the only version of that word users can find via search. That’s not very convenient, but it’s something you should be able to fix. Instead of searching for exactly what the user types, you could search for the lemma of whatever the user types instead.
+</p>
+<div class="note">
+<p><em>Note</em>: If you run the app on a hardware device, as opposed to the simulator, you may not get any results for terms in languages other than the device’s native language. For example, if your phone has always been set to use English, you probably won’t get results for the term <em>bueno</em> above. If you temporarily switch your device to another language — Spanish, for this tutorial — and then switch it back (hopefully, you won’t get lost trying to return!), then the app should start finding search results for that language, too. However, the simulator should work fine for all languages iOS supports without you needing to do any extra work.
+</p></div>
+
+<p>Switch over to <em>ReviewsTableViewController.swift</em> and replace <code>findMatches</code> with this new version:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">findMatches</span><span class="hljs-params">(<span class="hljs-number">_</span> searchText: String)</span></span> {
+  <span class="hljs-keyword">var</span> matches: <span class="hljs-type">Set</span>&lt;<span class="hljs-type">Review</span>&gt; = []
+  <span class="hljs-comment">// 1</span>
+  getSearchTerms(text: searchText,
+                 language: <span class="hljs-type">Locale</span>.current.languageCode)
+  { word <span class="hljs-keyword">in</span>
+    <span class="hljs-comment">// 2</span>
+    <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> founds = <span class="hljs-type">ReviewsManager</span>.instance.searchTerms[word] {
+         matches.formUnion(founds)
+    }
+  }
+  reviews = matches.<span class="hljs-built_in">filter</span> { baseReviews.<span class="hljs-built_in">contains</span>($<span class="hljs-number">0</span>) }
+}</pre>
+<p>This bit is more application-specific than the other functions you’ve added, but it shows one way to actually <i>use</i> the results of the tagging process.
+</p>
+<ol>
+<li>
+<p>You pass <code>searchText</code> — what the user entered in the search bar — to <code>getSearchTerms</code> in order to reuse the lemmatization code you added earlier. Now, the app lemmatizes the words users search <i>for</i> instead of just the words in the reviews that the app looks <i>at</i>.
+</p></li>
+
+<li>
+<p>For each lemma identified by <code>getSearchTerms</code>, you check inside the <code>ReviewsManager</code>’s <code>searchTerms</code> dictionary. If it finds any reviews, it adds them to the results the user gets.
+</p></li>
+</ol>
+
+<p>Build and run, and you’ll see the search behavior has changed, but is it for the better? Try those three examples again.
+</p>
+<ul>
+<li>
+<p>Typing <em>sing</em> and <em>singing</em> now both give the same results: <i>nothing</i>! Seems like a downgrade.
+</p></li>
+
+<li>
+<p>Type <em>dance</em> and you’ll now get zero results, while <em>dancing</em> gives you the one result that “dance” <i>used</i> to give you. Downgrade number two.
+</p></li>
+
+<li>
+<p>Type <em>bueno</em> and you’ll find the same review as before, but now typing <em>buena</em> <i>also</i> gives you that result. Finally, something got better!
+</p></li>
+</ul>
+
+<p>These new errors occur because <code>NLTagger</code> sometimes has trouble lemmatizing short texts. You can test this out by typing just the letter “I”, which will produce no results. Now continue typing so you search for “I sing”. You’ll find as soon as you start typing the second word, regardless of what you type, you’ll get all the results that have the word “I” in them.
+</p>
+<p>That’s because now <code>NLTagger</code> sees it as a sentence and has a better guess about “I” being a word. Once you get to “I sing,” you’ll get all the reviews that contain “singing” — even if they do not contain the word “I.”
+</p>
+<p>The primary cause of this difficulty is that <code>NLTagger</code> can’t always determine the <i>language</i> of shorter texts, and lemmatization requires language-specific knowledge. With longer samples, it’s usually no problem, which you saw when you identified the languages for the reviews. But with shorter texts it’s a good idea to help it if you can.
+</p>
+<p>So how do you do that? By telling the tagger what language you’re using prior to asking it to lemmatize the text. Remember that unused <code>language</code> parameter in <code>getSearchTerms</code>? Well, now it’s time to use it.
+</p>
+<p>Back in <em>NLPHelper.swift</em>, add the following lines inside <code>getSearchTerms</code>, just before the <code>let options: ...</code> line:
+</p><pre class="code-block"><span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> language = language {
+  tagger.setLanguage(<span class="hljs-type">NLLanguage</span>(rawValue: language),
+                     range: text.startIndex..&lt;text.endIndex)
+}</pre>
+<p>This code sets the language on the tagger when a language is available, telling the tagger how to interpret the text stored in its <code>string</code> property. In this case, you’ll have a language’s two-character code, like “en” for English, and you’ll create an <code>NLLanguage</code> object from it. You assign the language for the full range of the text, but you could assign different languages for different sections if necessary.
+</p>
+<p><code>NLTagger</code> offers another function named <code>setOrthography</code>, which sets even more information about the language, such as its script, but Apple recommends not using it unless you are sure of the value. The tagger will determine the orthography itself from the text, and setting the language — if set <i>correctly</i> — essentially guarantees you’ll end up with the correct orthography anyway.
+</p>
+<div class="note">
+<p><em>Note</em>: If your device’s language is not set to English, then your results for the rest of this section may not exactly match what is described in the chapter. If this makes it difficult to follow along, go back to <em>ReviewsTableViewController.swift</em> and change <code>Locale.current.languageCode</code> in <code>findMatches</code> to be just the string <code>&quot;en&quot;</code>. This will force the tagger to assume all search terms are English.
+</p></div>
+
+<p>Build and run the app, then try out those test searches again. How well do they work?
+</p>
+<ul>
+<li>
+<p>Typing either <em>sing</em> or <em>singing</em> produces the same set of all three reviews that include “singing.” Nice!
+</p></li>
+
+<li>
+<p>Searching for <em>dance</em> or <em>dancing</em> gives the same <i>single</i> result, but we know there are two <i>other</i> reviews that contain the word “dancing.” Better, but not quite right yet.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Now, typing <em>bueno</em> or <em>buena</em> each give <i>zero</i> results. Uh oh, things are going in the wrong direction again. Coding is hard!
+</p></li>
+</ul>
+
+<p>These errors are caused by two different issues, but solving one will solve the other well enough for this chapter’s purposes.
+</p>
+<p>The first problem — the one you won’t fix here — is with the code you wrote earlier in <code>findMatches</code>. It passes the language code for the language <i>currently set on the device</i>. This will not always be correct — for example, when the user’s iPhone is set to use English but they try searching for a Spanish term like “bueno.” Now that we are setting the language directly, the <code>NLTagger</code> no longer determines it automatically, so it doesn’t recognize this as Spanish and can’t lemmatize it correctly.
+</p>
+<p>A better approach would be first letting the <code>NLTagger</code> <i>try</i> to determine the language and only resorting to the user’s default language when that fails. We won’t show that here, but it’s a small addition that readers should be able to make on their own after going through this chapter.
+</p>
+<p>The second problem — the one you’re about to fix — can be demonstrated more clearly with some other searches. Try searching for <em>Kotlin</em> or <em>realz</em>. Those terms appear in reviews, but they produce no search results. Why not?
+</p>
+<p>It’s because the tagger can’t find lemmas for unknown terms like “Kotlin,” but <code>getSearchTerms</code> currently only processes the lemmas it finds. Terms like these are considered out-of-vocabulary, but that doesn’t mean users won’t want to search for them.
+</p>
+<p>In this case, you can fix the problem with a couple lines of code, but you’ll see later in the book that out-of-vocabulary words cause other, more difficult, problems for NLP tasks, too.
+</p>
+<p>Still in <code>getSearchTerms</code>, find the <code>if</code> statement inside the <code>enumerateTags</code> block, and modify it as follows:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-keyword">let</span> token = <span class="hljs-type">String</span>(text[tokenRange]).lowercased()
+<span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> tag = tag {
+  ...
+} <span class="hljs-keyword">else</span> {
+  <span class="hljs-comment">// 2</span>
+  block(token)
+}</pre>
+<p>Here’s what the two new lines you added do:
+</p>
+<ol>
+<li>
+<p>The first one gets the token from the original text, and ensures it’s lowercase just like how you handled the lemmas earlier.
+</p></li>
+
+<li>
+<p>The second line passes the token to the block that the app passed into <code>getSearchTerms</code>. That means now all lemmas <i>and</i> any words that have no lemmas will get added as search terms.
+</p></li>
+</ol>
+
+<p>Build and run with these changes. Repeating those searches gives the following results:
+</p>
+<ul>
+<li>
+<p>Both <em>sing</em> and <em>singing</em> still work properly. That’s a good sign!
+</p></li>
+
+<li>
+<p>There is no change for <em>dance</em> or <em>dancing</em>. OK, at least they aren’t worse, right?
+</p></li>
+
+<li>
+<p>Now <em>bueno</em> works, but <em>buena</em> still finds nothing. That’s at least <i>some</i> improvement.
+</p></li>
+
+<li>
+<p>And what about words where the <code>NLTagger</code> could find no lemmas? Searching for these out-of-vocabulary words, like “realz” or “Kotlin,” works properly and returns the appropriate reviews.
+</p></li>
+</ul>
+
+<p>At this point, searching for either “dance” or “dancing” finds only one review containing “dancing” — the one when it’s used as a verb. Here’s why: When you search for the word “dancing,” it gets lemmatized as “dance.” But when the reviews were processed for search terms, the noun usages of “dancing” did <i>not</i> produce lemmas because “dancing” is a valid root when used as a noun. So <code>NLTagger</code> lemmatizes some terms differently when it encounters them in the reviews versus when it sees them as user-entered search terms. It’s being clever by trying to give you the most appropriate lemmas for the context, which is <i>usually</i> a good thing. But you want users to be able to find both sets of reviews, so what can you do?
+</p>
+<p>Go back to that same <code>if</code> statement inside the <code>enumerateTags</code> block, and add the following code just after the call to <code>block(lemma)</code>:
+</p><pre class="code-block"><span class="hljs-keyword">if</span> lemma != token {
+  block(token)
+}</pre>
+<p>This new <code>if</code> statement checks to see when a token and its lemma are not the same word. In that case, it passes the token to the block that the app passed into <code>getSearchTerms</code>. So, in cases where you search for “dancing,” it will process both “dance” and “dancing.”
+</p>
+<p>Build and run and try those test searches one last time. They mostly all work fine, but there’s still a difference between the results for typing <em>dance</em> and <em>dancing</em> — the former finds the one review that uses “dancing” as a verb but misses the two reviews where it’s used as a noun, while the latter finds all three of those reviews.
+</p>
+<p>This is the best you’re going to do without additional preprocessing. One option would be to lemmatize a sentence <i>and</i> attempt to break it up into tokens and lemmatize each token individually. That would give you more possible search terms because it would lemmatize each term both in and out of context. While it would fix the “dancing”-used-as-a-noun issue, you’d still have other problems. For example, spelling mistakes would still break the search, and out-of-vocabulary words still won’t support even basic stemming, so searching for the singular of an unknown word does not find reviews containing usages of that word’s plural.
+</p>
+<p>One last thing: Remember earlier in <code>findMatches</code> when you passed <code>getSearchTerms</code> the device’s current language along with the search term and that broke foreign-language searches? Now typing either <em>bueno</em> or <em>buena</em> works fine, but why? It’s for a subtle reason: When the app lemmatizes the reviews, it correctly lemmatizes “buena” as “bueno” because it recognizes the language as Spanish. But now this new code you just added associates the review with <i>both</i> of those terms rather than just the lemma. Then later, when you try to search for one of them, even if the default language causes <code>NLTagger</code> to fail its lemmatization, it just goes down your other code branch that handles out-of-vocabulary words by looking for exact matches. And sure enough, the search finds what you typed — regardless of whether it was “bueno” or “buena.”
+</p>
+<p>At this point, you’ve got a pretty good search feature. It isn’t industrial strength, for sure, but it’s still surprisingly powerful for writing so little code. And along the way you’ve seen some of the problems you might encounter when tying to work with text in your own apps. Now, it’s time to move away from the Natural Language framework’s built-in support and train some custom models.
+</p>
+<h2 class="segment-chapter">Sentiment analysis</h2>
+
+<p>Could we really cover machine learning for natural language without mentioning sentiment analysis? It’s one of the most common tasks taught — and for good reason. Companies, politicians, market analysts — everyone with money at stake wants to know how the public feels about... <i>something</i>. So this section covers training a sentiment classifier, but it’s important to understand — this is just one example of text classification. Spam detection, prioritizing support requests and identifying document topics are all variations of the same thing. So while this section demonstrates labelling chunks of text with a positive or negative sentiment, remember you can use these techniques for all sorts of classification tasks.
+</p>
+<h3 class="segment-chapter">Train a text classifier with Create ML</h3>
+
+<p>You’ll use Create ML to train an <code>MLTextClassifier</code> model. This class is meant to classify larger chunks of text rather than individual words, although it is technically capable of doing both. You’ll see a different model later in this chapter that is better suited to classifying word tokens. As with other Create ML models you’ve seen, you’ll train this one in an Xcode playground. But before dealing with Xcode, you’ll need a dataset.
+</p>
+<div class="note">
+<p><em>Note</em>: Training the model in this section shouldn’t take long and we recommend you go through the steps. However, if you’d prefer you can use the pre-trained model found at <em>projects/starter/models/SentimentClassifier.mlmodel</em> in the chapter resources.
+</p></div>
+
+<p>Xcode playgrounds have special access to a specific folder on your Mac, where you’ll store your dataset and output your trained model. If it doesn’t already exist, create a folder named <em>Shared Playground Data</em> inside your <em>Documents</em> folder. This folder <i>must</i> have that exact name and be in that location for your playgrounds to access it.
+</p>
+<div class="note">
+<p><em>Note</em>: You <i>can</i> add files directly to your playground’s bundle resources — and you’ll see that done later in this chapter. But when I tried that with the large dataset involved here, Xcode struggled and I spent way too much time staring at spinning beachballs and force-quitting the app. Things performed much better with the data stored outside of the bundle.
+</p></div>
+
+<p>Next, create a folder named <em>TextClassification</em> inside <em>Shared Playground Data</em>. You’ll keep everything for this chapter organized there.
+</p>
+<p>Find <em>projects/starter/datasets/MovieReviews.zip</em> in the chapter resources and unzip it into the <em>Shared Playground Data/TextClassification</em> folder you just created. You should now have a subfolder named <em>MovieReviews</em>.
+</p>
+<p>This new folder contains subfolders with 50 thousand movie reviews, half labeled as positive and the other half negative. It’s a slightly paired-down version of the Large Movie Review Dataset, from the 2011 paper, “Learning Word Vectors for Sentiment Analysis,” by Andrew L. Maas et al., published by the Association for Computational Linguistics.
+</p>
+<p>Interested readers can find the paper at <a href="http://www.aclweb.org/anthology/P11-1015">www.aclweb.org/anthology/P11-1015</a>. There’s a <em>README</em> file describing the changes we made, primarily to save space by eliminating files which were unrelated to this chapter.
+</p>
+<p>Create a new playground file using any template for <em>macOS</em>. The specific template doesn’t matter, but the operating system does because Create ML is only available on macOS. Or if you’d rather follow along with a completed playground, you can find one at <em>projects/final/playgrounds/MovieSentiment.playground</em>.
+</p>
+<p>If you started from a template, delete whatever starter code Xcode provided and add the following imports:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> CreateML
+<span class="hljs-keyword">import</span> PlaygroundSupport</pre>
+<p>You’ll train your text classifier with Create ML, so you import it here. And you import the Playground Support framework to access the <em>Shared Playground Data</em> folder you set up earlier.
+</p>
+<p>Now, add this next bit of code to access your training and test data:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-keyword">let</span> projectDir = <span class="hljs-string">"TextClassification/"</span>
+<span class="hljs-keyword">let</span> dataDir = <span class="hljs-string">"MovieReviews/"</span>
+<span class="hljs-keyword">let</span> trainUrl =
+  playgroundSharedDataDirectory.appendingPathComponent(
+    projectDir + dataDir + <span class="hljs-string">"train"</span>, isDirectory: <span class="hljs-literal">true</span>)
+<span class="hljs-keyword">let</span> testUrl =
+  playgroundSharedDataDirectory.appendingPathComponent(
+    projectDir + dataDir + <span class="hljs-string">"test"</span>, isDirectory: <span class="hljs-literal">true</span>)
+<span class="hljs-comment">// 2</span>
+<span class="hljs-keyword">let</span> trainData =
+  <span class="hljs-type">MLTextClassifier</span>.<span class="hljs-type">DataSource</span>.labeledDirectories(at: trainUrl)
+<span class="hljs-keyword">let</span> testData =
+  <span class="hljs-type">MLTextClassifier</span>.<span class="hljs-type">DataSource</span>.labeledDirectories(at: testUrl)</pre>
+<p>This code creates the datasets that you’ll use for training and testing your model. Here’s what you did:
+</p>
+<ol>
+<li>
+<p>Create URLs pointing to the <em>MovieReviews/train</em> and <em>MovieReviews/test</em> folders containing your dataset.
+</p></li>
+
+<li>
+<p>Create <code>MLTextClassifier.DataSource</code>s backed by those folders. This lets the model access data samples stored on disk as separate files, one subfolder per label you want your classifier to handle.
+</p></li>
+</ol>
+
+<p>As you can see in the following image, your dataset includes two folders: “test” and “train,” and each of those contains two more folders: “neg” and “pos.”
+</p><div class="image-30"><img src="graphics/img214.png"  alt="" title="Dataset folder structure" /></div>
+<p>Each of the files stored in these subfolders contains a single review, and the name of its folder is its classification label. So all the reviews in a “pos” folder are classified with positive sentiment, and the ones in a “neg” folder are classified with negative sentiment.
+</p>
+<div class="note">
+<p><em>Note</em>: This way of loading data works well when your dataset is spread across files like this. However, you can also train your model with an <code>MLDataTable</code>, which you can create from a JSON or CSV file, or from a Swift dictionary. You can even populate one programmatically if you need to. Use whatever method works best for your dataset. You’ll see an example of loading a JSON file a bit later.
+</p></div>
+
+<p>Now, create an <code>MLTextClassifier</code> with the following code:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> sentimentClassifier = <span class="hljs-keyword">try</span>!
+  <span class="hljs-type">MLTextClassifier</span>(
+    trainingData: trainData,
+    parameters:
+      <span class="hljs-type">MLTextClassifier</span>.<span class="hljs-type">ModelParameters</span>(language: .english))</pre>
+<p>This single line not only creates your model, it trains it, too! It even separates a portion of the training data to act as a validation set to ensure the model doesn’t overfit.
+</p>
+<p>Note the <code>ModelParameters</code> object you pass to the function. This is optional, but it lets you specify some details about how you trained the model. You can set a few things, including a validation dataset, but you’ve only told it that it’s trained to work with English. This is a good idea because later you can query its supported language to ensure you only use it in the proper context.
+</p>
+<p>Run the playground. Depending on the speed of your machine, this may take a few seconds to a few minutes, but you should get results similar to the following:
+</p><div class="image-100"><img src="graphics/img215.png"  alt="" title="Text classifier training output" /></div>
+<p>You didn’t specify a separate validation set as part of the <code>ModelParameters</code>, so the classifier reserves 5% of the training data for that purpose. It then spends a good bit of time tokenizing the reviews and converting them to training features. After that process completes, it starts training a MaxEnt model (more on that later), performing multiple training iterations until it reports a training accuracy close to 100%.
+</p>
+<p>That’s great performance on the <i>training</i> data, but what really matters is how it performs on data it hasn’t ever seen. Add the following code to your playground to evaluate your model against a real test dataset:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-keyword">let</span> metrics = sentimentClassifier.evaluation(on: testData)
+<span class="hljs-comment">// 2</span>
+<span class="hljs-keyword">if</span> metrics.isValid {
+  <span class="hljs-built_in">print</span>(<span class="hljs-string">"Error rate (lower is better): <span class="hljs-subst">\(metrics.classificationError)</span>"</span>)
+} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> error = metrics.error {
+  <span class="hljs-built_in">print</span>(<span class="hljs-string">"Error evaluating model: <span class="hljs-subst">\(error)</span>"</span>)
+} <span class="hljs-keyword">else</span> {
+  <span class="hljs-built_in">print</span>(<span class="hljs-string">"Unknown error evaluating model"</span>)
+}</pre>
+<p>This looks like more code than it really is. Here’s what you’ve added:
+</p>
+<ol>
+<li>
+<p>You pass a data source to the model’s <code>evaluation(on:)</code> function. This compares the model’s predictions for each item in the given test dataset against the correct labels.
+</p></li>
+
+<li>
+<p>Then you display the classification error if the model successfully calculated one, and print out any errors otherwise.
+</p></li>
+</ol>
+
+<p>Here’s the output for the model supplied in the resources for the finished project:
+</p><div class="image-100"><img src="graphics/img216.png"  alt="" title="Error rate on test set" /></div>
+<p>Notice that this reports the <em>error rate</em>, not accuracy. People commonly report the percentage of <i>incorrect</i> responses rather than the percentage of correct ones. It’s important to keep track of which metric you’re dealing with, otherwise you might not properly compare the performance claims of different models.
+</p>
+<p>Also keep in mind these values are related to each other: Subtract either value from 1.0 to get the other value. So an error rate of 0.1244 is an accuracy of 0.8756 — or 87.56%.
+</p>
+<p>Beyond error rate, the metrics returned by <code>evaluation(on:)</code> also include precision, recall and a confusion matrix describing how the model predicted values for each class. It’s not shown here, but the confusion matrix for this model shows it handles each class equally well with no obvious bias toward one or the other.
+</p>
+<p>While your model’s accuracy of almost 88% is not state-of-the-art on this dataset, it’s still quite reasonable for something you created with essentially a single line of code and no tinkering with parameters. If you really needed better results, you could create a model with one of the many other libraries that support conversion to Core ML.
+</p>
+<p>Now that you have a trained model, add the following code to your playground to save it for use in your app:
+</p><pre class="code-block"><span class="hljs-comment">// 1 (Optional)</span>
+<span class="hljs-keyword">let</span> metadata = <span class="hljs-type">MLModelMetadata</span>(
+  author: <span class="hljs-string">"Your Name:"</span>,
+  shortDescription:
+    <span class="hljs-string">"A model trained to classify movie review sentiment"</span>,
+  version: <span class="hljs-string">"1.0"</span>)
+<span class="hljs-comment">// 2</span>
+<span class="hljs-keyword">try</span>! sentimentClassifier.write(
+  to: playgroundSharedDataDirectory.appendingPathComponent(
+    projectDir + <span class="hljs-string">"SentimentClassifier.mlmodel"</span>),
+  metadata: metadata)</pre>
+<p>These two lines do the following:
+</p>
+<ol>
+<li>
+<p>Specify your model’s metadata. This isn’t a requirement, but here’s how to do it if you want to.
+</p></li>
+
+<li>
+<p>Export a Core ML version of your model. Here, you write it out to the playground’s data folder.
+</p></li>
+</ol>
+
+<p>Save this final version of your playground in case you ever want to come back to it. Then run it and you’ll end up with a trained model file named <em>SentimentClassifier.mlmodel</em> stored in your <em>Shared Playground Data/TextClassification</em> folder. Now it’s time to put it to use.
+</p>
+<h3 class="segment-chapter">Use your text classifier in an app</h3>
+
+<p>Open your <em>SMDB</em> project in Xcode. Drag <em>SentimentClassifier.mlmodel</em> from the <em>Shared Playground Data/TextClassification</em> folder into Xcode to add your trained model to the app. Or, if you’d like to use the model we trained, you can find it at <em>projects/starter/models/</em> folder in the chapter resources.
+</p>
+<p>Then select <em>SentimentClassifier.mlmodel</em> in the Project Navigator to see what Xcode tells you about the model:
+</p><div class="image-100"><img src="graphics/img217.png"  alt="" title="Looking at the mlmodel file" /></div>
+<p>You’ve seen quite a few model summaries in Xcode at this point, and this one isn’t much different. Here are some highlights:
+</p>
+<ul>
+<li>
+<p>Its type is <em>Text Classifier,</em> which tells you more about what the model is <i>for</i> than what it <i>is</i>. It’s actually a maximum entropy (MaxEnt) classifier, which is a probabilistic model that essentially determines how likely is it for a piece of text to represent a specific class. It generates numerical features from the text and performs a multinomial logistic regression over them. There are many possibilities for what features it could use — word counts, n-gram statistics, syntactical information, to name a few — but Apple doesn’t expose what features Create ML uses.
+</p></li>
+
+<li>
+<p>The model’s not huge by machine learning standards, but at over 2MB, it’s larger than some you’ve made in this book. Still, it should be fine for use on mobile.
+</p></li>
+
+<li>
+<p>Both its inputs and outputs are listed as single <code>String</code> values — the input <code>text</code> and the output <code>label</code>, respectively. You’ll give the model some text and it will return one of the labels — “pos” or “neg” — that you trained the model to predict.
+</p></li>
+</ul>
+
+<p>Now that you’ve got your model in the project, open <em>NLPHelper.swift</em> and replace <code>getSentimentClassifier</code> with the following:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getSentimentClassifier</span><span class="hljs-params">()</span></span> -&gt; <span class="hljs-type">NLModel</span>? {
+  <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span>! <span class="hljs-type">NLModel</span>(mlModel: <span class="hljs-type">SentimentClassifier</span>().model)
+}</pre>
+<p>This creates an instance of your model, but it does so a bit differently from other models you’ve created. Here you instantiate a <code>SentimentClassifier</code>, then use its <code>model</code> property to create an <code>NLModel</code>.
+</p>
+<p><code>NLModel</code> wraps Core ML models for use with the Natural Language framework. Xcode <i>will</i> let you use <code>MLTextClassifier</code> objects directly, like you’ve used models in earlier chapters, but it is <em>essential</em> to wrap them in <code>NLModel</code> first. This ensures the model preprocesses inputs the same way Create ML did during the training process. And as you’ve learned, it’s vital for preprocessing steps to match between training and inference, otherwise your models won’t produce the correct results.
+</p>
+<p>Now replace <code>predictSentiment</code> inside <em>NLPHelper.swift</em> with the following code:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">predictSentiment</span><span class="hljs-params">(
+  text: String, sentimentClassifier: NLModel)</span></span> -&gt; <span class="hljs-type">String</span>? {
+  <span class="hljs-keyword">return</span> sentimentClassifier.predictedLabel(<span class="hljs-keyword">for</span>: text)
+}</pre>
+<p>The SMDB app calls <code>getSentimentClassifier</code> once at startup and then passes the model it returns to <code>predictSentiment</code> for each review whose language matches the one supported by the model. To get a prediction, you call <code>predictedLabel(for:)</code>, which classifies the given text and returns the label it predicts with the highest probability. Remember the folders for your data were named “neg” and “pos”, so those are the two possible return values here.
+</p>
+<p>The <code>MLTextClassifier</code> — whether or not it’s wrapped in an <code>NLModel</code> — does not provide access to the actual prediction probabilities it calculates. That makes it different from some other models you’ve worked with elsewhere in this book. It’s a bit less flexible than some models, but what it lacks in flexibility it makes up for with ease of use.
+</p>
+<p>Build and run one last time. You should now see happy faces on the positive reviews and sad faces on the negative ones.
+</p><div class="image-35"><img src="graphics/img218.png"  alt="" title="Reviews with emoji showing sentiment" /></div>
+<p>Notice the faces only appear on the English-language reviews. That’s because the app only analyzes the sentiment of reviews whose language matches the one supported by your model. It accomplishes this with the following <code>guard</code> statement inside <code>findSentiment</code> in <em>ReviewsManager.swift</em>:
+</p><pre class="code-block"><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">findSentiment</span><span class="hljs-params">(<span class="hljs-number">_</span> review: Review,
+                           sentimentClassifier: NLModel?)</span></span> {
+  <span class="hljs-keyword">guard</span> <span class="hljs-keyword">let</span> sentimentClassifier = sentimentClassifier,
+    review.language ==
+      sentimentClassifier.configuration.language <span class="hljs-keyword">else</span> {
+    <span class="hljs-keyword">return</span>
+  }
+  ...
+}</pre>
+<p><code>NLModel</code>’s have a <code>configuration</code> property that gives you access to an <code>NLModelConfiguration</code> object that contains some information about the model. Here, you access its <code>language</code> property to ensure it supports the review’s language.
+</p>
+<div class="note">
+<p><em>Note</em>: It’s important that you always verify your model supports an input <i>before</i> using it, like this function does. If you don’t, the model will still return a prediction, but it will be nothing more than a random guess.
+</p></div>
+
+<p>The emoji feature uses a single sentiment prediction, but the app also shows how to aggregate sentiment. It converts the predicted labels into numerical values of 1 and 0 for positive and negative reviews, respectively. It then uses those numbers to calculate sentiment across multiple reviews. To see the <em>fruits</em> of that calculation, tap the <em>By Movie</em> tab. Each movie now includes a tomato rating indicating the average sentiment of its (English-language) reviews.
+</p><div class="image-35"><img src="graphics/img219.png"  alt="" title="Tomatoes showing average sentiment" /></div>
+<p>Finally, tap the <em>By Actors</em> tab. The list now lets you find the actors in the most-liked movies by showing an emoji indicating the prevailing sentiment of all the reviews mentioning that actor’s name.
+</p><div class="image-35"><img src="graphics/img220.png"  alt="" title="Emoji showing average sentiment" /></div>
+<p>For readers who went through the “Natural Language Processing” chapter in <i>iOS 11 by Tutorials</i>, you’ve now had the experience of using a pre-trained model as well as training one on your own. The one you trained even outperforms the pre-trained model from that book. For example, here’s a review that was scored with a negative sentiment in the original project: “What a great film! Ms. Keras Smith was truly magnificent, and Billy Caffe’s singing and dancing is the stuff of legends. Three thumbs up!” If you check that same review in your app here, which you can find easily by choosing <em>Ms. Keras Smith</em> or <em>Billy Caffe</em> in the <em>By Actor</em> tab, you’ll see it now correctly displays a happy face.
+</p>
+<p>The <code>MLTextClassifier</code> you used in this section works well for larger chunks of text. In the next section, you’ll create a model used to classify individual words <i>within</i> chunks of text instead.
+</p>
+<h2 class="segment-chapter">Custom word classifiers</h2>
+
+<p>You’re done with the SMDB app for now, but you’ll come back to it again in the next chapter. In this section, you’ll train an <code>MLWordTagger</code>, which is Create ML’s model for classifying text at the word level. You’ll use it to create a custom tagging scheme for <code>NLTagger</code>.
+</p>
+<p>The model you make here attempts to identify names of Apple products mentioned in text, but you can train a model like this to tag individual words of any type. For example, imagine creating a profanity filter or automatically adding links to domain-specific jargon like legal or medical terms.
+</p>
+<p>Create a new <em>macOS</em> playground and delete any code included from the template. Or, if you’d prefer, you can follow along with the completed playground at <em>projects/final/playgrounds/CustomTokenTagging.playground</em>.
+</p>
+<p>There’s a tiny dataset stored in the chapter resources at <em>projects/starter/datasets/custom</em><em>_</em><em>tags.json</em>. Drag that file into the <em>Resources</em> folder in the playground’s Project navigator to add it to the playground.
+</p>
+<div class="note">
+<p><em>Note</em>: You could also use the <em>Shared Playground Data</em> folder like you did for the sentiment classifier, but this JSON file is quite small and Xcode should have no problem handling it as part of the playground bundle.
+</p></div>
+
+<p>Select <em>custom</em><em>_</em><em>tags.json</em> in the Project Navigator to view the training examples. Here is a snippet from that file:
+</p><pre class="code-block">[
+ ...
+  {
+    <span class="hljs-string">"tokens"</span>: [<span class="hljs-string">"The"</span>, <span class="hljs-string">"Apple"</span>, <span class="hljs-string">"TV"</span>, <span class="hljs-string">"is"</span>, <span class="hljs-string">"great"</span>, <span class="hljs-string">"for"</span>,
+               <span class="hljs-string">"watching"</span>, <span class="hljs-string">"TV"</span>, <span class="hljs-string">"and"</span>, <span class="hljs-string">"movies"</span>, <span class="hljs-string">","</span>,
+               <span class="hljs-string">"and"</span>, <span class="hljs-string">"you"</span>, <span class="hljs-string">"can"</span>, <span class="hljs-string">"play"</span>, <span class="hljs-string">"games"</span>,
+               <span class="hljs-string">"on"</span>, <span class="hljs-string">"it"</span>, <span class="hljs-string">","</span>, <span class="hljs-string">"too"</span>, <span class="hljs-string">"!"</span>],
+    <span class="hljs-string">"tags"</span>: [<span class="hljs-string">"_"</span>, <span class="hljs-string">"AppleProduct"</span>, <span class="hljs-string">"AppleProduct"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>,
+             <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>,
+             <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>,
+             <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>]
+  },</pre><pre class="code-block">  {
+    <span class="hljs-string">"tokens"</span>: [<span class="hljs-string">"Apple"</span>, <span class="hljs-string">"adding"</span>, <span class="hljs-string">"Windows"</span>, <span class="hljs-string">"support"</span>, <span class="hljs-string">"for"</span>,
+               <span class="hljs-string">"iTunes"</span>, <span class="hljs-string">"helped"</span>, <span class="hljs-string">"the"</span>, <span class="hljs-string">"iPod"</span>,
+               <span class="hljs-string">"succeed"</span>, <span class="hljs-string">"."</span>],
+    <span class="hljs-string">"tags"</span>: [<span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>,
+             <span class="hljs-string">"AppleProduct"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>, <span class="hljs-string">"AppleProduct"</span>,
+             <span class="hljs-string">"_"</span>, <span class="hljs-string">"_"</span>]
+  },
+ ...
+]</pre>
+<p>This JSON file contains a list, where each element is a dictionary with two keys: “tokens” and “tags.” Each dictionary in the list defines a single training example. The “tokens” key maps to a list of strings for a tokenized text sample, and the “tags” key maps to the list of tags that correspond to items in the “tokens” list.
+</p>
+<p>The specific tags used here were chosen somewhat arbitrarily. Each word you’re interested in — the ones that name Apple products — is tagged with “AppleProduct,” whereas the other tokens are all tagged with a simple underscore. You could use a descriptive term if you’d prefer, but I chose this to help the product tags stand out in the list.
+</p>
+<p>Notice the second example includes the word “TV” twice, tagged once with “AppleProduct” and once with an underscore. Learning to assign tags properly involves more than memorizing words; the model has to learn to evaluate tokens in context, otherwise it would not be able to handle cases like this one.
+</p>
+<p>A few notes about the training data:
+</p>
+<ul>
+<li>
+<p>The actual key names “tokens” and “tags” don’t matter. You can name them anything you want as long as it’s consistent across samples.
+</p></li>
+
+<li>
+<p>Models are allowed to produce more than one tag. This example happens to assign everything either “AppleProduct” or an underscore, but feel free to include as many tags as necessary for your task.
+</p></li>
+
+<li>
+<p>The formatting shown here is adjusted slightly from what you’ll see in the actual file to make it easier to read in the book. Specifically, you don’t actually need to split the tokens and tags into multiple lines like this.
+</p></li>
+</ul>
+
+<p>Now that you’ve looked at the data, you’ll train a model. To get started, add the following to your playground:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> Foundation
+<span class="hljs-keyword">import</span> PlaygroundSupport
+<span class="hljs-keyword">import</span> CreateML
+<span class="hljs-keyword">import</span> NaturalLanguage</pre>
+<p>You’re importing several frameworks, here, because you’re going to train a model <i>and</i> use this playground to simulate the model’s usage in an app. However, they should all appear familiar to you now.
+</p>
+<p>Next, prepare your training data with the following:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> trainUrl =
+  <span class="hljs-type">Bundle</span>.main.url(
+    forResource: <span class="hljs-string">"custom_tags"</span>, withExtension: <span class="hljs-string">"json"</span>)!
+<span class="hljs-keyword">let</span> trainData = <span class="hljs-keyword">try</span> <span class="hljs-type">MLDataTable</span>(contentsOf: trainUrl)</pre>
+<p>You access the <em>custom</em><em>_</em><em>tags.json</em> file from the playground’s resource bundle, and use it to create an <code>MLDataTable</code>. This class stores tabular data for use with Create ML. It populates itself with a new row for each item in the JSON file’s list. It uses the keys it finds in each dictionary as column names, and maps the dictionary values to the corresponding row-column cell.
+</p>
+<p>So for the file you just loaded, the <code>MLDataTable</code> will have 11 rows, each with two columns named “tokens” and “tags.”
+</p>
+<p>Next, add the following line to create your model:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> model = <span class="hljs-keyword">try</span> <span class="hljs-type">MLWordTagger</span>(
+  trainingData: trainData,
+  tokenColumn: <span class="hljs-string">"tokens"</span>, labelColumn: <span class="hljs-string">"tags"</span>,
+  parameters: <span class="hljs-type">MLWordTagger</span>.<span class="hljs-type">ModelParameters</span>(language: .english))</pre>
+<p>Here, you create an <code>MLWordTagger</code>, passing in the training data and the names of the columns, which define the tokens and labels. Regardless of how much data your table contains, the model only ever looks at the two columns you specify here. This is why it doesn’t matter how you name the keys in your JSON file — pick whatever you like and then tell <code>MLWordTagger</code> what to look for when you create it.
+</p>
+<p>Once again, you specify the language this model supports as English, to match the training data. You’ll see how <code>NLTagger</code> uses this information a bit later.
+</p>
+<p>In classic Create ML fashion, just creating your model object also handles training it. You could test this model like you would any other Create ML model, but for now just save it out with the following code:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> projectDir = <span class="hljs-string">"TextClassification/"</span>
+
+<span class="hljs-comment">// Optionally add metadata before saving model</span></pre><pre class="code-block"><span class="hljs-keyword">let</span> savedModelUrl =
+  playgroundSharedDataDirectory.appendingPathComponent(
+    projectDir + <span class="hljs-string">"AppleProductTagger.mlmodel"</span>)
+
+<span class="hljs-keyword">try</span> model.write(to: savedModelUrl)</pre>
+<p>Here, you export your model in Core ML format to the same <em>Shared Playground Data/TextClassifier</em> folder you used to train your sentiment analysis model.
+</p>
+<p>Next, you’ll need to know how to use a custom word classifier like this one inside an app. But rather than pigeon hole this functionality into the SMDB project, you’ll just use the model right here in the playground. However, to do that you do need to do one special step. Add the following line:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> compiledModelUrl =
+  <span class="hljs-keyword">try</span> <span class="hljs-type">MLModel</span>.compileModel(at: savedModelUrl)</pre>
+<p>When you add a Core ML model to Xcode, it actually compiles it into a format that can be used by your app. However, this does not happen automatically in playgrounds. This line loads the model file at the specified URL, compiles it, and writes the results to a temporary folder on your device. It returns the URL of the compiled model.
+</p>
+<p>The rest of this section shows code that you could use inside an app just like you do here. Add the following line to instantiate your model:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> appleProductModel =
+  <span class="hljs-keyword">try</span> <span class="hljs-type">NLModel</span>(contentsOf: compiledModelUrl)</pre>
+<p>This is similar to what you did with the sentiment classifier. Here, you wrap your <code>MLWordTagger</code> inside an <code>NLModel</code> to ensure your app tokenizes inputs the same way as Create ML did when you trained the model. You create it with the URL of your compiled model, but in an app you could also create the model directly like you did earlier with <code>SentimentClassifier</code>.
+</p>
+<p>Next, add the following code to configure an <code>NLTagger</code> to use your new model:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-keyword">let</span> appleProductTagScheme = <span class="hljs-type">NLTagScheme</span>(<span class="hljs-string">"AppleProducts"</span>)
+<span class="hljs-comment">// 2</span>
+<span class="hljs-keyword">let</span> appleProductTagger = <span class="hljs-type">NLTagger</span>(tagSchemes: [appleProductTagScheme])
+<span class="hljs-comment">// 3</span>
+appleProductTagger.setModels(
+  [appleProductModel], forTagScheme: appleProductTagScheme)</pre>
+<p>Here’s how you configure the tagger:
+</p>
+<ol>
+<li>
+<p>Create a new <code>NLTagScheme</code> object to represent your word classifier. You can name it anything you like; it doesn’t need to match the name of your model or the names of any tags it produces.
+</p></li>
+
+<li>
+<p>Create an <code>NLTagger</code> like you did before, but give it your new tag scheme. You can provide multiple schemes here, including built-in options and other custom ones.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Call <code>setModels</code> on <code>appleProductTagger</code>, passing it your custom model and tag scheme. This tells the tagger to use your custom model when asked to tag with that scheme on a language supported by the model. You can provide more than one model in this list if you’ve trained different ones for different languages, and the tagger will use the correct one based on the language of the text it processes.
+</p></li>
+</ol>
+
+<p>And, finally, add this code to test out your model on some sample inputs:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-keyword">let</span> testStrings = [
+  <span class="hljs-string">"I enjoy watching Netflix on my Apple TV, but I wish I had a bigger TV."</span>,
+  <span class="hljs-string">"The Face ID on my new iPhone works really fast!"</span>,
+  <span class="hljs-string">"What's up with the keyboard on my MacBook Pro?"</span>,
+  <span class="hljs-string">"Do you prefer the iPhone or the Pixel?"</span>
+]
+<span class="hljs-comment">// 2</span>
+<span class="hljs-keyword">let</span> appleProductTag = <span class="hljs-type">NLTag</span>(<span class="hljs-string">"AppleProduct"</span>)
+<span class="hljs-keyword">let</span> options: <span class="hljs-type">NLTagger</span>.<span class="hljs-type">Options</span> = [
+  .omitWhitespace, .omitPunctuation, .omitOther]
+<span class="hljs-keyword">for</span> str <span class="hljs-keyword">in</span> testStrings {
+  <span class="hljs-built_in">print</span>(<span class="hljs-string">"Checking <span class="hljs-subst">\(str)</span>"</span>)
+  appleProductTagger.string = str
+  appleProductTagger.enumerateTags(
+    <span class="hljs-keyword">in</span>: str.startIndex..&lt;str.endIndex, unit: .word,
+    scheme: appleProductTagScheme, options: options)
+  { tag, tokenRange <span class="hljs-keyword">in</span>
+    <span class="hljs-keyword">if</span> tag == appleProductTag {
+      <span class="hljs-built_in">print</span>(<span class="hljs-string">"Found Apple product: <span class="hljs-subst">\(str[tokenRange])</span>"</span>)
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>
+  }
+}</pre>
+<p>This code mimics how you might use your model in an app.
+</p>
+<ol>
+<li>
+<p>Create some test strings to simulate inputs. These include a mix of Apple products that were in your training set, Apple products that were not in the training set, and non-Apple products.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>The rest of the code follows the same pattern you’ve seen before when using <code>NLTagger</code>. The only difference here is you create a new <code>NLTag</code> for your custom tag name and check for that while processing the tokens.
+</p></li>
+</ol>
+
+<p>Run the playground to train your model and see how it performs on your test cases:
+</p><div class="image-100"><img src="graphics/img221.png"  alt="" title="Word classifier training output" /></div>
+<p>Here’s what you see while training the model, line by line:
+</p>
+<ul>
+<li>
+<p>According to the first message, the model doesn’t create a validation set because your dataset has fewer than 50 items. Seems reasonable, but the very next message claims it’s using two samples for validation. These two statements seem to contradict each other, but rest assured — you’ll probably never see this message in real life because you would never train a real model with fewer than 50 samples, right? <i>Right</i>?
+</p></li>
+
+<li>
+<p>Next, it tokenizes the data just like when you trained your sentiment analysis model. It goes much faster this time, though, mostly because you’re working with a tiny dataset but also because the JSON file already defines each input as a list of tokens.
+</p></li>
+
+<li>
+<p>It claims to start “CRF training,” but what’s that? It’s just talking about training the model. CRF stands for “conditional random field,” which is the algorithm <code>MLWordTagger</code> uses to classify words. This is another probabilistic model, but one that usually does better than MaxEnt when predicting labels on individual words — MaxEnt works better when classifying larger chunks of text. Its primary advantage is that it considers the tokens as <em>sequences</em>, which MaxEnt does not <i>necessarily</i> do. (It can use <i>some</i> sequential data, like n-gram statistics, but CRF relies on it more heavily.) Once again, Apple does not provide the details of Create ML’s implementation.
+</p></li>
+
+<li>
+<p>It trains for only one iteration over the dataset. It would likely train more if you ran with more data, but it achieves perfect accuracy on (all two of) the validation samples so it stops training.
+</p></li>
+</ul>
+
+<p>And here’s what its output from the tests looks like:
+</p><div class="image-100"><img src="graphics/img222.png"  alt="" title="Word classifier test results" /></div>
+<p>The model does really well, especially considering your dataset only had 11 samples — and the model only trained on nine of them! It managed to correctly label the different versions of “TV” in the first example, and even labeled “Face” and “ID” as Apple products, even though those tokens never appear in the training set.
+</p>
+<p>However, it wasn’t all good. Notice it also attributes “Pixel” to Apple, which I’m sure would surprise Google.
+</p>
+<p>These examples prove the model learns something about the <em>context</em> where these tokens appear, rather than just memorizing the words. Training with a larger dataset will give better results, but just like everything else based on machine learning, it won’t ever be perfect.
+</p>
+<p>One last thing: Notice your model tags multi-word names like “Face ID” and “Macbook Pro” as multiple words. That’s because the <code>NLTagger</code> first tokenizes the input based on its rules for the text’s language, and it doesn’t already know that these words are meant to go together. There’s no way to avoid this, so you’ll need to label them as separate words in your training data, and then write your own logic for recombining them later.
+</p>
+<h2 class="segment-chapter">The remaining bits</h2>
+
+<p>The Natural Language framework supports a few other things not specifically covered in this chapter. The two you’ll most likely use are <em>part-of-speech tagging</em> and <em>tokenization</em>.
+</p>
+<p>Part-of-speech tagging refers to analyzing text for grammatical structure. In code, it requires nothing more than using an <code>NLTagger</code> just like you’ve done elsewhere in this chapter. In this case, you iterate over tokens using either the <code>.lexicalClass</code> or <code>.nameTypeOrLexicalClass</code> tag schemes and the tagger assigns <code>NLTag</code> values indicating how those tokens are used in the text. For example, <code>.noun</code>, <code>.verb</code> or <code>.adjective</code>. Consult the documentation for the possible values.
+</p>
+<p>Tokenization is the process of splitting a piece of text into smaller units. It most often means dividing strings into individual words and punctuation, but it could mean breaking it into other units, like sentences or characters.
+</p>
+<p>The classes you’ve used throughout this chapter all tokenize their inputs automatically, so you haven’t needed to worry about it. However, if you ever need to do it yourself, the Natural Language framework provides <code>NLTokenizer</code> to chunk text by word, sentence, paragraph or document. It uses language-specific rules which are generally good but might not always be exactly what you want. Still, it’s a nice option so you should at least try it the next time you need to tokenize some text.
+</p>
+<p>You’ll use <code>NLTokenizer</code> as a preprocessing step when you implement language translation in the next chapter. In the meantime, you can check out <em>NLExtras.playground</em> in the <em>projects/final/playgrounds</em> folder to see sample code for both part-of-speech tagging and tokenization.
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Use Apple’s new Natural Language framework to take advantage of fast, well trained machine-learning models for NLP.
+</p></li>
+
+<li>
+<p><code>NLLanguageRecognizer</code> can identify the language used in a piece of text.
+</p></li>
+
+<li>
+<p><code>NLTagger</code> and <code>NLTagScheme</code> allow you to chunk text into specific, labeled types. There are several built-in tagging schemes available, and you can specify your own.
+</p></li>
+
+<li>
+<p><code>NLTokenizer</code> can break up text into documents, paragraphs, sentences or words.
+</p></li>
+
+<li>
+<p>Use Create ML and <code>MLTextClassifier</code> to train your own models to classify larger chunks of text, like sentences, paragraphs or documents.
+</p></li>
+
+<li>
+<p>Use Create ML and <code>MLWordTagger</code> to train models to classify text at the word level.
+</p></li>
+
+<li>
+<p><code>NLModel</code> wraps Create ML models like <code>MLTextClassifier</code> and <code>MLWordTagger</code> in a way that ensures inputs are preprocessed in your app the same way they were during training. It’s also the required type for custom tagging schemes used with <code>NLTagger</code>.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>This chapter covered most of what Apple makes easy via the Natural Language framework. You can find a completed version of the project in the chapter resources at <em>projects/final/SMDB</em>. When you’re ready, go on to the next chapter, where you’ll learn how to implement more advanced NLP features that involve creating custom models in Keras. You’ll continue working with this app, adding the ability to translate Spanish-language reviews into English.
+</p></body></html>

@@ -1,0 +1,853 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 4: Getting Started With Python &amp; Turi Create</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 4: Getting Started with Python &amp; Turi Create</h1>
+
+<p>Congratulations! If you’ve made it this far, you’ve developed a strong foundation for absorbing machine learning material. However, before we can move forward, we need to address the 10,000 pound snake in the room... Python. Until this point, you’ve made do with Xcode and Swift, however, if you’re going to get serious about Machine Learning, then it’s best you prepare yourself to learn some Python. In this chapter,
+</p>
+<ul>
+<li>
+<p>You’ll learn how to set up and use tools from the Python ecosystem for data science and machine learning (ML).
+</p></li>
+
+<li>
+<p>You’ll install <em>Anaconda</em> and use its Navigator GUI.
+</p></li>
+
+<li>
+<p>You’ll use terminal commands to create ML environments which you’ll use throughout this book.
+</p></li>
+
+<li>
+<p>Finally, you’ll use <em>Jupyter notebooks</em>, which are very similar to Swift Playgrounds, to explore the Python language, data science libraries, and <em>Turi Create</em>, Apple’s ML-as-a-Service.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Starter folder</h2>
+
+<p>The starter folder for this chapter contains:
+</p>
+<ul>
+<li>
+<p><em>notebook</em> folder: The sample Jupyter notebook data files.
+</p></li>
+
+<li>
+<p><em>.</em><em>yaml</em> files: Used to import pre-configured environments, if you want to skip the instructions for configuring the environments yourself.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Python</h2>
+
+<p>Python is the dominant programming language used for data science and machine learning. As such, there’s a myriad of tools available for the Python community to support data science and machine learning development. These include:
+</p>
+<ul>
+<li>
+<p><em>Data science libraries</em>: Matplotlib, NumPy, Pandas, SciPy
+</p></li>
+
+<li>
+<p><em>Machine learning libraries</em>: Caffe2, Keras, Microsoft Cognitive Toolkit, TensorFlow, Theano, scikit-learn
+</p></li>
+
+<li>
+<p><em>ML-as-a-Service</em>: Amazon Machine Learning, Google ML Kit, IBM Watson, Microsoft Azure Machine Learning Studio, Turi Create
+</p></li>
+
+<li>
+<p><em>Tools</em>: <code>coremltools</code>, <code>virtualenv</code>, <code>pip</code>, Anaconda, Docker, Jupyter notebooks, Google Colaboratory
+</p></li>
+</ul>
+
+<p>If you know the Swift programming language, you’ll find that although Python is quite different, it also shares some similarities with Swift. For instance:
+</p>
+<ul>
+<li>
+<p>You <code>import</code> modules similarly to Swift modules.
+</p></li>
+
+<li>
+<p>It has the similar concepts for primitive types, tuples, lists, dictionaries, operators, loops, conditionals.
+</p></li>
+
+<li>
+<p>You can create objects, classes, functions.
+</p></li>
+</ul>
+
+<p>Of course, there are some differences too. For example:
+</p>
+<ul>
+<li>
+<p>Python is interpreted, not compiled.
+</p></li>
+
+<li>
+<p>You define closures, functions, classes with indentation instead of <code>{ ... }</code>.
+</p></li>
+
+<li>
+<p>Naming conventions tend toward terse abbreviations, similar to C programming.
+</p></li>
+
+<li>
+<p>Module and function names are <i>snake</i><i>_</i><i>case</i>, while class names and exception names are <i>PascalCase</i>.
+</p></li>
+
+<li>
+<p>Comments (docstrings) start with <code>#</code> not <code>//</code>.
+</p></li>
+
+<li>
+<p>Multi-line comments begin and end with <code>&quot;&quot;&quot;</code> instead of <code>/*</code> and <code>*/</code>, and the end <code>&quot;&quot;&quot;</code> is on its own line. These are similar to the multi-line strings in Swift.
+</p></li>
+
+<li>
+<p><code>True</code>/<code>False</code>, not <code>true</code>/<code>false</code>.
+</p></li>
+
+<li>
+<p>Dynamic types, no support for constants; no <code>let</code> or <code>var</code>.
+</p></li>
+
+<li>
+<p>Enumerations, but no <code>switch</code>.
+</p></li>
+</ul>
+
+<p>After you set up the tools, you’ll try out some Python while learning about the libraries. If you’d like some more practice or information, here are two helpful resources:
+</p>
+<ul>
+<li>
+<p>Michael Kennedy’s November 2014 <a href="https://blog.michaelckennedy.net/2014/11/26/comparison-of-python-and-apples-swift-programming-language-syntax/">Comparison of Python and Swift Syntax</a>
+</p></li>
+
+<li>
+<p>Jason Brownlee’s May 2016 <a href="https://machinelearningmastery.com/crash-course-python-machine-learning-developers/">Crash Course in Python for Machine Learning Developers</a>: includes NumPy, Matplotlib and Pandas examples.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Packages and environments</h2>
+
+<p>Python is already installed on <em>macOS</em>. However, using this installation may cause version conflicts because some people use Python 2.7 while others use Python 3.x, which are incompatible branches of the same language. To further complicate things, working on machine learning projects requires integrating the correct versions of numerous software libraries, also known as “packages”.
+</p>
+<div class="note">
+<p><em>Note</em>: The Python development team will <a href="https://www.python.org/dev/peps/pep-0373/#update">stop supporting Python 2.7 in 2020</a>, so the major open source Python packages have <a href="https://python3statement.org">pledged to drop support for Python 2.7 no later than 2020</a>.
+</p></div>
+
+<p>Most people create <em>environments</em> where they install specific versions of Python and the packages they need. You can have multiple of these environments on the same computer, each with its own Python interpreter and its own set of Python packages.
+</p>
+<p>The most basic toolset includes the environment manager <code>virtualenv</code> and the package manager <code>pip</code>. Aside from setting up the environment, you still have to figure out which versions of which packages you need — a very manual process, with a high probability of frustration.
+</p>
+<p>There <i>is</i> a better way!
+</p>
+<h3 class="segment-chapter">Conda</h3>
+
+<p>The data science community developed <em>Conda</em> to make life easier. Conda handles Python language versions, Python packages, and associated native libraries. It’s both an environment manager and a package manager. And if you need a package that Conda doesn’t know about, you can use <code>pip</code> within a <code>conda</code> environment to grab the package.
+</p>
+<p>Conda comes in two distributions:
+</p>
+<ul>
+<li>
+<p><em>Miniconda</em>: Includes only the packages needed to run Conda. (400 MB)
+</p></li>
+
+<li>
+<p><em>Anaconda</em>: Includes all of the standard packages needed for machine learning. (2 GB)
+</p></li>
+</ul>
+
+<p>You’ll be using <em>Anaconda</em> in this chapter. It doesn’t take long to install, and it’s way more convenient!
+</p>
+<h2 class="segment-chapter">Installing Anaconda</h2>
+
+<p>In a browser, navigate to <a href="https://www.anaconda.com/download/#macos">https://www.anaconda.com/download/#macos</a>, and download the <em>Python 3.7</em> version:
+</p><div class="image-85"><img src="graphics/img60.png"  alt="" title="" /></div>
+<p>Don’t worry about the two 500+ MB installers in the fine print; it’s only 643 MB for <i>both</i> installers.
+</p>
+<p>After downloading, run the installer. When prompted to <em>Change Install Location...</em>, select <em>Install for me only</em>. This installs Anaconda in your home directory:
+</p><div><img src="graphics/img61.png" height="50%"  alt="" title="" /></div>
+<p>If it says you can’t install it there, click the <em>Install on a specific disk...</em> button, then click back to the <em>Home</em> button — it should be more agreeable:
+</p><div><img src="graphics/img62.png" height="50%"  alt="" title="" /></div>
+<p>While you’re waiting for the installation to finish, scroll down to the <em>Get Started</em> links and take a closer look at <em>Anaconda Training</em>:
+</p><div class="image-85"><img src="graphics/img63.png"  alt="" title="" /></div>
+<p>These are video courses about using Python for machine learning. You can view some parts for free, while others require you to be a subscriber before you can watch.
+</p>
+<h3 class="segment-chapter">Using Anaconda navigator</h3>
+
+<p>Anaconda comes with a desktop GUI that you can use to create environments and install packages in an environment. There’s also a handy button to start Jupyter notebooks in specific environments — more about this later.
+</p>
+<div class="note">
+<p><em>Note</em>: If you see a prompt to update Anaconda Navigator, do that later when it’s convenient — but don’t launch it from the updater prompt. Instead, locate Anaconda Navigator in <em>Finder</em>, and open it there.
+</p></div>
+
+<p>From within <em>Finder</em>, locate and start <em>~/anaconda3/Anaconda Navigator</em>. Select the <em>Environments</em> tab to see the <em>base (root)</em> environment and its installed packages:
+</p><div class="image-70"><img src="graphics/img64.png"  alt="" title="" /></div>
+<p>There are 249 packages installed, however, you won’t need most of them for this book. That said, there are three ML packages needed that aren’t in the base environment:
+</p>
+<ul>
+<li>
+<p><em>Keras</em>: A high-level toolkit for building neural networks that works with TensorFlow, Theano, and Microsoft Cognitive Toolkit.
+</p></li>
+
+<li>
+<p><em>TensorFlow</em>: Google’s library for building computational graphs.
+</p></li>
+
+<li>
+<p><em>Turi Create</em>: Apple’s ML-as-a-Service framework.
+</p></li>
+</ul>
+
+<p>Anaconda knows about Keras and TensorFlow, so you <i>could</i> install them with Navigator. However, <a href="https://www.tensorflow.org/install/install_mac">TensorFlow’s installation instructions</a> advise against this, so you’ll use <code>pip</code> to install all three.
+</p>
+<h2 class="segment-chapter">Setting up a base ML environment</h2>
+
+<p>In this section, you’ll set up some environments. If you prefer a quicker start, <em>Import mlenv.yaml</em> into the <em>Navigator</em> and skip down to the section <em>Jupyter Notebooks</em>.
+</p>
+<h3 class="segment-chapter">Python libraries for data science</h3>
+
+<p>Begin by creating a custom base environment for ML, with <i>NumPy</i>, <i>Pandas</i>, <i>Matplotlib</i>, <i>SciPy</i> and <i>scikit-learn</i>. You’ll be using these data science libraries in this book, but they’re not automatically included in new Conda environments.
+</p>
+<ul>
+<li>
+<p><em>NumPy</em>: Functions for working with multi-dimensional arrays.
+</p></li>
+
+<li>
+<p><em>Pandas</em>: Data structures and data analysis tools.
+</p></li>
+
+<li>
+<p><em>Matplotlib</em>: 2D plotting library.
+</p></li>
+
+<li>
+<p><em>Seaborn</em>: Statistical data visualization library.
+</p></li>
+
+<li>
+<p><em>SciPy</em>: Modules for statistics, optimization, integration, linear algebra, Fourier transforms, and more, using NumPy arrays.
+</p></li>
+
+<li>
+<p><em>scikit-learn</em>: Machine learning library.
+</p></li>
+</ul>
+
+<p>Once you have the custom base environment for ML, you can clone it to create separate environments for the ML libraries, Keras, TensorFlow, and Turi Create.
+</p>
+<p>In Anaconda Navigator, <em>Create</em> a new environment named <em>mlenv</em>, with <em>Python 3.6</em>:
+</p><div class="image-70"><img src="graphics/img65.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: You may be presented with other (newer) versions of Python, <em>be sure to select Python version 3.6</em>. If you choose another version of Python, some of the machine learning libraries you’ll need for the book may not work with any version.
+</p></div>
+
+<p>It takes about a minute to install the 17 utility packages:
+</p><div class="image-75"><img src="graphics/img66.png"  alt="" title="" /></div>
+<p>Next, to add the <em>scikit</em> ML libraries: change <em>Installed</em> to <em>Not installed</em>, search for <code>scikit</code>, and check the checkboxes next to <code>scikit-image</code> and <code>scikit-learn</code>:
+</p><div class="image-75"><img src="graphics/img67.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: The version you see may differ from the one in the screenshot. Most of the Python libraries you’ll be using are in active development, which means they’re version numbers are constantly changing. Unless specifically mentioned, feel free to install the latest version of any of these libraries.
+</p></div>
+
+<p>You also need the <em>Seaborn</em> library, so change the search term to <em>seaborn</em>, then select that package:
+</p><div><img src="graphics/img68.png" height="40%"  alt="" title="" /></div>
+<p>Now click <em>Apply</em>. Conda checks the selected packages’ dependencies, then displays the list of 38 packages it will install, including <code>scipy</code>, <code>matplotlib</code>, <code>pandas</code> and <code>numpy</code>:
+</p><div><img src="graphics/img69.png" height="40%"  alt="" title="" /></div>
+<p>Click <em>Apply</em> again. This time, you may want to grab a drink or a snack while you wait.
+</p>
+<p>When it’s all done, clear the search field and show <em>Installed</em>. You now have 55 packages installed.
+</p><div class="image-80"><img src="graphics/img70.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: The actual number of packages you see might be slightly different. If you see something like 200+ packages, quit and restart Anaconda Navigator. When it restarts, that number should be closer to 55.
+</p></div>
+
+<h3 class="segment-chapter">Adding Jupyter to base ML environment</h3>
+
+<p>Because you’ll be coding in Jupyter notebooks, you need to first add Jupyter to <em>mlenv</em>. Select the <em>Home</em> Tab. Notice the <em>Applications on</em> field contains <em>mlenv</em>, and every app displays an <em>Install</em> button:
+</p><div class="image-80"><img src="graphics/img71.png"  alt="" title="" /></div>
+<p>Click the Jupyter Notebook <em>Install</em> button.
+</p>
+<p>Wait until the button title changes to <em>Launch</em>. Then, switch back to the <em>Environments</em> Tab and you’ll see that <em>mlenv</em> now contains 93 packages:
+</p><div class="image-80"><img src="graphics/img72.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: Technically, you don’t need to install the Jupyter app in your environment. You can start Jupyter from the command line, but in that case, you’d need to first <code>activate</code> the environment you want to code in. By installing Jupyter here, you can start it in your environment simply by clicking the launch button.
+</p></div>
+
+<div class="note">
+<p><em>Note</em>: There is also <em>JupyterLab</em>. This is the next generation of Jupyter with a more advanced UI but it is still in beta. Feel free to install it and have a look, but for this book we use Jupyter Notebook, not JupyterLab.
+</p></div>
+
+<h3 class="segment-chapter">An important note about package versions</h3>
+
+<p>Technology moves fast, also in the world of Python. Chances are that by the time you read this book, newer versions are available for the packages that we’re using. And it’s quite possible these newer versions may not be 100% compatible with older versions.
+</p>
+<p>For example, in this book we use Keras version 2.2.0. But newer versions of Keras may not work with some of the code examples in this book. Even version 2.2.1, which seems like a minor upgrade that shouldn’t have much of an impact, actually breaks things.
+</p>
+<p>Here’s a dirty little secret you should be aware of: You do not need to use the latest, greatest version of these packages. Keras 2.2.0 works fine for our purposes and we can’t keep updating the book every time a new version comes out and breaks something.
+</p>
+<p>So, don’t feel compelled to always upgrade to the newest versions. If you’ve set up a Python environment for a machine learning project and it works well, then don’t fix what isn’t broken. It’s not uncommon for people in the industry to use versions of packages that are 6 months to a year old.
+</p>
+<p>Our advice: If your code works fine and you don’t need any of the new features or essential bug fixes, then keep your Python installation stable and only update your packages when you have a good reason.
+</p>
+<h2 class="segment-chapter">Jupyter notebooks</h2>
+
+<p>With Jupyter notebooks, which are a lot like Swift Playgrounds, you can write and run code, and you can write and render markdown to explain the code.
+</p>
+<h3 class="segment-chapter">Starting Jupyter</h3>
+
+<p>In <em>Anaconda Navigator’s Home</em> tab, with <em>mlenv</em> selected, click the Jupyter <em>Launch</em> button. The following command appears in a new <em>Terminal</em> window, followed by messages about a server starting and how to shut it down:
+</p><pre class="code-block">/anaconda3/envs/mlenv/bin/jupyter_mac.command ; <span class="hljs-built_in">exit</span>;</pre>
+<p>Keep this Terminal window open!
+</p>
+<p>A web browser window also opens, showing your home directory:
+</p><div class="image-75"><img src="graphics/img73.png"  alt="" title="" /></div>
+<p>Navigate to the <em>starter</em> folder for this chapter, and open <em>notebook/mlbase.ipynb</em>:
+</p><div class="image-75"><img src="graphics/img74.png"  alt="" title="" /></div>
+<p>The notebook appears in a new browser tab:
+</p><div class="image-75"><img src="graphics/img75.png"  alt="" title="" /></div>
+<h3 class="segment-chapter">Pandas and Matplotlib</h3>
+
+<p>At the moment, there’s an empty cell. In that cell, type the following lines:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+<span class="hljs-keyword">import</span> pandas <span class="hljs-keyword">as</span> pd
+<span class="hljs-keyword">import</span> matplotlib.pyplot <span class="hljs-keyword">as</span> plt</pre>
+<p>This imports the NumPy and Pandas modules into the current session. It also imports the <code>pyplot</code> module of Matplotlib, and gives everything their customary abbreviated aliases: <code>np</code> for NumPy, <code>pd</code> for Pandas and <code>plt</code> for Matplotlib. There’s no output for <code>import</code> statements, although you might see a warning about future deprecation of a module.
+</p>
+<p>Press <em>Shift-Enter</em> to run this code, which will also open a new cell below it.
+</p>
+<p>Next, type these lines in the newly created empty cell, then press <em>Shift-Enter</em> again:
+</p><pre class="code-block">data = pd.read_json(<span class="hljs-string">'corpus.json'</span>, orient=<span class="hljs-string">'records'</span>)
+data.head()</pre>
+<p>The <em>starter/notebook</em> folder contains the file <em>corpus.json</em>. The code you just entered loads the data from this JSON file into a <code>DataFrame</code> — the Pandas data container, with rows and columns like a spreadsheet. It has powerful functions for manipulation, which is important for massaging data to get the best input for training a model.
+</p>
+<p>The <code>orient</code> parameter indicates the JSON string format: <code>&apos;records&apos;</code> means it’s a list of <code>column -&gt; value</code>. You’ll take a look at the documentation for this function in a moment.
+</p>
+<p>The <code>head()</code> function shows the (default) first five rows:
+</p><div class="image-85"><img src="graphics/img76.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: <em>Shift-Enter</em> runs the current cell and, if this is the last cell, opens a new cell below it; this is convenient when you’re testing code as you write it. <em>Control-Enter</em> runs the current cell; you’d do this when you add something to an earlier cell and want to update it. The bracketed numbers in the margin keep track of the order you run the cells, regardless of their order within the notebook.
+</p></div>
+
+<p>In the next empty cell, type the following line, then press <em>Shift-Enter</em>:
+</p><pre class="code-block">?data.tail(<span class="hljs-number">3</span>)</pre>
+<p>The question mark shows the documentation for this function, instead of running the function:
+</p><div class="image-70"><img src="graphics/img77.png"  alt="" title="" /></div>
+<p>Press <em>Esc</em> or the <em>x</em> button to close the documentation.
+</p>
+<p>Delete the question mark. Then press <em>Control-Enter</em> or <em>Shift-Enter</em> to run the cell, which will display the last <em>three rows</em> of data:
+</p><div class="image-85"><img src="graphics/img78.png"  alt="" title="" /></div>
+<p>If you’d like, you can also see documentation in a pop-up box: select <code>pd.read_json</code> in the second cell, then press <em>Shift-Tab-Tab</em>:
+</p><div class="image-85"><img src="graphics/img79.png"  alt="" title="" /></div>
+<p>The question mark doesn’t work on this line unless you delete <code>data =</code>.
+</p>
+<p>In the next empty cell, type <code>data.d</code>. Then press <em>Tab</em> to see a list of options:
+</p><div class="image-40"><img src="graphics/img80.png"  alt="" title="" /></div>
+<p>Now, press <em>Enter</em> to select <code>data.describe</code>. Then type <code>()</code>, and press <em>Shift-Enter</em>:
+</p><div class="image-85"><img src="graphics/img81.png"  alt="" title="" /></div>
+<p>The output includes the column identifiers: <code>author</code>, <code>text</code>, and <code>title</code>. You can use these to sort the data.
+</p>
+<p>Next, <em>Shift-Enter</em> the following line:
+</p><pre class="code-block">data.sort_values(by=<span class="hljs-string">'title'</span>)</pre><div class="image-85"><img src="graphics/img82.png"  alt="" title="" /></div>
+<p>You can extract a column into a separate <code>Series</code> object and count how often each value appears:
+</p><pre class="code-block">authors = data.author
+freq = authors.value_counts()
+freq</pre>
+<p>As in Swift Playgrounds, an object name (<code>freq</code>) on a line by itself displays that object.
+</p><div class="image-40"><img src="graphics/img83.png"  alt="" title="" /></div>
+<p>Frequency varies from 6 to 361. You can plot a histogram of this distribution:
+</p><pre class="code-block">plt.hist(freq, bins=<span class="hljs-number">100</span>)
+plt.show()</pre><div class="image-50"><img src="graphics/img84.png"  alt="" title="" /></div>
+<p>Specifying <code>bins=100</code> divides the range [6, 361] into 100 consecutive, non-overlapping intervals, called <i>bins</i> or <i>buckets</i>. The histogram’s x-axis has 100 bins, between 0 and 361-ish. The y-axis shows the number of authors in each bin.
+</p>
+<div class="note">
+<p><em>Note</em>: This example is from our tutorial <a href="https://www.raywenderlich.com/185515/natural-language-processing-on-ios-with-turi-create">Natural Language Processing on iOS with Turi Create</a>. It trains a natural language model with lines from poems by famous authors. The trained model can be used to classify new text. For each author it knows about, it computes the probability that this author wrote the new text. The <code>freq</code> values here should set off alarm bells — there’s way too much bias toward Emily Dickinson, so the model will classify most test texts as written by her.
+</p></div>
+
+<h3 class="segment-chapter">Differences between Python and Swift</h3>
+
+<p>In this section, you’ll spend some time getting familiar with common Python syntax.
+</p>
+<p>A major syntax difference between Python and most other programming languages is the importance of indentation. With Python, indentation replaces <code>{}</code> to define blocks. For example, an if-statement looks like this:
+</p><pre class="code-block"><span class="hljs-keyword">if</span> a == b:
+    print(<span class="hljs-string">'a and b are equal'</span>)
+    <span class="hljs-keyword">if</span> a &gt; c:
+        print(<span class="hljs-string">'and a is also greater than c'</span>)</pre>
+<p>Python also has a built-in <code>None</code> type to represent “no value”. This is similar to Swift’s <code>nil</code> but Python does not have optionals. To test for a no-value result, you should use <code>is</code> or <code>is not</code>, instead of the <code>==</code> you’d use in Swift.
+</p><pre class="code-block"><span class="hljs-keyword">if</span> authors <span class="hljs-keyword">is</span> <span class="hljs-keyword">None</span>:
+    print(<span class="hljs-string">'authors is None'</span>)
+<span class="hljs-keyword">else</span>:
+    print(<span class="hljs-string">'authors is not None'</span>)</pre>
+<p>The output is:
+</p><pre class="code-block">authors is not None</pre>
+<p>Here’s how you define and call a function:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">mysum</span><span class="hljs-params">(x, y)</span>:</span>
+    result = x + y
+    <span class="hljs-keyword">return</span> result
+
+print(mysum(<span class="hljs-number">1</span>, <span class="hljs-number">3</span>))</pre>
+<p>This outputs <code>4</code>.
+</p>
+<p>Notice the indentation on the lines inside the function. You have to un-indent the line with <code>print</code>, so that Python knowns this line is outside the function. Coding convention says to leave an extra blank line after the function definition, but it’s not a syntax rule, and you may be more comfortable omitting the blank line.
+</p>
+<p>Also notice how you just wrote <code>result = x + y</code> to put the sum into a new variable. There is no need to write <code>let</code> or <code>var</code> in Python.
+</p>
+<p>Here’s an example of how to use a loop and a list:
+</p><pre class="code-block">mylist = [<span class="hljs-number">1</span>, <span class="hljs-number">2</span>]
+mylist.append(<span class="hljs-number">3</span>)
+<span class="hljs-keyword">if</span> mylist:
+    print(<span class="hljs-string">'mylist is not empty'</span>)
+
+<span class="hljs-keyword">for</span> value <span class="hljs-keyword">in</span> mylist:
+    print(value)
+
+print(<span class="hljs-string">'List length: %d'</span> % len(mylist))</pre>
+<p>Lists in Python are similar to arrays in Swift. To test whether a list is empty, use its name. <code>for</code> loops are also similar to Swift, but they use the <code>:</code> plus indentation syntax. The <code>len()</code> function works on any Python collection object, and it returns the length of the list, in a similar way to how the <code>.count</code> property in Swift returns the number of items in an array.
+</p>
+<p>Run those commands, and you’ll see this output:
+</p><pre class="code-block">mylist is not empty
+1
+2
+3
+List length: 3</pre>
+<p>To make a point about indentation, go ahead and add a blank line, but indent the last statement to match the <code>print</code> statement in the loop, like so:
+</p><pre class="code-block"><span class="hljs-keyword">for</span> value <span class="hljs-keyword">in</span> mylist:
+    print(value)
+
+    print(<span class="hljs-string">'List length: %d'</span> % len(mylist))</pre>
+<p>Now, both print statements are considered to be inside the loop, and so the output becomes:
+</p><pre class="code-block">1
+List length: 3
+2
+List length: 3
+3
+List length: 3</pre>
+<p>By the way, string literals in Python can use single quotes or double quotes (or even triple quotes for multiline strings). It doesn’t really matter which one you use, just pick a style you like and be consistent with it. Writing <code>&apos;List length: %d&apos; % len(mylist)</code> is similar to doing <code>String(format: &quot;List length: %d&quot;, myList.count)</code> in Swift. Python 3.6 also has string interpolation, just like in Swift, but this isn&apos;t commonly used yet.
+</p>
+<p>Excellent, you survived a session with Python and used a few library functions! Feel free to play around some more until you get the hang of it. This book uses a lot of Python libraries and functions, so it’s good to understand the basic syntax before moving on.
+</p>
+<h2 class="segment-chapter">Transfer learning with Turi Create</h2>
+
+<p>Despite the difference in programming languages, deep down Turi Create shares a lot with Create ML, including transfer learning. With Turi Create v5, you can even do transfer learning with the same <code>VisionFeaturePrint_Screen</code> model that Create ML uses.
+</p>
+<p>In this section, you’ll create the same HealthySnacks model as the previous chapter, except this time, you’ll use Turi Create. Unlike Create ML, which allowed you to train your model through the playgrounds UI in Xcode, Turi Create needs some coding when compared to Create ML. This means you’ll learn more about working with Python.
+</p>
+<h3 class="segment-chapter">Creating a Turi Create environment</h3>
+
+<p>First, you need a new environment with the <code>turicreate</code> package installed. You’ll clone the <em>mlenv</em> environment to create <em>turienv</em>, then you’ll install <code>turicreate</code> in the new environment. Anaconda doesn’t know about <code>turicreate</code>, so you’ll have to <code>pip install</code> it from within Terminal.
+</p>
+<div class="note">
+<p><em>Note</em>: Again, if you prefer a quicker start, <em>Import turienv.yaml</em> into the <em>Navigator</em> and skip down to the section <em>Turi Create Notebook</em>.
+</p></div>
+
+<p>While it’s possible to clone mlenv in Anaconda Navigator’s Environments tab, you’ll be using a command line to install <code>turicreate</code>, so it’s just as easy to use a command line to clone, as well.
+</p>
+<div class="note">
+<p><em>Note</em>: If you’ve changed Terminal’s default shell to something different from <i>bash</i>, check that your <code>$PATH</code> includes <code>~/anaconda3/bin</code>.
+</p></div>
+
+<p>Open a new <em>Terminal</em> window, and enter this command:
+</p><pre class="code-block">conda create -n turienv --clone mlenv</pre>
+<p>This does the same as Anaconda Navigator’s Clone button: it creates an environment named <em>turienv</em>, which is cloned from <em>mlenv</em>.
+</p>
+<p>Wait a little while until you see the message:
+</p><pre class="code-block"><span class="hljs-comment">#</span>
+<span class="hljs-comment"># To activate this environment, use:</span>
+<span class="hljs-comment"># &gt; conda activate turienv</span>
+<span class="hljs-comment">#</span>
+<span class="hljs-comment"># To deactivate an active environment, use:</span>
+<span class="hljs-comment"># &gt; conda deactivate</span>
+<span class="hljs-comment">#</span></pre>
+<div class="note">
+<p><em>Note</em>: If you see a message to update Conda, go ahead and do that.
+</p></div>
+
+<p>Take a look at <em>Anaconda Navigator’s Home</em> tab. Because you used Conda to create turienv, it appears in Anaconda Navigator. Also, because you cloned it from mlenv, Jupyter is ready to launch:
+</p><div class="image-50"><img src="graphics/img85.png"  alt="" title="" /></div>
+<p>Time to install Turi Create into this environment. From the same Terminal window, enter the <em>activate</em> command:
+</p><pre class="code-block">conda activate turienv</pre>
+<p>The command line prompt now starts with <code>(turienv)</code>, showing it’s the active environment.
+</p>
+<p>Enter this command to install the <code>turicreate</code> package:
+</p><pre class="code-block">pip install -U turicreate</pre>
+<p>This downloads and installs the newest available version of the <code>turicreate</code> package, which lets you use the Vision framework model for transfer learning.
+</p>
+<h3 class="segment-chapter">List pip-installed packages</h3>
+
+<p>Take a quick look at the <em>turienv</em> environment in <em>Navigator</em>; it still shows only 105 packages. That’s because packages installed with <code>pip</code> don’t show up in Navigator.
+</p>
+<p>In <em>Terminal</em>, use this command to list all of the packages in the active environment or a specific package:
+</p><pre class="code-block">conda list
+conda list coremltools</pre>
+<p>You need the <code>coremltools</code> package to create Core ML models from Turi Create models. Installing <code>turicreate</code> also installs <code>coremltools</code>.
+</p>
+<p>The output of the second command looks similar to this:
+</p><pre class="code-block"><span class="hljs-comment"># packages in environment at /Users/amt1/anaconda3/envs/mlenv:</span>
+<span class="hljs-comment">#</span>
+<span class="hljs-comment"># Name                    Version                   Build  Channel</span>
+coremltools               2.1.0                     &lt;pip&gt;</pre>
+<p>The <em>Build Channel</em> value <code>&lt;pip&gt;</code> shows <code>coremltools</code> was installed with <code>pip</code>, not <code>conda</code>.
+</p>
+<h3 class="segment-chapter">Turi Create notebook</h3>
+
+<div class="note">
+<p><em>Note</em>: If you skipped the manual environment setup and imported turienv.yaml into Anaconda Navigator, use the Jupyter <em>Launch</em> button on the <em>Anaconda Navigator Home</em> Tab instead of the command line below, then navigate in the browser to <em>starter/notebook</em>.
+</p></div>
+
+<p>This time, you’ll start Jupyter in the folder where the notebooks are stored; locate <em>starter/notebook</em> in <em>Finder</em>.
+</p>
+<div class="note">
+<p><em>Note</em>: If you downloaded the <em>snacks</em> dataset for the previous chapter, copy or move it into <em>starter/notebook</em>. Otherwise, double-click <em>starter/notebook/snacks-download-link.webloc</em> to download and unzip the <em>snacks</em> dataset in your default download location, then move the <em>snacks</em> folder into <em>starter/notebook</em>.
+</p></div>
+
+<p>In <em>Terminal</em>, enter the following command to start a Jupyter notebook in the <code>turienv</code> environment, starting from this directory:
+</p><pre class="code-block">jupyter notebook &lt;drag the starter/notebook folder in Finder to here&gt;</pre><div class="image-75"><img src="graphics/img86.png"  alt="" title="" /></div>
+<p>In the browser, open <em>HealthySnacks-Turi.ipynb</em>. There’s only an empty cell.
+</p>
+<p>Type the following commands in this cell and press <em>Shift-Enter</em>:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> turicreate <span class="hljs-keyword">as</span> tc
+<span class="hljs-keyword">import</span> matplotlib.pyplot <span class="hljs-keyword">as</span> plt</pre>
+<p>You’re importing the Turi Create package and the <code>pyplot</code> module of the Matplotlib package into the current session, with aliases <code>tc</code> and <code>plt</code>. You may get a FutureWarning message, which you can safely ignore.
+</p>
+<p>In the next cell, <em>Shift-Enter</em> this command (put it all on one line):
+</p><pre class="code-block">train_data = tc.image_analysis.load_images(<span class="hljs-string">"snacks/train"</span>, with_path=<span class="hljs-keyword">True</span>)</pre>
+<p>This loads all the images from the <em>snacks/train</em> directory into an <code>SFrame</code>, the data container for Turi Create. An <code>SFrame</code> contains rows and columns, like a Pandas <code>DataFrame</code> — in fact, you can create an <code>SFrame</code> from a <code>DataFrame</code>. <code>SFrame</code> has powerful functions for manipulation, similar to <code>DataFrame</code>. It’s also optimized for loading from disk storage, which is important for large data sets that can easily overwhelm RAM.
+</p>
+<p>Like Create ML’s <code>MLDataTable</code>, an <code>SFrame</code> keeps only the image metadata in memory.
+</p>
+<div class="note">
+<p><em>Note</em>: It’s safe to ignore warnings about .DS_Store being an unsupported image format.
+</p></div>
+
+<p>This <code>SFrame</code> object contains a row for each image, as well as the path of the folder the images were loaded from. This <code>SFrame</code> should contain 4838 images. Verify this by asking for its length:
+</p><pre class="code-block">len(train_data)</pre>
+<div class="note">
+<p><em>Note</em>: Run each command in its own cell. Remember <em>Shift-Enter</em> runs the current cell and opens a new cell below it. Always wait for the <code>[*]</code> in the margin to turn into a number, indicating the command has finished running.
+</p></div>
+
+<p>Next, look at the actual contents of the <code>SFrame</code>:
+</p><pre class="code-block">train_data.head()</pre>
+<p>The <code>head()</code> function shows the first 10 rows:
+</p><div class="image-80"><img src="graphics/img87.png"  alt="" title="The first rows in the SFrame" /></div>
+<p>Even though the <code>SFrame</code> only shows the image’s height and width in the table, it actually contains the complete image. Run the following command to see the actual images:
+</p><pre class="code-block">train_data.explore()</pre>
+<p>This opens a new window with image thumbnails (it may take a few seconds to load). Hover over a row to view a larger version of an image.
+</p><div class="image-70"><img src="graphics/img88.png"  alt="" title="Explore the training images" /></div>
+<p>This interactive visualization can be useful for a quick look at the training data. The <code>explore()</code> command only works with Turi Create on the Mac, not on Linux or from a Docker container.
+</p>
+<p>Enter this command to look at individual images directly inside the notebook, using Matplotlib’s <code>imshow()</code> command:
+</p><pre class="code-block">plt.imshow(train_data[<span class="hljs-number">0</span>][<span class="hljs-string">"image"</span>].pixel_data)</pre>
+<p>Here, <code>train_data[0]</code> gets the first row from the <code>SFrame</code>, <code>[&quot;image&quot;]</code> gets the object from the image column for that row, and <code>.pixel_data</code> turns this image object into something that matplotlib can show with the <code>plt.imshow()</code> command.
+</p><div class="image-70"><img src="graphics/img89.png"  alt="" title="Looking at an image with matplotlib" /></div>
+<p>Your notebook may show a different image than in the illustration, since Turi Create may have loaded your images in another order. Feel free to look at a few images by changing the row index (use any value from 0 to 4,837).
+</p>
+<p>There is one more piece of data to gather before you can start training — the name of the class for each image. The images are stored in subdirectories named after the classes — “apple,” “hot dog,” etc. The <code>SFrame</code> knows the path the image was loaded from, but these paths look something like this:
+</p><pre class="code-block">snacks/train/hot dog/8ace0d8a912ed2f6.jpg</pre>
+<p>The class for image <code>8ace0d8a912ed2f6.jpg</code> is “hot dog”, but it’s hidden inside that long path. To make this more obvious, you’ll write some code to extract the class name from the path. Run the following commands to extract the name of the first image’s class folder:
+</p><pre class="code-block"><span class="hljs-comment"># Grab the full path of the first training example</span>
+path = train_data[<span class="hljs-number">0</span>][<span class="hljs-string">"path"</span>]
+print(path)
+
+<span class="hljs-comment"># Find the class label</span>
+<span class="hljs-keyword">import</span> os
+os.path.basename(os.path.split(path)[<span class="hljs-number">0</span>])</pre>
+<p>Here, you’re getting the full path of the first image, then using the <code>os.path</code> Python package for dealing with path names. First, <code>os.path.split()</code> chops the path into two pieces: the name of the file (8ace0d8a912ed2f6.jpg) and everything leading up to it. Then <code>os.path.basename()</code> grabs the name of the last folder, which is the one with the class name. Since the first training image is of an apple, you get “apple.”
+</p>
+<div class="note">
+<p><em>Note</em>: The <code>#</code> character starts a comment in Python. Note that you first need to import the <code>os</code> package, or else Python won’t know what <code>os.path</code> is.
+</p></div>
+
+<p><em>Getting the class labels</em>
+</p>
+<p>OK, now you know how to extract the class name for a single image, but there are over 4,800 images in the dataset. As a Swift programmer, your initial instinct may be to use a <code>for</code> loop, but if you’re really Swift-y, you’ll be itching to use a <code>map</code> function. <code>SFrame</code> has a handy <code>apply()</code> method that, like Swift’s <code>map</code> or <code>forEach</code>, lets you apply a function to every row in the frame:
+</p><pre class="code-block">train_data[<span class="hljs-string">"path"</span>].apply(<span class="hljs-keyword">lambda</span> path: ...do something <span class="hljs-keyword">with</span> path...)</pre>
+<p>In Python, a <em>lambda</em> is similar to a closure in Swift — it’s just a function without a name. <code>train_data[&quot;path&quot;].apply()</code> performs this lambda function on every row in the path column. Inside the lambda, just put the above code snippet that you used to extract the class name from the full path:
+</p><pre class="code-block">train_data[<span class="hljs-string">"label"</span>] = train_data[<span class="hljs-string">"path"</span>].apply(<span class="hljs-keyword">lambda</span> path:
+    os.path.basename(os.path.split(path)[<span class="hljs-number">0</span>]))</pre>
+<p>Run the above cell and now the <code>SFrame</code> will have a new column called “label” with the class names. To verify this worked, run <code>train_data.head()</code> again — do this in a new cell, or scroll up to the fourth cell, and press <em>Control-Enter</em> to run it.
+</p><div class="image-40"><img src="graphics/img90.png"  alt="" title="The SFrame now has a new column" /></div>
+<p>You can also use <code>train_data.explore()</code> again for a visual inspection. Run this command to see the summary function:
+</p><pre class="code-block">train_data[<span class="hljs-string">"label"</span>].summary()</pre>
+<p>This prints out a few summary statistics about the contents of the <code>SFrame</code>’s label column:
+</p><div class="image-90"><img src="graphics/img91.png"  alt="" title="Summary for the label column" /></div>
+<p>As you can see, each of the classes has roughly the same number of elements. For some reason, <code>summary()</code> only shows the top 10 classes, but we have 20 in total. To see the number of rows for all of the classes, run the following command:
+</p><pre class="code-block">train_data[<span class="hljs-string">"label"</span>].value_counts().print_rows(num_rows=<span class="hljs-number">20</span>)</pre>
+<p>All right, that’s all you need to do with the data for now. You’ve loaded the images into an <code>SFrame</code>, and you’ve given each image a label, so Turi Create knows which class it belongs to.
+</p>
+<h3 class="segment-chapter">Let’s do some training</h3>
+
+<p>Once you have your data in an <code>SFrame</code>, training a model with Turi Create takes only a single line of code (OK, it’s three lines, but only because we have to fit it on the page):
+</p><pre class="code-block">model = tc.image_classifier.create(train_data, target=<span class="hljs-string">"label"</span>,
+                                   model=<span class="hljs-string">"VisionFeaturePrint_Screen"</span>,
+                                   verbose=<span class="hljs-keyword">True</span>, max_iterations=<span class="hljs-number">50</span>)</pre>
+<p>Alternatively, if training takes too long on your Mac, you can just load the Turi Create model from the current folder:
+</p><pre class="code-block">model = tc.load_model(<span class="hljs-string">"HealthySnacks.model"</span>)</pre>
+<p>This command creates a new image classifier from the <code>train_data</code> <code>SFrame</code>. The <code>target</code> parameter tells Turi Create that the class names are in the <code>SFrame</code>’s <code>label</code> column. By default, Turi Create only does 10 iterations, but you increase this to 50, so the logistic regression will train for up to 50 iterations.
+</p>
+<p>The first time you run this command, Turi Create downloads a pre-trained neural network. The <code>model</code> parameter contains the name of that neural network, in this case <em>VisionFeaturePrint</em><em>_</em><em>Screen</em>. This is the model used by Apple’s Vision framework, and is also the default model for Create ML.
+</p>
+<p>At the time of writing, Turi Create supports three model architectures: The other two are ResNet-50 and SqueezeNet version 1.1. ResNet-50 exports a Core ML model ~90MB, which is not really suited for use on mobile devices.
+</p>
+<p>SqueezeNet exports a Core ML model ~4.7MB, so it’s a better option. But VisionFeaturePrint_Screen is built into iOS 12, so it produces a <i>much</i> smaller model — only ~41<em>KB</em>.
+</p>
+<p>Turi Create, like Create ML, performs feature extraction on the images. This takes about the same amount of time as Create ML — 2m 22s on my MacBook Pro. And then comes the logistic regression:
+</p><div class="image-90"><img src="graphics/img92.png"  alt="" title="" /></div>
+<h3 class="segment-chapter">Validation</h3>
+
+<p>After 15 iterations, validation accuracy is close to training accuracy at ~90%. At 20 iterations, training accuracy starts to pull away from validation accuracy, and races off to 100%, while validation accuracy actually drops... Massive overfitting happening here! If the validation accuracy gets <i>worse</i> while the training accuracy still keeps improving, you’ve got an overfitting problem.
+</p>
+<p>It would’ve been better to stop training the model after about 15 iterations. But running the <code>image_classifier.create</code> command with <code>max_iterations=15</code> will also do the feature extraction all over again! Too bad Turi Create doesn’t let you save the intermediate states of the model, or stop the training when the validation accuracy shows a decreasing trend.
+</p>
+<p>Actually, in the next chapter, you’ll learn how to wrangle the Turi Create code — it’s open source, after all! — to save the extracted features, so you can experiment more with the classifier.
+</p>
+<div class="note">
+<p><em>Spoiler alert</em>: Keras, which we’ll talk about in an upcoming chapter, lets you save the best-so-far model while it’s training, so you can always retrieve the results from an earlier iteration in case your model suffers from overfitting. Keras also lets you stop early, if validation accuracy doesn’t improve over some given number of iterations (your choice).
+</p></div>
+
+<p>Let’s go ahead and evaluate this model on the test dataset.
+</p>
+<h3 class="segment-chapter">Testing</h3>
+
+<p>Run these commands to load the test dataset and get the class labels:
+</p><pre class="code-block">test_data = tc.image_analysis.load_images(<span class="hljs-string">"snacks/test"</span>, with_path=<span class="hljs-keyword">True</span>)
+
+test_data[<span class="hljs-string">"label"</span>] = test_data[<span class="hljs-string">"path"</span>].apply(<span class="hljs-keyword">lambda</span> path:
+       os.path.basename(os.path.split(path)[<span class="hljs-number">0</span>]))
+
+len(test_data)</pre>
+<p>The last command is just to confirm you’ve got 952 images.
+</p>
+<p>Next, run this command to evaluate the model and collect metrics:
+</p><pre class="code-block">metrics = model.evaluate(test_data)</pre>
+<p>Unlike Create ML, the output of this command doesn’t show any accuracy figures — you need to examine <code>metrics</code>. Run these commands in the same cell:
+</p><pre class="code-block">print(<span class="hljs-string">"Accuracy: "</span>, metrics[<span class="hljs-string">"accuracy"</span>])
+print(<span class="hljs-string">"Precision: "</span>, metrics[<span class="hljs-string">"precision"</span>])
+print(<span class="hljs-string">"Recall: "</span>, metrics[<span class="hljs-string">"recall"</span>])
+print(<span class="hljs-string">"Confusion Matrix:\n"</span>, metrics[<span class="hljs-string">"confusion_matrix"</span>])</pre>
+<p>Here are my metrics:
+</p><pre class="code-block">Accuracy:  0.8697478991596639
+Precision:  0.8753552272362406
+Recall:  0.8695450680272108
+Confusion Matrix:
++--------------+-----------------+-------+
+| target_label | predicted_label | count |
++--------------+-----------------+-------+
+|  ice cream   |      candy      |   1   |
+|    apple     |      banana     |   3   |
+|    orange    |    pineapple    |   2   |
+|    apple     |    strawberry   |   1   |
+|  pineapple   |      banana     |   1   |
+|  strawberry  |      salad      |   2   |
+|   popcorn    |      waffle     |   1   |
+|    carrot    |      salad      |   2   |
+|    orange    |    watermelon   |   1   |
+|   popcorn    |     popcorn     |   36  |
++--------------+-----------------+-------+
+[107 rows x 3 columns]
+Note: Only the head of the SFrame is printed.
+You can use print_rows(num_rows=m, num_columns=n) to print more rows and columns.</pre>
+<p>No surprises: Accuracy, precision and recall are all similar to the final validation accuracy of the model. Unlike Create ML, Turi Create gives only overall values for precision and recall, and you need some code to get precision and recall for each class. In the next chapter, you’ll learn how to get recall for each class.
+</p>
+<p>The confusion matrix shows only the first 10 rows: the model mistook one “ice cream” image for “candy,” three “apple” images for “banana,” etc. Presented this way, it doesn’t look much like a matrix.
+</p>
+<p>In the next chapter, you’ll learn how to get this nifty visualization:
+</p><div><img src="graphics/img93.png" height="60%"  alt="" title="The confusion matrix" /></div>
+<p>This heatmap shows small values as a cool color — black or dark purple — and large values as warm colors — red to orange to white. The larger the value, the brighter it gets. The correct matches are on the diagonal, so the highest values are there. With only 21 correct matches, “pretzel” stands out, but there are only 25 images in the pretzel folder, so 21 is OK. Purple numbers off the diagonal indicate problems. More about this in the next chapter!
+</p>
+<h3 class="segment-chapter">Exporting to Core ML</h3>
+
+<p>In the next cell, <em>Shift-Enter</em> this command:
+</p><pre class="code-block">model</pre>
+<p>This displays information about the model.
+</p><pre class="code-block">Class                                    : ImageClassifier
+
+Schema
+------
+Number of classes                        : 20
+Number of feature columns                : 1
+Input image shape                        : (3, 299, 299)
+
+Training summary
+----------------
+Number of examples                       : 4590
+Training loss                            : 1.2978
+Training time (sec)                      : 174.5081</pre>
+<p>Now you will save this model so you can load it with Core ML. There are two ways to save models using Turi Create. First:
+</p><pre class="code-block">model.save(<span class="hljs-string">"HealthySnacks.model"</span>)</pre>
+<p>This saves the model in Turi Create’s own format, which allows you to load it back into the Python notebook later using <code>tc.load_model()</code>. Once you’ve trained a Turi Create model, you can’t modify it afterwards, but you might want to evaluate it on different test data, or examine the metrics more closely.
+</p>
+<p>Run this command to get a Core ML model:
+</p><pre class="code-block">model.export_coreml(<span class="hljs-string">"HealthySnacks.mlmodel"</span>)</pre>
+<p>You can add the mlmodel to Xcode in the usual way, if you want to compare it with the Create ML model. Despite being based on the same pre-trained model, the two custom models aren’t the same: The accuracy of this model is a little lower, and it’s half the size of the Create ML model.
+</p>
+<h2 class="segment-chapter">Shutting down Jupyter</h2>
+
+<p>To shut down Jupyter, click the <em>Logout</em> button in this browser window and also in the window showing your ML directory.
+</p>
+<p>In the <em>Terminal</em> window that ran <code>jupyter_mac.command ; exit;</code>, press <em>Control-C-C</em> to stop the server. If the prompt doesn’t return, close this terminal window.
+</p>
+<h3 class="segment-chapter">Deactivating the active environment</h3>
+
+<p>If you activated <em>turienv</em> at the terminal command line, enter this command to deactivate it:
+</p><pre class="code-block">conda deactivate</pre>
+<p>This deactivates the <em>turienv</em> environment; the command line prompt loses the <code>(turienv)</code> prefix.
+</p>
+<h2 class="segment-chapter">Useful Conda commands</h2>
+
+<p>You’ve seen a lot of new commands. Two useful Conda resources are:
+</p>
+<ul>
+<li>
+<p><a href="https://conda.io/docs/_downloads/conda-cheatsheet.pdf">Conda cheat sheet</a>
+</p></li>
+
+<li>
+<p><a href="https://conda.io/docs/user-guide/tasks/index.html">Conda user guide: Tasks</a>
+</p></li>
+</ul>
+
+<p>Below are the commands used in this chapter, along with some other useful commands.
+</p>
+<div class="note">
+<p><em>Note</em>: Some command options use two dashes. One-dash options are often abbreviations of two-dash options, for example, <code>-n</code> is short for <code>--name</code>.
+</p></div>
+
+<div class="note">
+<p><em>Another Note</em>: Some conda environment management tasks can be done in two ways: <code>conda env &lt;command&gt;</code> or <code>conda &lt;different command&gt; &lt;options&gt;</code>
+</p></div>
+
+<h3 class="segment-chapter">Basic workflow</h3>
+
+<p><em>Create</em> a new environment:
+</p><pre class="code-block">conda create -n &lt;env name&gt;</pre>
+<p><em>Clone</em> an existing environment to create a new environment:
+</p><pre class="code-block">conda create -n &lt;new env name&gt; --clone &lt;existing env name&gt;</pre>
+<p><em>Create</em> a new environment from a <em>YAML file</em>:
+</p><pre class="code-block">conda env create -f &lt;.yaml file&gt;</pre>
+<p>The first line of the YAML file sets the new environment’s name. The starter folder for this chapter contains YAML files for <code>kerasenv</code>, <code>mlenv</code>, <code>tfenv</code> and <code>turienv</code>. If you prefer the GUI to the command line, you can import these into Anaconda Navigator.
+</p>
+<p><em>Activate</em> an environment:
+</p><pre class="code-block">conda activate &lt;env name&gt;</pre>
+<p><em>Install packages</em> in an active environment:
+</p><pre class="code-block">conda install &lt;pkg names&gt;</pre>
+<p><em>Install packages</em> in a <em>non-active</em> environment:
+</p><pre class="code-block">conda install -n &lt;env name&gt; &lt;pkg names&gt;</pre>
+<div class="note">
+<p><em>Note</em>: A message from conda about installing multiple packages: It is best to install all packages at once so that all of the dependencies are installed at the same time.
+</p></div>
+
+<p><em>Install non-conda</em> packages or TensorFlow and Keras in an <i>active environment</i>: Use <code>pip install</code> instead of <code>conda install</code>. To install <em>multiple packages</em>, create a <em>requirements.txt</em> file listing the packages, one per line, then run this command:
+</p><pre class="code-block">pip install -r requirements.txt</pre>
+<p><em>Start Jupyter</em> from the active environment [in a specific directory]:
+</p><pre class="code-block">jupyter notebook &lt;directory path&gt;</pre>
+<p><em>Shutdown Jupyter</em>: Logout in the Jupyter web pages, then press <em>Control-C-C</em> in terminal window where server is running.
+</p>
+<p><em>Deactivate</em> an environment: Run this command in the terminal window where you activated the environment:
+</p><pre class="code-block">conda deactivate</pre>
+<p><em>Remove</em> an environment:
+</p><pre class="code-block">conda remove -n &lt;env name&gt; --all</pre>
+<p>Or
+</p><pre class="code-block">conda env remove -n &lt;env name&gt;</pre>
+<h3 class="segment-chapter">Listing environments or packages</h3>
+
+<p><em>List</em> environments; * indicates currently active environment:
+</p><pre class="code-block">conda info --envs</pre>
+<p>Or
+</p><pre class="code-block">conda env list</pre>
+<p><em>List packages</em> or a specific package:
+</p>
+<p>In the <em>active</em> environment:
+</p><pre class="code-block">(activeenv)...$ conda list
+(activeenv)...$ conda list &lt;package name&gt;</pre>
+<p>In a <em>non-active</em> environment:
+</p><pre class="code-block">conda list -n &lt;non-active env name&gt;
+conda list -n &lt;non-active env name&gt; &lt;package name&gt;</pre>
+<h2 class="segment-chapter">Docker and Colab</h2>
+
+<p>There are two other high-level tools for supporting machine learning in Python: Docker and Google Colaboratory. These can be useful for developing machine learning projects, but we’re not covering them in detail in this book.
+</p>
+<p>Docker is a useful tool for creating reproducible environments for running machine learning projects, and is therefore a useful tool when you want to scale up projects. Colaboratory is a Jupyter notebook in the cloud that gives you access to free GPU. But while you’re working through the Turi Create and Keras examples in this book, and trying out your own modifications, it’s more convenient to have the <em>turienv</em> and <em>kerasenv</em> environments, and know how to build or modify them.
+</p>
+<h3 class="segment-chapter">Docker</h3>
+
+<p>Docker is like a virtual machine but simpler. Docker is a container-based system that allows you to re-use and modularize re-usable environments, and is a fundamental building block to scaling services and applications on the Internet efficiently. Installing Docker gives you access to a large number of ML resources distributed in Docker images as Jupyter notebooks like <em>hwchong/kerastraining4coreml</em> or Python projects like the <em>bamos/openface</em> face recognition model. Our <a href="https://www.raywenderlich.com/188-beginning-machine-learning-with-keras-core-ml">Beginning Machine Learning with Keras </a><a href="https://www.raywenderlich.com/188-beginning-machine-learning-with-keras-core-ml">&amp;</a><a href="https://www.raywenderlich.com/188-beginning-machine-learning-with-keras-core-ml"> Core ML</a> tutorial builds and runs a <code>keras-mnist</code> Docker image, and you can get comfortable using Docker with our <a href="https://www.raywenderlich.com/9159-docker-on-macos-getting-started">Docker on macOS: Getting Started</a> tutorial.
+</p>
+<p>Docker images can be useful to share pre-defined environments with colleagues, or peers, but at some point they will require an understanding of how to write Docker images (by editing the corresponding Dockerfile), which is beyond the scope of what we’re covering here.
+</p>
+<p>You can download the community edition of Docker for Mac from <a href="https://store.docker.com/editions/community/docker-ce-desktop-mac">https://dockr.ly/2hwNOZZ</a>. To search Docker Hub <a href="https://hub.docker.com">hub.docker.com</a> (a repository for Docker images), click <em>Explore</em>, then search for <i>image classifier</i>:
+</p><div class="image-90"><img src="graphics/img94.png"  alt="" title="Search Docker Hub for image classifier" /></div>
+<h3 class="segment-chapter">Google Colaboratory</h3>
+
+<p>Google Research’s Colaboratory at <a href="https://colab.research.google.com">colab.research.google.com</a> is a Jupyter Notebook environment that runs in a browser. It comes with many of the machine learning libraries you’ll need, already installed. Its best feature is, you can set the <em>runtime type</em> of a notebook to <em>GPU</em> to use Google’s GPU for free. It even lets you use Google’s <em>TPU</em> tensor processing units.
+</p>
+<p>If you don’t have access to a machine learning capable computer, you can certainly follow along with parts of this book using Colab. However, the authors of this book recommend that readers follow along with a local installation of Python. If you choose to use Colab, you’ll have to perform the following set up. Of course, you will need a Google account to in order to continue.
+</p>
+<p>Access your Google Drive <a href="https://drive.google.com">drive.google.com</a> and from the side menu, create a new <em>Folder</em> and named <em>machine-learning</em>.
+</p><div class="image-80"><img src="graphics/img95.png"  alt="" title="" /></div>
+<p>Double click the folder, and drag and drop the unzipped snacks dataset into it. This may take a while. While you wait, you’ll need to add Colab as an &quot;app&quot; to Google Drive. Right-click anywhere in the <em>machine-learning</em> folder, select <em>More</em> from the dialog, and select <em>+ Select Connect more apps</em>.
+</p><div class="image-90"><img src="graphics/img96.png"  alt="" title="" /></div>
+<p>From the <em>Connect apps to Drive</em> window that opens up, search for colab in the search field, and select <em>+ Connect</em>.
+</p><div class="image-90"><img src="graphics/img97.png"  alt="" title="" /></div>
+<p>Once it’s been successfully installed, close the window, and Right-click anywhere again, and from the <em>More</em> dialog, select <em>Colaboratory</em>. This will open a new tab or window with something that should look a lot like a Jupyter notebook.
+</p><div class="image-90"><img src="graphics/img98.png"  alt="" title="" /></div>
+<p>Rename the file to <em>getting-started.ipynb</em> by clicking the ttile and renaming it inline.
+</p><div class="image-90"><img src="graphics/img99.png"  alt="" title="" /></div>
+<p>From the toolbar, select <em>Runtime &gt; Change Runtime type</em>.
+</p><div class="image-80"><img src="graphics/img100.png"  alt="" title="" /></div>
+<p>From the <em>Notebook settings</em> dialog that open, change the <em>Hardware accelerator</em> from <i>None</i> to <i>GPU</i>. <em>Save</em> the changes.
+</p><div class="image-80"><img src="graphics/img101.png"  alt="" title="" /></div>
+<p>In first code cell of the notebook, paste the following code:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> google.colab <span class="hljs-keyword">import</span> drive
+drive.mount(<span class="hljs-string">'/content/drive/'</span>)</pre>
+<p>These two lines will walk your through mounting your google drive folders into the notebook. This requires giving Colab access to your Google Drive folders. Click the tiny play button beside the code cell. Follow the instructions in the output window by opening the link to give Colab the authority to access your Drive. You’ll be given an access code  to paste into your notebook.
+</p><div class="image-90"><img src="graphics/img102.png"  alt="" title="" /></div>
+<p>Once the mounting is complete, add a new code cell, and run the following piece of code:
+</p><pre class="code-block">!ls <span class="hljs-string">"/content/drive/My Drive/machine-learning/snacks"</span></pre><div class="image-75"><img src="graphics/img103.png"  alt="" title="" /></div>
+<p>You may notice that the code starts off with an exclamation. This is Juypter specific syntax that allows you to run system level commands. In this case, you’re trying to list the contents of the directory in which you uploaded the snacks dataset. If all goes well, you should now be able to set this path as your root directory to the snacks dataset.
+</p>
+<p>You’ve completed setting up a Google Colab notebook environment, configured to use the GPU, that you can use for this book. It’s worth reiterating that using Colab is untested with respect to this book, and you may run into issues while using it. However, it offers a compelling alternative for developers looking to do machine learning, but don’t have access to a machine powerful enough to run machine learning algorithms.
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Get familiar with Python. Its widespread adoption with academics in the machine learning field means if you want to keep up to date with machine learning, you’ll have to get on board.
+</p></li>
+
+<li>
+<p>Get familiar with Conda. It will make working with Python significantly more pleasant. It allows you to try Python libraries in a controlled environment without damaging any existing environment.
+</p></li>
+
+<li>
+<p>Get familiar with Jupyter notebooks. Like Swift playgrounds, they provide a means to quickly test all things Python especially when used in combination with Conda.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Challenges</h2>
+
+<p>For some chapters in this book, you’ll need Keras or TensorFlow. Your challenges are to practice creating environments and installing packages by creating the <em>tfenv</em> and <em>kerasenv</em> environments.
+</p>
+<div class="note">
+<p><em>Note</em>: If you skip these challenges, you can create the environments when you need them by importing their <code>.yaml</code> files into Anaconda Navigator; these files are located in the <em>starter</em> folder for this chapter.
+</p></div>
+
+<p>Although these packages are in Anaconda’s package list, TensorFlow’s installation instructions say to use <code>pip</code> instead of <code>conda</code>.
+</p>
+<p>Clone <em>mlenv</em> to create <em>tfenv</em>. Then install the <code>tensorflow</code> package in <em>tfenv</em>. Remember to use <code>pip install</code> instead of <code>conda install</code>.
+</p>
+<p>Also <code>pip install</code> the <code>tfcoreml</code> package in <em>tfenv</em>; this is TensorFlow’s tool for creating Core ML models. Unlike <code>turicreate</code>, which automatically installs <code>coremltools</code>, installing <code>tensorflow</code> doesn’t automatically install <code>tfcoreml</code>. On the other hand, <code>tfcoreml</code> uses <code>coremltools</code>, so you’ll see that being installed too.
+</p>
+<p>Finally, clone <em>tfenv</em> to create <em>kerasenv</em>, and install the <code>keras</code> package in <em>kerasenv</em>. Again, use <code>pip install</code>, just to be safe.
+</p>
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>You’re all set to continue learning about machine learning for image classification, using Python tools. The next chapter shows you a few more Turi Create tricks. After that, you’ll be ready to learn how to create your own deep learning model in Keras.
+</p></body></html>

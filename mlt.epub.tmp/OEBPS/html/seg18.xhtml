@@ -1,0 +1,855 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 8: Advanced Convolutional Neural Networks</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 7: Advanced Convnets</h1>
+
+<h2 class="segment-chapter">SqueezeNet</h2>
+
+<p>What you did in the previous chapter is very similar to what Create ML and Turi Create do when they train models, except the convnet they use is a little more advanced. Turi Create actually gives you a choice between different convnets:
+</p>
+<ul>
+<li>
+<p>SqueezeNet v1.1
+</p></li>
+
+<li>
+<p>ResNet50
+</p></li>
+
+<li>
+<p>Vision FeaturePrint.Screen
+</p></li>
+</ul>
+
+<p>In this section, you’ll take a quick look at the architecture of SqueezeNet and how it is different from the simple convnet you made. ResNet50 is a model that is used a lot in deep learning, but, at over 25 million parameters, it’s on the big side for use on mobile devices and so we’ll pay it no further attention.
+</p>
+<p>We’d love to show you the architecture for Vision FeaturePrint.Screen, but, alas, this model is built into iOS itself and so we don’t know what it actually looks like.
+</p>
+<p>This is SqueezeNet, zoomed out:
+</p><div class="image-100"><img src="graphics/img144.png"  alt="" title="The architecture of SqueezeNet" /></div>
+<p>SqueezeNet uses the now-familiar <code>Conv2D</code> and <code>MaxPooling2D</code> layers, as well as the ReLU activation. However, it also has a branching structure that looks like this:
+</p><div class="image-60"><img src="graphics/img145.png"  alt="" title="The fire module" /></div>
+<p>This combination of several different layers is called a <em>fire module</em>, because no one reads your research papers unless you come up with a cool name for your inventions. SqueezeNet is simply a whole bunch of these fire modules stacked together.
+</p>
+<p>In SqueezeNet, most of the convolution layers do not use 3×3 windows but windows consisting of a single pixel, also called 1×1 convolution. Such convolution filters only look at a single pixel at a time and not at any of that pixel’s neighbors. The math is just a regular dot product across the channels for that pixel.
+</p>
+<p>Convolutions with a 1×1 kernel size are very common in modern convnets. They’re often used to increase or to decrease the number of channels in a tensor. That’s exactly why SqueezeNet uses them, too.
+</p>
+<p>The <em>squeeze</em> part of the fire module is a 1×1 convolution whose main job it is to reduce the number of channels. For example, the very first layer in SqueezeNet is a regular 3×3 convolution with 64 filters. The squeeze layer that follows it, reduces this back to 16 filters. What such a layer learns isn’t necessarily to detect patterns in the data, but how to keep only the most important patterns. This forces the model to focus on learning only things that truly matter.
+</p>
+<p>The output from the squeeze convolution branches into two parallel convolutions, one with a 1×1 window size and the other with a 3×3 window. Both convolutions have 64 filters, which is why this is called the <em>expand</em> portion of the fire module, as these layers increase the number of channels again. Afterwards, the output tensors from these two parallel convolution layers are concatenated into one big tensor that has 128 channels.
+</p>
+<p>The squeeze layer from the next fire module then reduces those 128 channels again to 16 channels, and so on. As is usual for convnets, the number of channels gradually increases the further you go into the network, but this pattern of reduce-and-expand repeats several times over.
+</p>
+<p>The reason for using two parallel convolutions on the same data is that using a mix of different transformations potentially lets you extract more interesting information. You see similar ideas in the Inception modules from Google’s famous Inception-v3 model, which combines 1×1, 3×3, and 5×5 convolutions, and even pooling, into the same kind of parallel structure.
+</p>
+<p>The fire module is very effective, evidenced by the fact that SqueezeNet is a powerful model — especially for one that only has 1.2 million learnable parameters. It scores about 67% correct on the snacks dataset, compared to 40% from the basic convnet of the previous section, which has about the same number of parameters.
+</p>
+<p>If you’re curious, you can see a Keras version of SqueezeNet in the notebook <em>SqueezeNet.ipynb</em>. This notebook reproduces the results from Turi Create with Keras. We’re not going to explain that code in detail here since you’ll shortly be using an architecture that gives better results than SqueezeNet. However, feel free to play with this notebook — it’s fast enough to run on your Mac, no GPU needed for this one.
+</p>
+<h3 class="segment-chapter">The Keras functional API</h3>
+
+<p>One thing we should mention at this point is the Keras <em>functional API</em>. You’ve seen how to make a model using <code>Sequential</code>, but that is limited to linear pipelines that consist of layers in a row. To code SqueezeNet’s branching structures with Keras, you need to specify your model in a slightly different way.
+</p>
+<p>In the file <em>keras</em><em>_</em><em>squeezenet/squeezenet.py</em>, there is a function <code>def SqueezeNet(...)</code> that defines the Keras model. It more-or-less does the following:
+</p><pre class="code-block">img_input = Input(shape=input_shape)
+
+x = Conv2D(<span class="hljs-number">64</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">'valid'</span>)(img_input)
+x = Activation(<span class="hljs-string">'relu'</span>)(x)
+x = MaxPooling2D(pool_size=(<span class="hljs-number">3</span>, <span class="hljs-number">3</span>), strides=(<span class="hljs-number">2</span>, <span class="hljs-number">2</span>))(x)
+x = fire_module(x, squeeze=<span class="hljs-number">16</span>, expand=<span class="hljs-number">64</span>)
+x = fire_module(x, squeeze=<span class="hljs-number">16</span>, expand=<span class="hljs-number">64</span>)
+x = MaxPooling2D(pool_size=(<span class="hljs-number">3</span>, <span class="hljs-number">3</span>), strides=(<span class="hljs-number">2</span>, <span class="hljs-number">2</span>))(x)
+...
+
+model = Model(img_input, x)
+...
+<span class="hljs-keyword">return</span> model</pre>
+<p>Instead of creating a <code>Sequential</code> object and then doing <code>model.add(layer)</code>, here a layer is created by writing:
+</p><pre class="code-block">x = LayerName(parameters)</pre>
+<p>Then this layer object is immediately applied to the output from the previous layer:
+</p><pre class="code-block">x = LayerName(parameters)(x)</pre>
+<p>Here, <code>x</code> is not a layer object but a tensor object. This syntax may look a little weird, but in Python, you’re allowed to call an object instance (the layer) as if it were a function. This is actually a very handy way to define models of arbitrary complexity.
+</p>
+<p>To create the actual model object, you need to specify the input tensor as well as the output tensor, which is now in <code>x</code>:
+</p><pre class="code-block">model = Model(img_input, x)</pre>
+<p>You can see how the branching structure is made in the <code>fire_module</code> function, shown here in an abbreviated version:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">fire_module</span><span class="hljs-params">(x, squeeze=<span class="hljs-number">16</span>, expand=<span class="hljs-number">64</span>)</span>:</span>
+    sq = Conv2D(squeeze, <span class="hljs-number">1</span>, padding=<span class="hljs-string">'valid'</span>)(x)
+    sq = Activation(<span class="hljs-string">'relu'</span>)(sq)
+
+    left = Conv2D(expand, <span class="hljs-number">1</span>, padding=<span class="hljs-string">'valid'</span>)(sq)
+    left = Activation(<span class="hljs-string">'relu'</span>)(left)
+
+    right = Conv2D(expand, <span class="hljs-number">3</span>, padding=<span class="hljs-string">'same'</span>)(sq)
+    right = Activation(<span class="hljs-string">'relu'</span>)(right)
+
+    <span class="hljs-keyword">return</span> concatenate([left, right])</pre>
+<p>This has four tensors: <code>x</code> that has the input data, <code>sq</code> with the output of the squeeze layer, <code>left</code> for the left branch and <code>right</code> for the right branch. At the end, <code>left</code> and <code>right</code> are concatenated into a single tensor again. This is where the branches come back together.
+</p>
+<p>A lot of Keras code will use both <code>Sequential</code> models and models defined using this functional API, so it’s good to be familiar with it.
+</p>
+<div class="note">
+<p><em>Note</em>: The SqueezeNet implementation we used here was taken from the GitHub repo <a href="https://github.com/rcmalli/keras-squeezenet">github.com/rcmalli/keras-squeezenet</a>.
+</p></div>
+
+<h2 class="segment-chapter">MobileNet and data augmentation</h2>
+
+<p>The final classification model you’ll be training is based on MobileNet. Just like SqueezeNet, this is an architecture that is optimized for use on mobile devices — hence the name.
+</p>
+<p>MobileNet has more learned parameters than SqueezeNet, so it’s slightly bigger but it’s also more capable. With MobileNet as the feature extractor, you should be able to get a model that performs better than what Turi Create gave you in Chapter 5, “Digging Deeper Into Turi Create.” Plus you’ll also be using some additional training techniques to make this model learn as much as possible from the dataset.
+</p>
+<p>Follow along with <em>MobileNet.ipynb</em>, or create a new notebook and import the required packages:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+<span class="hljs-keyword">from</span> keras.preprocessing.image <span class="hljs-keyword">import</span> ImageDataGenerator
+<span class="hljs-keyword">from</span> keras.models <span class="hljs-keyword">import</span> Sequential
+<span class="hljs-keyword">from</span> keras.layers <span class="hljs-keyword">import</span> *
+<span class="hljs-keyword">from</span> keras <span class="hljs-keyword">import</span> optimizers, callbacks
+<span class="hljs-keyword">import</span> keras.backend <span class="hljs-keyword">as</span> K
+
+%matplotlib inline
+<span class="hljs-keyword">import</span> matplotlib.pyplot <span class="hljs-keyword">as</span> plt</pre>
+<p>Keras already includes a version of MobileNet, so creating this model is easy:
+</p><pre class="code-block">image_width = <span class="hljs-number">224</span>
+image_height = <span class="hljs-number">224</span>
+
+<span class="hljs-keyword">from</span> keras.applications.mobilenet <span class="hljs-keyword">import</span> MobileNet
+
+base_model = MobileNet(input_shape=(image_height, image_width, <span class="hljs-number">3</span>),
+                       include_top=<span class="hljs-keyword">False</span>, weights=<span class="hljs-string">"imagenet"</span>,
+                       pooling=<span class="hljs-keyword">None</span>)</pre>
+<p>Keras’s MobileNet has been trained on the famous ImageNet dataset. But you want to use MobileNet only as a feature extractor, not as a classifier for the 1000 ImageNet categories. That’s why you need to specify <code>include_top=False</code> and <code>pooling=None</code> when creating the model. That way Keras leaves off the classifier layers.
+</p>
+<p>You can use <code>base_model.summary()</code> to see a list of all the layers in this model, or run the following code to save a diagram of the model to a PNG file (this requires the <code>pydot</code> package to be installed):
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.utils <span class="hljs-keyword">import</span> plot_model
+plot_model(base_model, to_file=<span class="hljs-string">"mobilenet.png"</span>)</pre>
+<p>If you look at the architecture diagram of MobileNet in that PNG file, you’ll see that it is made up of the following repeating structure:
+</p><div class="image-25"><img src="graphics/img146.png"  alt="" title="MobileNet uses depthwise separable convolutions" /></div>
+<p>First, there is a so-called <code>DepthwiseConv2D</code> layer with kernel size 3×3, followed by a <code>BatchNormalization</code> layer, and a ReLU activation. Then there is a <code>Conv2D</code> layer with kernel size 1×1, which is also followed by its own <code>BatchNormalization</code> and ReLU. MobileNet consists of 13 of these building blocks stacked together.
+</p>
+<p>There are a few new things going on, here:
+</p>
+<ul>
+<li>
+<p>A <em>depthwise convolution</em> is a variation of convolution wherein each filter only looks at a single input channel. With a regular convolution, the filters always compute their dot products over all the input channels. But a depthwise convolution treats the input channels as separate from one another. Because it doesn’t combine the input channels, depthwise convolution is simpler and faster than <code>Conv2D</code> and uses much fewer parameters.
+</p></li>
+</ul>
+<div class="image-90"><img src="graphics/img147.png"  alt="" title="Depthwise convolution treats the channels independently" /></div>
+<ul>
+<li>
+<p>The combination of a 3×3 <code>DepthwiseConv2D</code> followed by a 1×1 <code>Conv2D</code> is called a <em>depthwise separable convolution</em>. You can think of this as a 3×3 <code>Conv2D</code> layer that has been split up into two simpler layers: the depthwise convolution filters the data, while the 1×1 convolution — also known as a <em>pointwise</em> convolution — combines the filtered data into a new tensor. This gives an approximation of a “real” 3×3 <code>Conv2D</code> but at much lower cost: there are fewer parameters in total and it also performs fewer computations. This is why MobileNet is so suitable for mobile devices.
+</p></li>
+
+<li>
+<p>The <em>batch normalization</em> layer, <code>BatchNormalization</code>, is what makes it possible to have these very deep networks. This layer helps to keep the data “fresh” as it moves between the layers. Without batch normalization, the data in the tensors would eventually disappear in deep networks because the numbers become too small — known as the problem of the <em>vanishing gradients</em> — and then the model won’t be able to learn anything anymore. You’ll see <code>BatchNormalization</code> in pretty much any modern convnet.
+</p></li>
+</ul>
+
+<div class="note">
+<p><em>Note</em>: Depending on your version of Keras, you may also see <code>ZeroPadding2D</code> layers before the <code>DepthwiseConv2D</code> layer, which adds padding around the input tensor so that the convolution works correctly for pixels at the edges. Another small detail: The activation function used is actually <em>ReLU6</em>, a variation of the ReLU activation you’ve seen before. It works in the same way as ReLU but also prevents the output of the convolution from becoming too large — it limits to output to <code>6.0</code>, hence the name — which allows for the use of faster limited-precision computations on mobile and embedded devices.
+</p></div>
+
+<p>Looking at the <code>model.summary()</code>, you may have noticed that MobileNet does not use any pooling layers, yet the spatial dimensions of the image tensor do become smaller over time — from 224×224 at the beginning to only 7×7 at the end. MobileNet achieves this pooling effect by setting the <em>stride</em> of some of the <code>Conv2D</code> and <code>DepthwiseConv2D</code> layers to 2 instead of 1.
+</p>
+<p>The <em>stride</em> is the size of the steps the convolution kernel takes as it slides through the image. Usually, this step size is 1 and the convolution looks at all the pixels. With a stride of 2, the window will skip every other pixel, thereby only computing dot products for half the pixels in both the width and height directions. This way you don’t need a special pooling layer to make the image smaller.
+</p>
+<p>You’ll see both techniques, pooling and larger strides, used in practice.
+</p>
+<p>The final layer in this model outputs a tensor of size (7, 7, 1024). This tensor contains the features that MobileNet has extracted from the input image. You’re simply going to add a logistic regression on top of these extracted features, exactly like you’ve done before.
+</p>
+<div class="note">
+<p><em>Note</em>: MobileNet has more learned parameters than SqueezeNet, so it takes up more space in your app bundle and also more RAM at runtime. However, thanks to these additional parameters, MobileNet produces higher quality results than SqueezeNet. Even better, it’s also faster than SqueezeNet due to the depthwise separable convolutions.
+</p>
+<p>Choosing a feature extractor is always a trade-off between quality, storage size, and runtime speed. If MobileNet is too large for your app — it adds between 8 and 16 MB to your app bundle — then SqueezeNet might be a better choice. But the predictions of a SqueezeNet-based model may be worse and it runs slower.
+</p>
+<p>The Vision FeaturePrint model that is built into iOS 12 is even more powerful than MobileNet, and it doesn’t even take up any space in your app bundle, but again is slower. And you can’t use it on iOS 11 or other platforms.
+</p>
+<p>Which model is “best” comes down to what you care most about: speed, download size or results. As they say, there is no free lunch in machine learning.
+</p></div>
+
+<h3 class="segment-chapter">Adding the classifier</h3>
+
+<p>You’ve placed the MobileNet feature extractor in a variable named <code>base_model</code>. You’ll now create a second model for the classifier, to go on top of that base model:
+</p><pre class="code-block">top_model = Sequential()
+top_model.add(base_model)
+top_model.add(GlobalAveragePooling2D())
+top_model.add(Dense(num_classes))
+top_model.add(Activation(<span class="hljs-string">"softmax"</span>))</pre>
+<p>This should look familiar by now: it’s a logistic regression. Just like before it has a <code>Dense</code> layer followed by a softmax activation at the end. The <code>GlobalAveragePooling2D</code> layer shrinks the 7×7×1024 output tensor from MobileNet to a vector of 1024 elements, by taking the average of each individual 7×7 feature map.
+</p>
+<div class="note">
+<p><em>Note</em>: If you had used <code>Flatten</code> instead of global pooling, the <code>Dense</code> layer would have had 49 times more parameters. That simple change would add another one million parameters to the model.
+</p></div>
+
+<p>Note that the first “layer” in this new model is MobileNet, so if you ask <code>top_model</code> to make a prediction on an image, it will first send the image through <code>base_model</code> and then applies the final logistic regression layers.
+</p>
+<p>Next up, you need to freeze all MobileNet layers:
+</p><pre class="code-block"><span class="hljs-keyword">for</span> layer <span class="hljs-keyword">in</span> base_model.layers:
+    layer.trainable = <span class="hljs-keyword">False</span></pre>
+<p>You’re not going to be training the MobileNet feature extractor. This has already been trained on the large ImageNet dataset, just like SqueezeNet was. All <i>you</i> have to train is the logistic regression that you’ve placed on top. This is why it’s important to set the layers from the feature extractor to be not trainable. Yup, you guessed it, this again is transfer learning in action.
+</p>
+<p>When you do <code>top_model.summary()</code> it should now show this:
+</p><pre class="code-block">_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+mobilenet_1.00_224 (Model)   (None, 7, 7, 1024)        3228864   
+_________________________________________________________________
+global_average_pooling2d_2 ( (None, 1024)              0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 20)                20500     
+_________________________________________________________________
+activation_1 (Activation)    (None, 20)                0         
+=================================================================
+Total params: 3,249,364
+Trainable params: 20,500
+Non-trainable params: 3,228,864
+_________________________________________________________________</pre>
+<p>The number of trainable params is only 20,500 since that’s how big the <code>Dense</code> layer is. The other 3.25 million parameters are from MobileNet and will not be trained.
+</p>
+<p>Finally, compile the model just like before:
+</p><pre class="code-block">top_model.compile(loss=<span class="hljs-string">"categorical_crossentropy"</span>,
+                  optimizer=optimizers.Adam(lr=<span class="hljs-number">1e-3</span>),
+                  metrics=[<span class="hljs-string">"accuracy"</span>])</pre>
+<p>Before you start training this model, let’s first talk about a handy trick that can make your training set ten times larger with almost no effort on your part.
+</p>
+<div class="note">
+<p><em>Note</em>: You used a <code>Dense</code> layer for the logistic regression, but modern convnets often have a 1×1 <code>Conv2D</code> layer at the end instead. If you do the math, you’ll see that a 1×1 convolution that follows a global pooling layer is equivalent to a <code>Dense</code> or fully-connected layer. These are two different ways to express the same operation. However, this is only true after a global pooling layer, when the image is reduced to just a single pixel. Anywhere else, a 1×1 convolution is not the same as a <code>Dense</code> layer.
+</p></div>
+
+<h3 class="segment-chapter">Data augmentation</h3>
+
+<p>We only have about 4800 images for our 20 categories, which comes to 240 images per category on average. That’s not bad, but these deep learning models work better with more data. More, more, more! Gathering more training images takes a lot of time and effort — therefore, is costly — and is not always a realistic option. However, you can always artificially expand the training set by transforming the images that you <i>do</i> have.
+</p>
+<p>Here’s a typical training image:
+</p><div class="image-30"><img src="graphics/img148.jpg"  alt="" title="Whatta guy!" /></div>
+<p>Notice how it’s pointing to the left? One easy way to instantly double the number of training images is to horizontally flip them so that the model also learns to detect bananas that point to the right. There are many more of these transformations, such as rotating the image, shearing by a random amount, zooming in or out, changing the colors slightly, etc. It’s smart to include any transformations that you want your model to be invariant to.
+</p><div class="image-80"><img src="graphics/img149.png"  alt="" title="Whatta guys!" /></div>
+<p>This is what we call <em>data augmentation</em>: You augment the training data through small random transformations. This happens on-the-fly during training. Every time Keras loads an image from the training set, it automatically applies this data augmentation to the image. For that you have to make an <code>ImageDataGenerator</code> object.
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.applications.mobilenet <span class="hljs-keyword">import</span> preprocess_input
+
+train_datagen = ImageDataGenerator(
+                    rotation_range=<span class="hljs-number">40</span>,
+                    width_shift_range=<span class="hljs-number">0.2</span>,
+                    height_shift_range=<span class="hljs-number">0.2</span>,
+                    shear_range=<span class="hljs-number">0.2</span>,
+                    zoom_range=<span class="hljs-number">0.2</span>,
+                    channel_shift_range=<span class="hljs-number">0.2</span>,
+                    horizontal_flip=<span class="hljs-keyword">True</span>,
+                    fill_mode=<span class="hljs-string">"nearest"</span>,
+                    preprocessing_function=preprocess_input)
+
+val_datagen = ImageDataGenerator(
+                    preprocessing_function=preprocess_input)
+
+test_datagen = ImageDataGenerator(
+                    preprocessing_function=preprocess_input)</pre>
+<p>You’ve already used <code>ImageDataGenerator</code> in previous notebooks, where it was only responsible for loading the images and normalizing them.
+</p>
+<p>Here, you tell the <code>ImageDataGenerator</code> that it should also rotate the images, flip them horizontally, shift the images up/down/sideways, zoom in/out, shear, and change the color channels by random amounts. That’s a lot of different transformations, and you don’t want to go overboard and make the images unrecognizable, but doing this really helps to grow the amount of available training data.
+</p>
+<p>For normalizing the image data, you previously used your own function, but here you use the <code>preprocess_input</code> function from the Keras MobileNet module because that knows exactly how MobileNet expects the input data.
+</p>
+<div class="note">
+<p><em>Note</em>: If you’re curious what this function does, type <code>preprocess_input??</code> in new notebook cell and press Shift-Enter. The <code>??</code> tell Jupyter to display the source code for that function in a pop-up window.
+</p></div>
+
+<p>For the validation and test sets, you create a plain <code>ImageDataGenerator</code> object that does not apply any of the data augmentations. You always want to evaluate the performance of the model on the exact same set of images.
+</p>
+<p>Given these <code>datagen</code> objects, you can now make the generators that will read the images from their respective folders. This works just like before:
+</p><pre class="code-block">images_dir = <span class="hljs-string">"snacks/"</span>
+train_data_dir = images_dir + <span class="hljs-string">"train/"</span>
+val_data_dir = images_dir + <span class="hljs-string">"val/"</span>
+test_data_dir = images_dir + <span class="hljs-string">"test/"</span>
+batch_size = <span class="hljs-number">64</span>
+
+train_generator = train_datagen.flow_from_directory(
+                    train_data_dir,
+                    target_size=(image_width, image_height),
+                    batch_size=batch_size,
+                    class_mode=<span class="hljs-string">"categorical"</span>,
+                    shuffle=<span class="hljs-keyword">True</span>)
+
+val_generator = val_datagen.flow_from_directory(
+                    val_data_dir,
+                    target_size=(image_width, image_height),
+                    batch_size=batch_size,
+                    class_mode=<span class="hljs-string">"categorical"</span>,
+                    shuffle=<span class="hljs-keyword">False</span>)
+
+test_generator = test_datagen.flow_from_directory(
+                    test_data_dir,
+                    target_size=(image_width, image_height),
+                    batch_size=batch_size,
+                    class_mode=<span class="hljs-string">"categorical"</span>,
+                    shuffle=<span class="hljs-keyword">False</span>)</pre>
+<p>And now you’re ready to train!
+</p>
+<h3 class="segment-chapter">Training the classifier layer</h3>
+
+<p>Training this model is no different than what you’ve done before: you can run <code>model.fit_generator()</code> a few times until you’re happy with the validation accuracy.
+</p>
+<p>But before you rush off to train this fancy new model, allow us to introduce a very handy Keras feature: callbacks. A callback is a Python function that is called at various points in the training process, for example when a new epoch begins or an epoch has just finished.
+</p>
+<p>You’ve seen that if you train for too long, the model will eventually start to overfit and the validation accuracy becomes worse. It’s hard to say beforehand exactly when this will happen, but it does mean that the last epoch isn’t necessarily the best one. Ideally, you’d stop training just before overfitting starts to happen.
+</p>
+<p>For this, you can add an <code>EarlyStopping</code> callback that will halt the training once the <code>&quot;val_acc&quot;</code> metric, the validation accuracy, stops improving. The <code>patience</code> argument is the number of epochs with no improvement after which the training will be stopped.
+</p>
+<p>It’s also smart to save a model <em>checkpoint</em> every so often. This is a copy of the model’s weights it has learned up to that point. For this you’d use the <code>ModelCheckpoint</code> callback. It saves a copy of the trained model whenever the metric you’re interested in has improved. Here you’re monitoring <code>&quot;val_acc&quot;</code>, so every time the validation accuracy goes up, a new model checkpoint is saved.
+</p><pre class="code-block">checkpoint_dir = <span class="hljs-string">"checkpoints/"</span>
+checkpoint_name = checkpoint_dir + <span class="hljs-string">"multisnacks-{val_loss:.4f}-{val_acc:.4f}.hdf5"</span>
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">create_callbacks</span><span class="hljs-params">()</span>:</span>
+    <span class="hljs-keyword">return</span> [
+        callbacks.EarlyStopping(monitor=<span class="hljs-string">"val_acc"</span>, patience=<span class="hljs-number">10</span>,
+                                verbose=<span class="hljs-number">1</span>),
+
+        callbacks.ModelCheckpoint(checkpoint_name, monitor=<span class="hljs-string">"val_acc"</span>,
+                                  verbose=<span class="hljs-number">1</span>, save_best_only=<span class="hljs-keyword">True</span>),
+    ]
+
+my_callbacks = create_callbacks()</pre>
+<div class="note">
+<p><em>Note</em>: You need to make sure the <code>checkpoints</code> directory already exists, or Keras will give an error message when it tries to save the checkpoint. By the way, if you ever wanted to save the current state of the model by hand, you can always write <code>model.save(&quot;convnet.h5&quot;)</code>. HDF5, with the extension <code>.hdf5</code> or <code>.h5</code>, is the file format used by Keras to save its models. You can view these files with Netron.
+</p></div>
+
+<p>Now you can train the model. You need to pass the array with the callback objects to <code>fit_generator()</code>’s <code>callbacks</code> argument.
+</p><pre class="code-block">histories = []
+histories.append(top_model.fit_generator(train_generator,
+                                         epochs=<span class="hljs-number">10</span>,
+                                         callbacks=my_callbacks,
+                                         validation_data=val_generator,
+                                         workers=<span class="hljs-number">8</span>))</pre>
+<p>Training this model should be pretty speedy on a computer with a GPU since you’re only training the one <code>Dense</code> layer for the logistic regression. On the author’s iMac, however, it takes about six minutes per epoch. That’s too slow to be practical, which is why he’s glad to also have a Ubuntu machine with a fast GPU.
+</p>
+<p>Remember that Create ML and Turi Create trained their models using a two-step process:
+</p>
+<ol>
+<li>
+<p>First, they extract the features from all the training images. This can take a while.
+</p></li>
+
+<li>
+<p>But once they have those feature vectors, training the logistic regression is fast.
+</p></li>
+</ol>
+
+<p>By doing the feature extraction just once, Turi and Create ML could save a lot of time in the training stage. It is also possible to do this with Keras, see the SqueezeNet notebook for details. But because you’re doing a lot of data augmentation, it’s not really worth the trouble.
+</p>
+<p>Having feature extraction as a separate step only makes sense if you plan to reuse the same images in every epoch. But with data augmentation — where images are rotated, flipped and distorted in many other ways — no two images are ever the same. And so all the feature vectors will be different for every epoch.
+</p>
+<p>That’s why this MobileNet-based model is trained end-to-end and not in two separate stages. In every epoch, Keras needs to compute all the feature vectors again because all the training images are now slightly different from last time. It’s a bit slower, but that’s a small price to pay for having a much larger training set with very little effort.
+</p>
+<p>After training for 10 epochs, the validation accuracy stops going up. The plot looks like this:
+</p><div class="image-80"><img src="graphics/img150.png"  alt="" title="MobileNet accuracy for the first ten epochs" /></div>
+<p>In fact, Keras prints a message that says as much:
+</p><pre class="code-block">Epoch 00010: val_acc did not improve from 0.70262</pre>
+<p>Because of the <code>EarlyStopping</code> callback, if there are more than 10 of such epochs in a row, Keras will stop training. But, at this point, you’ve only trained for 10 epochs in total, so that callback didn’t kick in here yet. The other callback, <code>ModelCheckpoint</code>, did do its job and saved a new version of the model whenever the validation accuracy improved:
+</p><pre class="code-block">Epoch 00009: val_acc improved from 0.69215 to 0.70262, saving model to
+checkpoints/multisnacks-1.0450-0.7026.hdf5</pre>
+<p>The two numbers in the filename, <code>1.0450</code> and <code>0.7026</code> respectively, are the validation loss and accuracy. After only nine epochs, this model already got up to 70% accuracy. Sweet! That’s a lot better than your previous models and also improves on Turi’s results already. But you’re not done yet...
+</p>
+<h3 class="segment-chapter">Fine-tuning the feature extractor</h3>
+
+<p>At this point, it’s a good idea to start <em>fine-tuning</em> the feature extractor. So far, you’ve been using the pre-trained MobileNet as the feature extractor. This was trained on the ImageNet dataset, which contains a large variety of photos from 1,000 different kinds of objects.
+</p>
+<p>The pretrained MobileNet knows a lot about photos in general, including photos of food items. This is why you’ve trained a classifier on top of MobileNet’s layers so that it can translate this general knowledge about photos to your own 20 categories of snacks.
+</p>
+<p>But the pretrained feature extractor contains a lot of irrelevant knowledge, too, about animals, vehicles and all kinds of other things that are not snacks. We don’t need this knowledge for our task of classifying snacks.
+</p>
+<p>With fine-tuning, you can adjust the knowledge inside the feature extractor to make it more relevant to your own data. Now the feature extractor itself already understands more about this specific task.
+</p>
+<p>To fine-tune the MobileNet layers, first set them to trainable and then compile the model again:
+</p><pre class="code-block"><span class="hljs-keyword">for</span> layer <span class="hljs-keyword">in</span> base_model.layers:
+    layer.trainable = <span class="hljs-keyword">True</span>
+
+top_model.compile(loss=<span class="hljs-string">"categorical_crossentropy"</span>,
+                  optimizer=optimizers.Adam(lr=<span class="hljs-number">1e-4</span>),
+                  metrics=[<span class="hljs-string">"accuracy"</span>])    </pre>
+<p>It’s important to use a lower learning rate now, <code>lr=1e-4</code>. That’s because you don’t want to completely throw away everything the MobileNet layers have learned already — you only want to tweak these values a little.
+</p>
+<p>It’s better to set the learning rate too low than too high at this point, or you might end up destroying useful knowledge. The author found <code>1e-4</code> by experimenting a bit.
+</p>
+<p>Run <code>top_model.summary()</code> and you’ll see that there are now over 3 million trainable parameters instead of just 20,500. There are still also non-trainable parameters; these are used by the <code>BatchNormalization</code> layers to keep track of internal state.
+</p>
+<p>Simply run the cell with <code>top_model.fit_generator()</code> again to start fine-tuning. The loss may bounce around a bit in the beginning because suddenly the optimizer has a lot more work to do.
+</p>
+<p>It also lost track of where it was because you compiled the model again. But you should see the training and validation accuracy start to improve quite quickly again. If not, lower the learning rate.
+</p>
+<div class="note">
+<p><em>Note</em>: Training is suddenly a lot slower now because this time Keras needs to train all the layers, not just the <code>Dense</code> layer. On the author’s iMac, the estimated time for a single epoch went up from six to 20 minutes. On the Linux machine with the GPU, the time went from 10 seconds per epoch to 30 seconds — not nearly as bad. It’s also possible that you will get an out-of-memory error at this point. There are more parameters to update and so the GPU needs more RAM. If that happens, make the batch size smaller and run the cells that create the generators again.
+</p></div>
+
+<p>After about 10 epochs, the validation loss and accuracy no longer appear to improve. When that happens, it’s useful to reduce the learning rate. Here, you make it three times smaller:
+</p><pre class="code-block">K.set_value(top_model.optimizer.lr,
+            K.get_value(top_model.optimizer.lr) / <span class="hljs-number">3</span>)</pre>
+<p>Now, train again for five or so epochs. For the author, the validation accuracy immediately shot up from 0.79 to 0.81, even though it had stopped improving earlier.
+</p>
+<p>When the learning rate is too large, the optimizer may not be able to hone in on a good solution. This is why you start with a large-ish learning rate, to quickly get in the neighborhood of a good solution, and then make the learning rate smaller over time, in order to get as close to this solution as you can.
+</p>
+<p>You can repeat this process of lowering the learning rate and training for a few epochs several more times until the loss and accuracy are no longer noticeably improving.
+</p>
+<div class="note">
+<p><em>Tip</em>: Keras also has a <code>LearningRateScheduler</code> callback that can automatically reduce the learning rate, which is especially useful for training sessions with hundreds of epochs that you don’t want to babysit. The <code>ReduceLROnPlateau</code> callback will automatically lower the learning rate when the validation accuracy or loss has stopped improving. Very handy!
+</p></div>
+
+<p>The final loss and accuracy plots will look like this:
+</p><div class="image-100"><img src="graphics/img151.png"  alt="" title="The loss curves (top) and accuracy curves (bottom)" /></div>
+<p>This was over a combined 30 epochs of training. Notice how there’s a bump in the lines at the points where you reduced the learning rate. Eventually, the curves flatten out, meaning that the model has learned all it can from the data.
+</p>
+<p>The final accuracy on the test set is 82%. That’s a lot better than the SqueezeNet model from Turi Create. There are two reasons for this: 1) MobileNet is more powerful than SqueezeNet; and 2) Turi Create does not use data augmentation. Granted, 82% is still not as good as the model from Create ML, which had 91% accuracy, but that in turn uses a proprietary feature extractor that is more powerful than MobileNet. As we said before, it’s all about finding a compromise between results, speed and size.
+</p>
+<div class="note">
+<p><em>Note</em>: Notice that in the first few epochs, the validation loss and accuracy are actually a bit better than the training loss and accuracy. This is not unusual, especially with a relatively small validation set. It can also happen when you have a <code>Dropout</code> layer, which is only active for the training set but not for testing on the validation set. You’ll learn about dropout in the next section.
+</p></div>
+
+<h3 class="segment-chapter">Regularization and dropout</h3>
+
+<p>So you’ve got a model with a pretty decent score already, but notice in the above plots that there is a big gap between the training loss and validation loss. Also, the training accuracy keeps increasing — reaching almost 100% — while the validation accuracy flattens out and stops improving.
+</p>
+<p>This doesn’t necessarily mean that the model is overfitting. The training accuracy is <i>always</i> a little higher than the validation accuracy because it’s always easier for the model to make good predictions on the training images than on images it has never seen before.
+</p>
+<p>However, this is only a bad thing when the validation loss or accuracy becomes worse over time. That doesn’t appear to be happening here... while the validation score isn’t as good as the training score, it doesn’t actually become worse — it just flattens out.
+</p>
+<p>Still, it would be better if the validation curves were closer to the training curves. You can do this by adding <em>regularization</em> to the model. This makes it harder for the model to get too attached to the training images. Regularization is very useful, but keep in mind that it isn’t some magic trick that makes your validation score suddenly a lot better — it actually does the opposite and makes the training score a bit worse.
+</p>
+<p>There are different methods for regularization, but what they all have in common is that they make learning more difficult. This discourages the model from learning unnecessary details, which may cause overfitting, and forces it to focus only on what is truly important.
+</p>
+<p>You’ll use the following forms of regularization:
+</p>
+<ul>
+<li>
+<p>Batch normalization
+</p></li>
+
+<li>
+<p>Dropout
+</p></li>
+
+<li>
+<p>L2 penalty
+</p></li>
+</ul>
+
+<p>The MobileNet portion of the model has a <code>BatchNormalization</code> layer after every convolution layer. These <em>batch norm</em> layers act as a type of regularizer.  The main purpose of batch normalization is to make sure that the data that flows between the layers stay healthy.
+</p>
+<p>The calculations involved introduce a small amount of noise, or random variations in the data, into the network. This noise prevents the model from memorizing specific image details. Regularization is not the main purpose of batch normalization, but it’s a nice side benefit.
+</p>
+<p>You will add the other two types of regularization to the logistic regression portion of the model. Create this new classifier model:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras <span class="hljs-keyword">import</span> regularizers
+top_model = Sequential()
+top_model.add(base_model)
+top_model.add(GlobalAveragePooling2D())
+top_model.add(Dropout(<span class="hljs-number">0.5</span>))              <span class="hljs-comment"># this line is new</span>
+top_model.add(Dense(num_classes,
+                    kernel_regularizer=regularizers.l2(<span class="hljs-number">0.001</span>)))  <span class="hljs-comment"># new</span>
+top_model.add(Activation(<span class="hljs-string">"softmax"</span>))</pre>
+<p>There are only two new things here: a <code>Dropout</code> layer after the global pooling layer and the <code>Dense</code> layer now has a <em>kernel regularizer</em>.
+</p>
+<p><em>Dropout</em> is a special kind of layer that randomly removes elements from the tensor by setting them to zero. It works on the 1,024-element feature vector that is the output from the global pooling layer. Since you used 0.5 as the dropout percentage, <code>Dropout</code> will randomly set half of the feature vector’s elements to zero. This makes it harder for the model to remember things, because, at any given, time half of its input data is randomly removed — and it’s a different half for each training image.
+</p>
+<p>Randomly removing elements from the feature vector seems like an odd thing to do, but it keeps the neural network from becoming lazy. The connections from the <code>Dense</code> layer cannot depend too much on any given feature since that feature might drop out of the network at random. Using dropout is a great technique to stop the neural network from relying too much on remembering specific training examples.
+</p>
+<p>Aurélien Géron, in <i>Hands-on Machine Learning with Scikit-Learn </i><i>&amp;</i><i> TensorFlow</i> at <a href="http://shop.oreilly.com/product/0636920052289.do">oreil.ly/2nzmN8L</a>, compares this to a workplace where, on any given day, some percentage of the people might not come to work: Everyone must be able to do critical tasks and must cooperate with more co-workers. This makes the company more resilient and less dependent on any single worker.
+</p>
+<p>The dropout rate is a hyperparameter, so you get to decide how high or low it should be. <code>0.5</code> is a good default choice. To disable dropout, simply set the rate to zero.
+</p>
+<div class="note">
+<p><em>Note</em>: Dropout is always disabled at inference time. This layer is only active during training. We wouldn’t want half of our predictions to randomly disappear!
+</p></div>
+
+<p>The other form of regularization you’re using is an <em>L2 penalty</em> on the <code>Dense</code> layer. You’ve already briefly seen this in the chapter, “Digging Deeper Into Turi Create.” When you use a kernel regularizer, as Keras calls it, the weights for that layer are added to the loss term. <em>L2</em> means that it actually adds the square of the weights to the loss term, so that large weights count as extra heavy.
+</p>
+<p>Since it’s the optimizer’s job to make the loss as small as possible, it is now encouraged to keep the weights small, too, because large weights result in a large loss value. This prevents situations where some features get really large weights, making them seem more important than features with very small weights. Thanks to the L2 penalty, the weights are more balanced, reducing the chance of overfitting.
+</p>
+<p>The value <code>0.001</code> is a hyperparameter called <em>weight decay</em>. This lets you tweak how important the L2 penalty is in the loss function. If this value is too large, then the L2 penalty overshadows the rest of the loss terms and the model will have a hard time learning anything. If it’s too small, then the L2 penalty doesn’t really have any effect.
+</p>
+<p>Now, you can compile this new model again and train it. Make sure to first train a few epochs with the MobileNet layers frozen, and then set <code>trainable = True</code> to fine-tune. And don’t forget to periodically lower the learning rate! When you plot the loss curves, you’ll notice that the validation loss now stays much closer to the training loss.
+</p>
+<div class="note">
+<p><em>Note</em>: With an L2 penalty, the initial loss can be much higher than the expected <code>np.log(num_classes)</code>. This is not so strange, because it adds the L2-norm of the weights to the loss as well. Starting out with a high loss value is usually no problem, as long as it goes down during training. If the loss doesn’t go down, the first thing to try is using a lower learning rate. Note that the validation loss does not include this extra L2 term.
+</p></div>
+
+<h3 class="segment-chapter">Tune those hyperparameters</h3>
+
+<p>You’ve seen three different hyperparameters now:
+</p>
+<ul>
+<li>
+<p>the learning rate
+</p></li>
+
+<li>
+<p>the dropout probability
+</p></li>
+
+<li>
+<p>the weight decay factor for L2 regularization
+</p></li>
+</ul>
+
+<p>Choosing appropriate values for these settings — known as <em>hyperparameter tuning</em> — is essential for getting the training process to work optimally.
+</p>
+<p>The way most people do hyperparameter tuning, is just by trying stuff and then seeing how the validation loss or accuracy changes. If you have a lot of hyperparameters, this can be a time-consuming job. There are ways to automate this, by using a grid search or a random search, which will try all possible combinations of the hyperparameters.
+</p>
+<p>It’s very important that you use the validation set for tuning the hyperparameters, not the training set or the test set. The test set should only be used to verify how well your final model works, not for experiments with the hyperparameters.
+</p>
+<p>There is a very good reason for this: When you tweak the hyperparameters based on the validation results, train the model with the new settings, tweak the hyperparameters again, and so on... then you’re indirectly training the model on the validation set, too.
+</p>
+<p>You’re now manually influencing the training process by making changes based on the validation results. In a way, the images from the validation set are “leaking” into the training process. That’s OK since that’s what the validation set is for. But you don’t want this to happen to your test set, otherwise it can no longer paint a realistic picture of how well your model generalizes on images it has never seen before — because indirectly it <i>will</i> have already seen these images.
+</p>
+<p>You can keep tweaking these hyperparameters to squeeze a bit more performance out of the model, but, at some point, you have to call it good enough. The author got the best results with a dropout rate of 0.7 and a weight decay of 0.01. This model scored 85% on the test set, which is again a few percentage points better than before.
+</p>
+<h2 class="segment-chapter">How good is the model really?</h2>
+
+<p>The very last training epoch is not necessarily the best — it’s possible the validation accuracy didn’t improve or even got much worse — so in order to evaluate the final model on the test set, let’s load the best model back in first:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.models <span class="hljs-keyword">import</span> load_model
+<span class="hljs-keyword">import</span> keras_applications
+
+best_model = load_model(
+    <span class="hljs-string">"checkpoints/multisnacks-0.7532-0.8304.hdf5"</span>,
+    custom_objects={ <span class="hljs-string">"relu6"</span>: keras_applications.mobilenet.relu6 })</pre>
+<p>This loads the model from a checkpoint file that was saved by the <code>ModelCheckpoint</code> callback. (Replace the filename with your own best checkpoint.) This HDF5 file contains the learned parameters for the model but also the architecture definition. Because the <code>relu6</code> activation is not a standard part of Keras, you have to provide this in the <code>custom_objects</code> dictionary, otherwise, Keras won’t be able to load the model.
+</p>
+<div class="note">
+<p><em>Note</em>: The <code>multisnacks-0.7532-0.8304.hdf5</code> file is included in this chapter’s resources. If you were unable to train the model on your own computer, feel free to load this version.
+</p></div>
+
+<div class="note">
+<p><em>Note</em>: The above instructions are for Keras version 2.2.0 and Keras-Applications 1.0.2. It may or may not work with newer or older versions.
+</p></div>
+
+<p>Now you can evaluate this best model against the test set:
+</p><pre class="code-block">best_model.evaluate_generator(test_generator)</pre>
+<p>For the author’s best model, this printed <code>[0.6375293886962057, 0.8529411764705882]</code>. The first number is the loss, which isn’t really that interesting, here.
+</p>
+<p>The second number is the accuracy, over 85%. The Turi Create SqueezeNet model scored 67%, so we’re doing quite a bit better, here. And it gets in the neighborhood of Create ML’s score of 91%.
+</p>
+<p>Take a closer look at what the model predicts:
+</p><pre class="code-block">probabilities = best_model.predict_generator(test_generator)
+predicted_labels = np.argmax(probabilities, axis=<span class="hljs-number">-1</span>)</pre>
+<p>The <code>predict_generator()</code> function runs the model on all the images from the test set and puts the predicted probabilities in the <code>probabilities</code> array. Then you take the argmax over every result to find the index of the class with the highest probability.
+</p>
+<p>The variable <code>predicted_labels</code> is a NumPy array with 952 numbers, one for each test set image. These are the predicted class indices. The correct, or ground-truth, class indices can be obtained from the test set generator:
+</p><pre class="code-block">target_labels = test_generator.classes</pre>
+<p>Now, you can compare these two arrays to find out where the classifier was correct and where it made mistakes, the so-called confusion matrix:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> sklearn <span class="hljs-keyword">import</span> metrics
+conf = metrics.confusion_matrix(target_labels, predicted_labels)</pre>
+<p>The <code>conf</code> variable is another NumPy array, of shape 20×20. It’s easiest to interpret when plotted as a heatmap:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> seaborn <span class="hljs-keyword">as</span> sns
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">plot_confusion_matrix</span><span class="hljs-params">(conf, labels, figsize=<span class="hljs-params">(<span class="hljs-number">8</span>, <span class="hljs-number">8</span>)</span>)</span>:</span>
+    fig = plt.figure(figsize=figsize)
+    heatmap = sns.heatmap(conf, annot=<span class="hljs-keyword">True</span>, fmt=<span class="hljs-string">"d"</span>)
+    heatmap.xaxis.set_ticklabels(labels, rotation=<span class="hljs-number">45</span>,
+                                 ha=<span class="hljs-string">"right"</span>, fontsize=<span class="hljs-number">12</span>)
+    heatmap.yaxis.set_ticklabels(labels, rotation=<span class="hljs-number">0</span>,
+                                 ha=<span class="hljs-string">"right"</span>, fontsize=<span class="hljs-number">12</span>)
+    plt.xlabel(<span class="hljs-string">"Predicted label"</span>, fontsize=<span class="hljs-number">12</span>)
+    plt.ylabel(<span class="hljs-string">"True label"</span>, fontsize=<span class="hljs-number">12</span>)
+    plt.show()
+
+<span class="hljs-comment"># Find the class names that correspond to the indices</span>
+labels = [<span class="hljs-string">""</span>] * num_classes
+<span class="hljs-keyword">for</span> k, v <span class="hljs-keyword">in</span> test_generator.class_indices.items():
+    labels[v] = k
+
+plot_confusion_matrix(conf, labels, figsize=(<span class="hljs-number">14</span>, <span class="hljs-number">14</span>))</pre>
+<p>This plots the following confusion matrix:
+</p><div class="image-85"><img src="graphics/img152.png"  alt="" title="The confusion matrix for the MobileNet model" /></div>
+<p>On the diagonal — the bright squares — are the images that were correctly matched. Everything else is an incorrect match. Ideally, there are only numbers on the diagonal and zeros everywhere else. From this confusion matrix, you can immediately see that apples are often wrongly predicted to be oranges (five times), and cookies and muffins got mixed up four times.
+</p>
+<div class="note">
+<p><em>Note</em>: Earlier, we mentioned that the generator for the test set should not use data augmentation. Otherwise, running <code>evaluate_generator()</code> more than once would give different scores each time. You can actually use such differences to your advantage, known as <em>TTA</em>, or Test Time Augmentation.
+</p>
+<p>For example, instead of making only one prediction for each test image, you could do it once for the normal image and once for the image flipped. Then the final score is the average of these two predictions. The more different variations of the test image you use, the better the average score will be.
+</p>
+<p>This trick is often used in competitions to squeeze a few extra points out of the model’s performance. Of course, making multiple predictions per image is also slower and therefore not really suitable for mobile apps.
+</p></div>
+
+<h3 class="segment-chapter">Precision, recall, F1-score</h3>
+
+<p>It’s also useful to make a precision-recall report:
+</p><pre class="code-block">print(metrics.classification_report(target_labels,
+                     predicted_labels, target_names=labels))</pre>
+<p>This prints the following:
+</p><pre class="code-block">             precision    recall  f1-score   support
+      apple       0.95      0.78      0.86        50
+     banana       0.88      0.92      0.90        50
+       cake       0.71      0.74      0.73        50
+      candy       0.79      0.88      0.83        50
+     carrot       0.90      0.88      0.89        50
+     cookie       0.87      0.80      0.83        50
+   doughnut       0.96      0.88      0.92        50
+      grape       0.96      0.94      0.95        50
+    hot dog       0.94      0.90      0.92        50
+  ice cream       0.78      0.72      0.75        50
+      juice       0.92      0.90      0.91        50
+     muffin       0.80      0.92      0.85        48
+     orange       0.82      0.80      0.81        50
+  pineapple       0.67      0.82      0.74        40
+    popcorn       0.91      0.75      0.82        40
+    pretzel       0.81      0.84      0.82        25
+      salad       0.82      0.92      0.87        50
+ strawberry       0.88      0.86      0.87        49
+     waffle       0.92      0.90      0.91        50
+ watermelon       0.83      0.88      0.85        50
+
+avg / total       0.86      0.85      0.85       952</pre>
+<p><em>Precision</em> means: how many of the images that were classified as being X really are X? The precision on hot dog is pretty good, 0.94. Most of the time when the model thinks something is a hot dog, it really is a hot dog.
+</p>
+<p>Precision is rather low on pineapple, which means the model found a lot of objects that it thinks are pineapple that really aren’t. You can see this in the confusion matrix in the column for pineapple. When you sum up the numbers in this column, you get 49 total pineapple predictions, of which only 33 are correct, so the precision is 33/49 or 0.67. One out of three images that the model thinks is a pineapple, actually isn’t a pineapple. Ouch, there’s room for improvement there!
+</p>
+<p>By the way, instead of counting up these numbers by hand, it’s much simpler to write some Python:
+</p><pre class="code-block"><span class="hljs-comment"># Get the class index for pineapple</span>
+idx = test_generator.class_indices[<span class="hljs-string">"pineapple"</span>]
+
+<span class="hljs-comment"># Find how many images were predicted to be pineapple</span>
+total_predicted = np.sum(predicted_labels == idx)
+
+<span class="hljs-comment"># Find how many images really are pineapple (true positives)</span>
+correct = conf[idx, idx]
+
+<span class="hljs-comment"># The precision is then the true positives divided by</span>
+<span class="hljs-comment"># the true + false positives</span>
+precision = correct / total_predicted
+print(precision)</pre>
+<p>This should print <code>0.67</code>, just as in the report. As you can tell from the math, the more <em>false positives</em> there are, i.e. images the model thinks belong to class X but that aren’t, the lower the precision.
+</p>
+<p><em>Recall</em> means: how many of the images of class X did the model find? This is in some ways the opposite of precision.
+</p>
+<p>Recall for banana is high, so the images that contained bananas were often correctly found by the model. The recall for ice cream is quite low at 72%, so over one-fourth of the ice cream images were classified as something else. To verify this in Python:
+</p><pre class="code-block"><span class="hljs-comment"># Get the class index for ice cream</span>
+idx = test_generator.class_indices[<span class="hljs-string">"ice cream"</span>]
+
+<span class="hljs-comment"># Find how many images are supposed to be ice cream</span>
+total_expected = np.sum(target_labels == idx)
+
+<span class="hljs-comment"># How many ice cream images did we find?</span>
+correct = conf[idx, idx]
+
+<span class="hljs-comment"># The recall is then the true positives divided by</span>
+<span class="hljs-comment"># the true positives + false negatives</span>
+recall = correct / total_expected
+print(recall)</pre>
+<p>This should print <code>0.72</code>. The more <em>false negatives</em> there are, i.e., things that are wrongly predicted to not be class X, the lower the recall for X.
+</p>
+<p>The classification report also includes the <em>F1-score</em>. This is a combination of precision and recall and is useful if you want to get an average of the two.
+</p>
+<p>The class with the highest F1-score is grape, at 0.95. You can safely say that this classifier works very well for images with grapes. The class with the lowest F1-score, 0.73, is cake. If you wanted to improve this classifier, the first thing you might want to do is find more and better training images for the cake category.
+</p>
+<div class="note">
+<p><em>Note</em>: It’s quite useful to be able to write a bit of Python code. Often you’ll need to write short code snippets like the above to take a closer look at the predictions. Get comfortable with Python if you’re interested in building your own models!
+</p></div>
+
+<h3 class="segment-chapter">What are the worst predictions?</h3>
+
+<p>The confusion matrix and precision-recall report can already give hints about things you can do to improve the model. There are other useful things you can do. You’ve already seen that the cake category is the worst overall. It can also be enlightening to look at images that were predicted wrongly but that have very high confidence scores. These are the “most wrong” predictions. Why is the model so confident, yet so wrong about these images?
+</p>
+<p>For example, you can use the following code to find the images that the model was the most wrong about. It uses some advanced NumPy sorcery:
+</p><pre class="code-block"><span class="hljs-comment"># Find for which images the predicted class is wrong</span>
+wrong_images = np.where(predicted_labels != target_labels)[<span class="hljs-number">0</span>]
+
+<span class="hljs-comment"># For every prediction, find the largest probability value;</span>
+<span class="hljs-comment"># this is the probability of the winning class for this image</span>
+probs_max = np.max(probabilities, axis=<span class="hljs-number">-1</span>)
+
+<span class="hljs-comment"># Sort the probabilities from the wrong images from low to high</span>
+idx = np.argsort(probs_max[wrong_images])
+
+<span class="hljs-comment"># Reverse the order (high to low), and keep the 5 highest ones</span>
+idx = idx[::<span class="hljs-number">-1</span>][:<span class="hljs-number">5</span>]
+
+<span class="hljs-comment"># Get the indices of the images with the worst predictions</span>
+worst_predictions = wrong_images[idx]
+
+index2class = {v:k <span class="hljs-keyword">for</span> k,v <span class="hljs-keyword">in</span> test_generator.class_indices.items()}
+
+<span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> worst_predictions:
+    print(<span class="hljs-string">"%s was predicted as '%s' %.4f"</span> % (
+        test_generator.filenames[i],
+        index2class[predicted_labels[i]],
+        probs_max[i]
+    ))</pre>
+<p>This will output:
+</p><pre class="code-block">strawberry/09d140146c09b309.jpg was predicted as &apos;salad&apos; 0.9963
+watermelon/3571ba354fa3c699.jpg was predicted as &apos;pineapple&apos; 0.9963
+orange/36bcc5ef734dad83.jpg was predicted as &apos;salad&apos; 0.9859
+pineapple/0eebf86343d79a23.jpg was predicted as &apos;banana&apos; 0.9846
+carrot/4990e82cd005a1af.jpg was predicted as &apos;banana&apos; 0.9822</pre>
+<p>It can also be instructive to actually look at those images:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.preprocessing <span class="hljs-keyword">import</span> image
+img = image.load_img(test_data_dir + 
+        test_generator.filenames[worst_predictions[<span class="hljs-number">0</span>]])
+plt.imshow(img)</pre>
+<p>Yep, it’s not hard to see why the model got confused, here. You could make a good case that this image is labeled wrong in the test set — or at least is very misleading:
+</p><div class="image-50"><img src="graphics/img153.jpg"  alt="" title="The worst prediction... or is it?" /></div>
+<h3 class="segment-chapter">A note on imbalanced classes</h3>
+
+<p>There is much more to say about image classifiers than we have room for in this book. One topic that comes up a lot is how to deal with <em>imbalanced data</em>.
+</p>
+<p>In a binary classifier that needs to distinguish between <em>disease present</em> (positive) and <em>not present</em> (negative) in X-ray images, most X-rays will not show any disease at all. That’s a good thing for the patients involved, but it also makes a harder job for the classifier. If the disease happens to only 1% of the patients, the classifier could simply always predict “disease not present” and it would be correct 99% of the time. But such a classifier is also pretty useless... 99% correct sounds impressive, but it’s not always good enough.
+</p>
+<p>Or let’s say you want to train a classifier that can distinguish between the following cases: cat, dog, neither cat or dog. In order to train such a classifier, you’ll obviously need pictures of cats and dogs, but also pictures of things that are not cats and dogs. This last category must be much larger because it needs to cover a wide variety of objects, and the classifier will need to lump all of these into the “not cat or dog” category. The risk here is that the classifier will only learn about that one big category and not about the cat and dog categories, which have many fewer images.
+</p>
+<p>There are various techniques you can use to deal with class imbalance, such as oversampling where you use the images from the smaller categories more often, undersampling where you use fewer images from the larger categories, or setting weights on the classes so that the bigger category has a smaller effect on the loss.
+</p>
+<p>Turi Create and Create ML currently have no options for this, so if you need to build a classifier for an imbalanced dataset, Keras is a better choice.
+</p>
+<p>Here ends our discussion of how to train image classifiers. Next up, you’ll learn how to convert the trained Keras model to a Core ML model that you can use in your iOS and macOS apps.
+</p>
+<h2 class="segment-chapter">Converting to Core ML</h2>
+
+<p>When you write <code>model.save(&quot;name.h5&quot;)</code> or use the <code>ModelCheckpoint</code> callback, Keras saves the model in its own format, HDF5. In order to use this model from Core ML, you have to convert it to a <em>.</em><em>mlmodel</em> file first. For this, you’ll need to use the <em>coremltools</em> Python package.
+</p>
+<p>If you haven’t installed it yet, do so using pip:
+</p><pre class="code-block">$ pip3 install -U coremltools</pre>
+<p>You can enter the following commands into the Jupyter notebook or just follow along with MobileNet.ipynb. This chapter’s resources also include a separate Python script, <em>convert-to-coreml.py</em> that first loads the model from the best checkpoint and then does the conversion. Using a separate script makes it easy to add the model conversion step to a build script or CI (Continuous Integration) server.
+</p>
+<p>First, import the package:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> coremltools</pre>
+<p>You may get some warning messages at this point about incompatible versions of Keras and TensorFlow. These tools change quicker than coremltools can keep up with, but usually, these warnings are not a problem. (If you get an error during conversion, you may need to downgrade your Keras install to the last supported version.)
+</p>
+<p>Since this is a classifier model, coremltools needs to know what the label names are. It’s important that these are in the same order as in <code>train_generator.class_indices</code>:
+</p><pre class="code-block">labels = [<span class="hljs-string">"apple"</span>, <span class="hljs-string">"banana"</span>, <span class="hljs-string">"cake"</span>, <span class="hljs-string">"candy"</span>, <span class="hljs-string">"carrot"</span>, <span class="hljs-string">"cookie"</span>,
+          <span class="hljs-string">"doughnut"</span>, <span class="hljs-string">"grape"</span>, <span class="hljs-string">"hot dog"</span>, <span class="hljs-string">"ice cream"</span>, <span class="hljs-string">"juice"</span>,
+          <span class="hljs-string">"muffin"</span>, <span class="hljs-string">"orange"</span>, <span class="hljs-string">"pineapple"</span>, <span class="hljs-string">"popcorn"</span>, <span class="hljs-string">"pretzel"</span>,
+          <span class="hljs-string">"salad"</span>, <span class="hljs-string">"strawberry"</span>, <span class="hljs-string">"waffle"</span>, <span class="hljs-string">"watermelon"</span>]</pre>
+<p>Now, you can use the Keras converter to create a Core ML model:
+</p><pre class="code-block">coreml_model = coremltools.converters.keras.convert(
+    best_model,
+    input_names=<span class="hljs-string">"image"</span>,
+    image_input_names=<span class="hljs-string">"image"</span>,
+    output_names=<span class="hljs-string">"labelProbability"</span>,
+    predicted_feature_name=<span class="hljs-string">"label"</span>,
+    red_bias=<span class="hljs-number">-1</span>,
+    green_bias=<span class="hljs-number">-1</span>,
+    blue_bias=<span class="hljs-number">-1</span>,
+    image_scale=<span class="hljs-number">2</span>/<span class="hljs-number">255.0</span>,
+    class_labels=labels)</pre>
+<p>This has quite a few arguments, so let’s look at them in turn:
+</p>
+<ul>
+<li>
+<p>The first argument is the Keras model object. Here you’re using the <code>best_model</code> object that you loaded in the previous section.
+</p></li>
+
+<li>
+<p><code>input_names</code> tells the converter what the inputs should be named in the .mlmodel file. Since this is an image classifier, it makes sense to use the name <code>&quot;image&quot;</code>. This is also the name that’s used by Xcode when it automatically generates the Swift code for your Core ML model.
+</p></li>
+
+<li>
+<p><code>image_input_names</code> tells the converter that the input called <code>&quot;image&quot;</code> should be treated as an image. This is what lets you pass a <code>CVPixelBuffer</code> object to the Core ML model. If you leave out this option, the input is expected to be an <code>MLMultiArray</code> object, which is not as easy to work with.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p><code>output_names</code> and <code>predicted_feature_name</code> are the names of the two outputs. The first one is <code>&quot;labelProbability&quot;</code> and contains a dictionary that maps the predicted probabilities to the names of the classes. The second one is <code>&quot;label&quot;</code> and is a string that contains the class label of the best prediction. These are also the names that Turi Create used.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p><code>red_bias</code>, <code>green_bias</code>, <code>blue_bias</code>, and <code>image_scale</code> are used to normalize the image. MobileNet, like the other models you’ve trained, expects the pixels to be in the range [-1, 1] instead of the usual [0, 255]. The chosen values are equivalent to the normalization function you’ve used before: <code>image / 127.5 - 1</code>. If these settings are incorrect, Core ML will make bogus predictions.
+</p></li>
+
+<li>
+<p><code>class_labels</code> contains the list of label names you defined earlier.
+</p></li>
+</ul>
+
+<p>When you run this code, coremltools goes through the Keras model layer-by-layer and prints its progress.
+</p>
+<p>You can also supply metadata, which can be helpful for the users of your model, especially the descriptions of the inputs and outputs:
+</p><pre class="code-block">coreml_model.author = <span class="hljs-string">"Your Name Here"</span>
+coreml_model.license = <span class="hljs-string">"Public Domain"</span>
+coreml_model.short_description = <span class="hljs-string">"Image classifier for 20 different types of snacks"</span>
+
+coreml_model.input_description[<span class="hljs-string">"image"</span>] = <span class="hljs-string">"Input image"</span>
+coreml_model.output_description[<span class="hljs-string">"labelProbability"</span>]= <span class="hljs-string">"Prediction probabilities"</span>
+coreml_model.output_description[<span class="hljs-string">"label"</span>]= <span class="hljs-string">"Class label of top prediction"</span></pre>
+<p>At this point, it’s useful to write <code>print(coreml_model)</code> to make sure that everything is correct. The <code>input</code> should be of type <code>imageType</code>, not <code>multiArrayType</code>, and there should be two outputs: one a <code>dictionaryType</code> and the other a <code>stringType</code>.
+</p>
+<p>Finally, save the model to an .mlmodel file:
+</p><pre class="code-block">coreml_model.save(<span class="hljs-string">"MultiSnacks.mlmodel"</span>)</pre>
+<p>If you weren’t on your Mac already, then download this .mlmodel file to your Mac.
+</p>
+<p>Double-click the file to open it in Xcode:
+</p><div class="image-90"><img src="graphics/img154.png"  alt="" title="Your very own Core ML model" /></div>
+<p>Put it in the app and try it out!
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>MobileNet uses depthwise convolutions because they’re less expensive than regular convolution. Ideal for running models on mobile devices. Instead of pooling layers, MobileNet uses convolutions with a stride of 2.
+</p></li>
+
+<li>
+<p>Training a large neural network on a small dataset is almost impossible. It’s smarter to do transfer learning with a pre-trained model, but even then you want to use data augmentation to artificially enlarge your training set. It’s also a good idea to adapt the feature extractor to your own data by fine-tuning it.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Regularization helps to build stable, reliable models. Besides increasing the amount of training data, you can use batch normalization, dropout and an L2 penalty to stop the model from memorizing specific training examples. The larger the number of learnable parameters in the model, the more important regularization becomes.
+</p></li>
+
+<li>
+<p>Try your model on the test set to see how good it really is. Use a confusion matrix and a precision-recall report to see where the model makes mistakes. Look at the images that it gets most wrong to see if they are really mistakes, or if your dataset needs improvement.
+</p></li>
+
+<li>
+<p>Use coremltools to convert your Keras model to Core ML.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Challenges</h2>
+
+<ul>
+<li>
+<p>Train the binary classifier using MobileNet and see how the score compares to the Turi Create model. The easiest way to do this is to copy all the images for the healthy categories into a folder called <code>healthy</code> and all the unhealthy images into a folder called <code>unhealthy</code>. (Or maybe you could train a “foods I don’t like” vs. “foods I like” classifier.)
+</p></li>
+</ul>
+
+<div class="note">
+<p><em>Note</em>: For a binary classifier, you can keep using softmax and the loss function <code>&quot;categorical_crossentropy&quot;</code>, which gives you two output values, one for each category. Alternatively, you can choose to have just a single output value, in which case the final activation should not be softmax but <code>Activation(&quot;sigmoid&quot;)</code>, the logistic sigmoid. The corresponding loss function is <code>&quot;binary_crossentropy&quot;</code>. If you feel up to a challenge, try using this sigmoid + binary cross-entropy for the classifier. The <code>class_mode</code> for the <code>ImageDataGenerator</code> should then be <code>&quot;binary&quot;</code> instead of <code>&quot;categorical&quot;</code>.
+</p></div>
+
+<ul>
+<li>
+<p>Try adding more layers to the top model. You could add a <code>Conv2D</code> layer, like so:
+</p><pre class="code-block">top_model.add(Conv2D(num_filters, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>))
+top_model.add(BatchNormalization())
+top_model.add(Activation(<span class="hljs-string">"relu"</span>))</pre>
+<p><em>Tip</em>: To add a <code>Conv2D</code> layer after the <code>GlobalAveragePooling2D</code> layer, you have to add a <code>Reshape</code> layer in between, because global pooling turns the tensor into a vector, while <code>Conv2D</code> layers want a tensor with three dimensions.
+</p><pre class="code-block">top_model.add(GlobalAveragePooling2D())
+top_model.add(Reshape((<span class="hljs-number">1</span>, <span class="hljs-number">1</span>, <span class="hljs-number">1024</span>)))
+top_model.add(Conv2D(...))</pre>
+<p>Feel free to experiment with the arrangement of layers in this top model. In general, adding more layers will make the classifier more powerful, but too many layers will make the model big and slow. Keep an eye on the number of trainable parameters!
+</p></li>
+
+<li>
+<p>In this chapter and the last you’ve used the <code>Adam</code> optimizer, but Keras offers a selection of different optimizers. <code>Adam</code> generally gives good results and is fast, but you may want to play with some of the other optimizers, such as <code>RMSprop</code> and <code>SGD</code>. You’ll need to experiment with what learning rates work well for these optimizers.
+</p></li>
+
+<li>
+<p>There is a version 2 of MobileNet, also available in Keras. MobileNet V2 is smaller and more powerful than V1. Just like ResNet50, it uses so-called <em>residual connections</em>, an advanced way to connect different layers together. Try training the classifier using <code>MobileNetV2</code> from the <code>keras.applications.mobilenetv2</code> module.
+</p></li>
+
+<li>
+<p>Try training MobileNet from scratch on the snacks dataset. You’ve seen that transfer learning and fine-tuning works very well, but only because MobileNet has been pre-trained on a large dataset of millions of photos. To create an “empty” MobileNet, use <code>weights=None</code> instead of <code>weights=&quot;imagenet&quot;</code>. You’ll find that it’s actually quite difficult to train a large neural network from scratch on such a small dataset. See whether you can get this model to learn anything, and, if so, what sort of accuracy it achieves on the test set.
+</p></li>
+
+<li>
+<p>Once you’ve established a set of hyperparameters that works well for your machine learning task, it’s smart to combine the training set and validation set into one big dataset and train the model on the full thing. You don’t really need the validation set anymore at this point — you already know that this combination of hyperparameters will work well — and so you might as well train on these images too. After all, every extra bit of training data helps! Try it out and see how well the model scores on the test set now. (Of course, you still shouldn’t train on the test data.)
+</p></li>
+</ul>
+</body></html>

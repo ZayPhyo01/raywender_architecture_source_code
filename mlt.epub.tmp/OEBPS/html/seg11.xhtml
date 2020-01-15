@@ -1,0 +1,668 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 1: Machine Learning, iOS &amp; You</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 1: Machine Learning, iOS &amp; You</h1>
+
+<p>Want to know a secret? Machine learning isn’t really that hard to learn. The truth is, you don’t need a PhD from a prestigious university or a background in mathematics to do machine learning. Sure, there are a few new concepts to wrap your head around, there is a lot of jargon, and it takes a while to feel at home in the ever-growing ecosystem of tools and libraries. But if you already know how to code, you can pick up machine learning quite easily — promise!
+</p>
+<p>This book helps you get started with machine learning on iOS and Apple devices. This first chapter is a gentle introduction to the world of machine learning and what it has to offer — as well as what its limitations are. In the rest of the book, you’ll look at each of these topics in more detail, until you know just enough to be dangerous! Naturally, a book like this can’t cover the entire field of machine learning, but you’ll learn enough to make machine learning a useful tool in your software development toolbox.
+</p>
+<p>With every new version of iOS, Apple is making it easier to add machine learning to your apps. There are now several high-level frameworks, including Natural Language, Speech, and Vision, that provide advanced machine learning functionality behind simple APIs as part of Apple’s iOS tooling. Want to convert speech to text or text to speech? Want to recognize language or grammatical structure? Want to detect faces in photos or track moving objects in video? These built-in frameworks have got you covered.
+</p>
+<p>For more control, the Core ML and Metal Performance Shaders frameworks let you run your own machine-learning models. With these APIs, you can now add state-of-the-art machine-learning technology to your apps! Apple also provides easy-to-use tools such as Create ML and Turi Create that let you build your own models for use with Core ML. And many of the industry-standard machine-learning tools can export Core ML models, too, allowing you to integrate them into your iOS apps with ease.
+</p>
+<p>In this book, you’ll learn how to use these tools and frameworks to make your apps smarter. Even better, you’ll learn how machine learning works behind the scenes — and why this technology is awesome.
+</p>
+<h2 class="segment-chapter">What is machine learning?</h2>
+
+<p>Machine learning is hot and exciting — but it’s not exactly new. Many companies have been routinely employing machine learning as part of their daily business for several decades already. Google, perhaps the quintessential machine-learning company, was founded in 1998 when Larry Page invented PageRank, now considered to be a classic machine-learning algorithm.
+</p>
+<p>But machine learning goes even further back, all the way to the early days of modern computers. In 1959, Arthur Samuel defined machine learning as <i>the field of study that gives computers the ability to learn without being explicitly programmed</i>.
+</p>
+<p>In fact, the most basic machine-learning algorithm of them all, <i>linear regression</i> or the “method of least squares,” was invented over 200 years ago by famed mathematician Carl Friedrich Gauss. That’s approximately one-and-a-half centuries before there were computers... even before electricity was common. This simple algorithm is still used today and is the foundation of more complex methods such as logistic regression and even neural networks — all algorithms that you’ll learn about in this book.
+</p>
+<p>Even <i>deep learning</i>, which had its big breakthrough moment in 2012 when a so-called convolutional neural network overwhelmingly won the ImageNet Large Scale Visual Recognition Challenge, is based on the ideas of artificial neural networks dating back to the work of McCulloch and Pitts in the early 1940s when people started to wonder if it would be possible to make computers that worked like the human brain.
+</p>
+<p>So, yes, machine learning has been around for a while. But that doesn’t mean you’ve missed the boat. On the contrary, the reason it’s become such a hot topic recently is that machine learning works best when there is a lot of data — thanks to the internet and smartphones, there is now more data than ever. Moreover, computing power has become much cheaper.
+</p>
+<p>It took a while for it to catch on, but machine learning has grown into a practical tool for solving real-world problems that were too complex to deal with before.
+</p>
+<p>What <i>is</i> new, and why we’ve written this book, is that mobile devices are now powerful enough to run machine-learning algorithms right in the palm of your hand!
+</p>
+<h3 class="segment-chapter">Learning without explicit programming</h3>
+
+<p>So what exactly do we mean when we say, “machine learning”?
+</p>
+<p>As a programmer, you’re used to writing code that tells the computer exactly what to do in any given situation. A lot of this code consists of rules:
+</p><pre class="code-block">if this is true,
+then do something,
+else do another thing</pre>
+<p>This is pretty much how software has always been written. Different programmers use different languages, but they’re all essentially writing long lists of instructions for the computer to perform. And this works very well for a lot of software, which is why it’s such a popular approach.
+</p>
+<p>Writing out <code>if-then-else</code> rules works well for automating repetitive tasks that most people find boring or that require long periods of concentration. It’s possible, though time-consuming, to feed a computer a lot of knowledge in the form of such rules, then program it to mimic what people do <i>consciously</i>, meaning to reason logically with the rules or knowledge, or to apply <i>heuristics</i>, meaning strategies or rules of thumb.
+</p>
+<p>But there are also many interesting problems in which it’s hard to come up with a suitable set of rules or in which heuristics are too crude — and this is where machine learning can help. It’s very hard to explicitly program computers to do the kinds of things most people do <i>without conscious thought</i>: recognizing faces, expressions and emotions, the shape of objects, or the sense or style of sentences. It’s hard to write down the algorithms for these tasks: What is it that the human brain actually does to accomplish these tasks?
+</p>
+<p>How would you write down rules to recognize a face in a photo? Using the RGB values of the pixels for hair, skin or eye color aren’t reliable. Hair style, glasses, makeup, beards and mustaches can change your appearance between photos. Most photos won’t be of a person looking straight at the camera, so you’d have to account for many different camera angles. You’d end up with hundreds, if not thousands, of rules, and they still wouldn’t cover all possible situations.
+</p>
+<p>How do your friends recognize you as you and not a sibling or relative who resembles you? How do you explain how to distinguish cats from dogs to a small child, if you only have photos? What rules differentiate between cat and dog faces? Dogs and cats come in many different colors and hair lengths and tail shapes. For every rule you think of, there will probably be a lot of exceptions.
+</p>
+<p>The big idea behind machine learning is that, if you can’t write the exact steps for a computer to recognize objects in an image or the sentiment expressed by some text, maybe you can write a program to produce an algorithm that does the job.
+</p>
+<p>Instead of having a domain expert design and implement <code>if-then-else</code> rules, you can let the computer <i>learn</i> the rules to solve these kinds of problems from examples. And that’s exactly what machine learning is: using a learning algorithm that can automatically derive the “rules” that are needed to solve a certain problem. Often, such an automated learner comes up with better rules than humans can, because it can find patterns in the data that humans don’t see.
+</p>
+<h2 class="segment-chapter">Deep learning</h2>
+
+<p>Until now, we’ve been using terms like <i>deep learning</i> and <i>neural networks</i> pretty liberally. Let’s take a moment to properly define what these terms mean.
+</p>
+<p>Neural networks are made up of layers of nodes (neurons) in an attempt to mimic how the human brain works. For a long time, this was mostly theoretical: Only simple neural networks with a couple of layers could be computed in a reasonable time with the computers of that era. In addition, there were problems with the math, and networks with more and larger layers just didn’t work very well.
+</p>
+<p>It took until the mid 2000s for computer scientists to figure out how to train really deep networks consisting of many layers. At the same time, the market for computer game devices exploded, spurring demand for faster, cheaper GPUs to run ever more elaborate games. GPUs (Graphics Processing Units), speed up graphics and are great at doing lots of matrix operations very fast. As it happens, neural networks also require lots of matrix operations.
+</p>
+<p>Thanks to gamers, fast GPUs became very affordable, and that’s exactly the sort of hardware needed to train deep multi-layer neural networks. A lot of the most exciting progress in machine learning is driven by <em>deep learning</em>, which uses neural networks with a high number of layers, and a high number of neurons at each layer as its learning algorithm.
+</p>
+<div class="note">
+<p><em>Note</em>: Companies like Apple, Intel and Google are designing processing units specifically designed for deep learning, such as Google’s TPU, or Tensor Processing Unit, and the new Neural Engine in the iPhone XS’s A12 processor. These lack the 3D rendering capabilities of GPUs but instead can run the computational needs of the neural networks much more efficiently.
+</p></div>
+<div class="image-100"><img src="graphics/img9.png"  alt="" title="" /></div>
+<p>The deeper a network is, the more complex the things are that you can make it learn. Thanks to deep learning, modern machine-learning models can solve more difficult problems than ever — including what is in images, recognizing speech, understanding language and much more. Research into deep learning is still on-going and new discoveries are being made all the time.
+</p>
+<div class="note">
+<p><em>Note</em>: NVIDIA made its name as a computer game chip maker; now, it’s also a machine-learning chip maker. Even though most tools for training models will work on macOS, they’re more typically used on Linux running on a PC. The only GPUs these tools support are from NVIDIA, and most Macs don’t have NVIDIA chips. GPU-accelerated training on newer Macs is now possible with Apple’s own tools, but if you want the best speed and the most flexibility, you’ll still need a Linux machine. Fortunately, you can rent such machines in the cloud. For this book, you can run most of the training code on your Mac, although sometimes you’ll have to be a little patient. We also provide the trained models for download, so you can skip the wait.
+</p></div>
+
+<h3 class="segment-chapter">Artificial intelligence</h3>
+
+<p>A term that gets thrown in a lot with machine learning is <i>artificial intelligence</i>, or AI — a field of research that got started in the 1950s with computer programs that could play checkers, solve algebra word problems and more.
+</p>
+<p>The goal of artificial intelligence is to simulate certain aspects of human intelligence using machines. A famous example from AI is the Turing test: <i>If a human cannot distinguish between responses from a machine and a human, the machine is intelligent</i>.
+</p>
+<p>AI is a very broad field, with researchers from many different backgrounds, including computer science, mathematics, psychology, linguistics, economics and philosophy. There are many subfields, such as computer vision and robotics, as well as different approaches and tools, including statistics, probability, optimization, logic programming and knowledge representation.
+</p>
+<p>Learning is certainly something we associate with intelligence, but it goes too far to say that all machine-learning systems are intelligent. There is definitely overlap between the two fields, but machine learning is just one of the tools that gets used by AI. Not all AI is machine learning — and not all machine learning is AI.
+</p>
+<p>Machine learning also has many things in common with statistics and <i>data science</i>, a fancy term for doing statistics on computers. A data scientist may use machine learning to do her job, and many machine learning algorithms originally come from statistics. Everything is a remix.
+</p>
+<h3 class="segment-chapter">What can you do with machine learning?</h3>
+
+<p>Here are some of the things researchers and companies are doing with machine learning today:
+</p>
+<ul>
+<li>
+<p>Predict how much shoppers will spend in a store.
+</p></li>
+
+<li>
+<p>Assisted driving and self-driving cars.
+</p></li>
+
+<li>
+<p>Personalized social media: targeted ads, recommendations and face recognition.
+</p></li>
+
+<li>
+<p>Detect email spam and malware.
+</p></li>
+
+<li>
+<p>Forecast sales.
+</p></li>
+
+<li>
+<p>Predict potential problems with manufacturing equipment.
+</p></li>
+
+<li>
+<p>Make delivery routes more efficient.
+</p></li>
+
+<li>
+<p>Detect online fraud.
+</p></li>
+
+<li>
+<p>And many others...
+</p></li>
+</ul>
+
+<p>These are all great uses of the technology but not really relevant to mobile developers. Fortunately, there are plenty of things that machine learning <i>can</i> do on mobile — especially when you think about the unique sources of data available on a device that travels everywhere with the user, can sense the user’s movements and surroundings, and contains all the user’s contacts, photos and communications. Machine learning can make your apps smarter.
+</p>
+<p>There are four main data input types you can use for <em>machine learning on mobile</em>: cameras, text, speech and activity data.
+</p>
+<p><em>Cameras</em>: Analyze or augment photos and videos captured by the cameras, or use the live camera feed, to detect objects, faces and landmarks in photos and videos; recognize handwriting and printed text within images; search using pictures; track motion and poses; recognize gestures; understand emotional cues in photos and videos; enhance images and remove imperfections; automatically tag and categorize visual content; add special effects and filters; detect explicit content; create 3D models of interior spaces; and implement augmented reality.
+</p>
+<p><em>Text</em>: Classify or analyze text written or received by the user in order to understand the meaning or sentence structure; translate into other languages; implement intelligent spelling correction; summarize the text; detect topics and sentiment; and create conversational UI and chatbots.
+</p>
+<p><em>Speech</em>: Convert speech into text, for dictation, translation or Siri-type instructions; and implement automatic subtitling of videos.
+</p>
+<p><em>Activity</em>: Classify the user’s activity, as sensed by the device’s gyroscope, accelerometer, magnetometer, altimeter and GPS.
+</p>
+<p>Later in this chapter, in the section <em>Frameworks, Tools and APIs</em>, you’ll see that the iOS SDK has all of these areas covered!
+</p>
+<div class="note">
+<p><em>Note</em>: In general, machine learning can be a good solution when writing out rules to solve a programming problem becomes too complex. Every time you’re using a heuristic — an informed guess or rule of thumb — in your software, you might want to consider replacing it with a learned model to get results that are tailored to your end user.
+</p></div>
+
+<h2 class="segment-chapter">ML in a nutshell</h2>
+
+<p>One of the central concepts in machine learning is that of a <em>model</em>. The model is the algorithm that was learned by the computer to perform a certain task, plus the data needed to run that algorithm. So a model is a combination of algorithm and data.
+</p>
+<p>It’s called a “model” because it models the domain for the problem you’re trying to solve. For example, if the problem is recognizing the faces of your friends in photos, then the problem domain is digital photos of humans, and the model will contain everything that it needs to make sense of these photos.
+</p>
+<p>To create the model, you first need to choose an algorithm – for example, a neural network — and then you need to <em>train the model</em> by showing it a lot of examples of the problem that you want it to solve. For the face-recognition model, the training examples would be photos of your friends, as well as the things you want the model to learn from these photos, such as their names.
+</p>
+<p>After successful training, the model contains the “knowledge” about the problem that the machine-learning algorithm managed to extract from the training examples.
+</p>
+<p>Once you have a trained model, you can ask it questions for which you don’t yet know the answer. This is called <em>inference</em>, using the trained model to make predictions or draw conclusions. Given a new photo that the model has never seen before, you want it to detect your friends’ faces and put the right name to the right face.
+</p>
+<p>If a model can make correct predictions on data that it was not trained on, we say that it <em>generalizes</em> well. Training models so that they make good predictions on new data is the key challenge of machine learning.
+</p><div class="image-70"><img src="graphics/img10.png"  alt="" title="" /></div>
+<p>The “learning” in machine learning really applies only to the training phase. Once you’ve trained the model, it will no longer learn anything new. So when you use a machine-learning model in an app, you’re not implementing learning so much as “using a fixed model that has previously learned something.” Of course, it’s possible to re-train your model every so often — for example, after you’ve gathered new data — and update your app to use this new model.
+</p>
+<h3 class="segment-chapter">Supervised learning</h3>
+
+<p>The most common type of machine learning practiced today, and the main topic of this book, is <em>supervised learning</em>, in which the learning process is guided by a human — you! – that tells the computer what it should learn and how.
+</p>
+<p>With supervised learning, you train the model by giving it <em>examples</em> to look at, such as photos of your friends, but you also tell it what those examples represent so that the model can learn to tell the difference between them. These <em>labels</em> tell the model what (or who) is actually in those photos. Supervised training always needs labeled data.
+</p>
+<div class="note">
+<p><em>Note</em>: Sometimes people say “samples” instead of examples. It’s the same thing.
+</p></div>
+
+<p>The two sub-areas of supervised learning are <em>classification</em> and <em>regression</em>.
+</p>
+<p><em>Regression</em> techniques predict <i>continuous</i> responses, such as changes in temperature, power demand or stock market prices. The output of a regression model is one or more floating-point numbers. To detect the existence and location of a face in a photo, you’d use a regression model that outputs four numbers that describe the rectangle in the image that contains the face.
+</p>
+<p><em>Classification</em> techniques predict <i>discrete</i> responses or categories, such as whether an email is spam or whether this is a photo of a good dog:
+</p><div><img src="graphics/img11.png" height="40%"  alt="" title="" /></div>
+<p>The output of a classification model is “good dog” or “bad dog,” or “spam” versus “no spam,” or the name of one of your friends. These are the <em>classes</em> the model recognizes. Typical applications of classification in mobile apps are recognizing things in images or deciding whether a piece of text expresses a positive or negative sentiment.
+</p>
+<p>There is also a type of machine learning called <em>unsupervised learning</em>, which does not involve humans in the learning process. A typical example is <i>clustering</i>, in which the algorithm is given a lot of <em>unlabeled</em> data, and its job is to find patterns in this data. As humans, we typically don’t know beforehand what sort of patterns exist, so there is no way we can guide the ML system. Applications include finding similar images, gene sequence analysis and market research.
+</p>
+<p>A third type is <em>reinforcement learning</em>, where an agent learns how to act in a certain environment and is rewarded for good behavior but punished for bad. This type of learning is used for tasks like programming robots.
+</p>
+<h3 class="segment-chapter">You need data... a lot of it</h3>
+
+<p>Let’s take a closer look at exactly how a model is trained, as this is where most of the mystery and confusion comes from.
+</p>
+<p>First, you need to collect <em>training data</em>, which consists of examples and labels. To make a model that can recognize your friends, you need to show it many examples — photos of your friends — so that it can learn what human faces look like, as opposed to any other objects that can appear in photos and, in particular, which faces correspond to which names.
+</p>
+<p>The labels are what you want the model to learn from the examples — in this case, what parts of the photo contains faces, if any, and the names that go along with them.
+</p>
+<p>The more examples, the better, so that the model can learn which details matter and which details don’t. One downside of supervised learning is that it can be very time consuming and, therefore, expensive to create the labels for your examples. If you have 1,000 photos, you’ll also need to create 1,000 labels — or even more if a photo can have more than one person in it.
+</p>
+<div class="note">
+<p><em>Note</em>: You can think of the examples as the questions that the model gets asked; you can think of the labels as the answers to these questions. You only use labels during training, not for inference. After all, inference means asking questions that you don’t yet have the answers for.
+</p></div>
+
+<h3 class="segment-chapter">It’s all about the features</h3>
+
+<p>The training examples are made up of the <em>features</em> you want to train on. This is a bit of a nebulous concept, but a “feature” is generally a piece of data that is considered to be interesting to your machine-learning model.
+</p>
+<p>For many kinds of machine-learning tasks, you can organize your training data into a set of features that are quite apparent. For a model that predicts house prices, the features could include the number of rooms, floor area, street name and so on. The labels would be the sale price for each house in the dataset. This kind of training data is often provided in the form of a CSV or JSON table, and the features are the columns in that table.
+</p>
+<p><em>Feature engineering</em> is the art of deciding which features are important and useful for solving your problem, and it is an important part of the daily work of a machine-learning practitioner or data scientist.
+</p>
+<p>In the case of machine-learning models that work on images, such as the friend face detector, the inputs to the model are the pixel values from a given photo. It’s not very useful to consider these pixels to be the “features” of your data because RGB values of individual pixels don’t really tell you much.
+</p>
+<p>Instead, you want to have features such as eye color, skin color, hair style, shape of the chin, shape of the ears, does this person wear glasses, do they have an evil scar and so on... You could collect all this information about your friends and put it into a table, and train a machine-learning model to make a prediction for “person with blue eyes, brown skin, pointy ears.” The problem is that such a model would be useless if the input is a photo. The computer has no way to know what someone’s eye color or hair style is because all it sees is an array of RGB values.
+</p>
+<p>So you must <em>extract</em> these features from the image somehow. The good news is, you can use machine learning for that, too! A neural network can analyze the pixel data and discover for itself what the useful features are for getting the correct answers. It learns this during the training process from the training images and labels you’ve provided. It then uses those features to make the final predictions.
+</p>
+<p>From your training photos, the model might have discovered “obvious” features such as eye color and hair style, but usually the features the model detects are more subtle and hard to interpret. Typical features used by image classifiers include edges, abstract shapes, color blobs and the relationships between them. In practice, it doesn’t really matter what features the model has chosen, as long as they let the model make good predictions.
+</p>
+<p>One of the reasons deep learning is so popular is that teaching a model to find the interesting image features by itself works much better than any <code>if-then-else</code> rules humans have come up with by hand in the past. Even so, deep learning still benefits from any hints you can provide about the structure of the training data you’re using, so that it doesn’t have to figure out <i>everything</i> by itself.
+</p>
+<p>You’ll see the term <i>features</i> a lot in this book. For some problems, the features are data points that you directly provide as training data; for other problems, they are data that the model has extracted by itself from more abstract inputs such as RGB pixel values.
+</p>
+<h3 class="segment-chapter">The training loop</h3>
+
+<p>The training process for supervised learning goes like this:
+</p><div class="image-70"><img src="graphics/img12.png"  alt="" title="" /></div>
+<p>The model is a particular algorithm you have chosen, such as a neural network. You supply your training data that consists of the examples, as well as the correct labels for these examples. The model then makes a prediction for each of the training examples.
+</p>
+<p>Initially, these predictions will be completely wrong because the model has not learned anything yet. But <i>you</i> know what the correct answers should be, and so it is possible to calculate how “wrong” the model is by comparing the predicted outputs to the expected outputs (the labels). This measure of “wrongness” is called the <em>loss</em> or the error.
+</p>
+<p>Using some fancy mathematics called <i>back-propagation</i>, the training process uses this loss value to slightly tweak the <em>parameters</em> of the model so that it will make better predictions next time.
+</p>
+<p>Showing the model all the training examples just once is not enough. You’ll need to repeat this process over and over, often for hundreds of iterations. In each iteration, the loss will become lower, meaning that the error between the prediction and the true value has become smaller and, thus, the model is less wrong than before. And that’s a good thing!
+</p>
+<p>If you repeat this enough times, and assuming that the chosen model has enough capacity for learning this task, then gradually the model’s predictions will become better and better.
+</p>
+<p>Usually people keep training until the model reaches either some minimum acceptable accuracy, up to a maximum number of iterations, or until they run out of patience... For deep neural networks, it’s not uncommon to use millions of images and to go through hundreds of iterations.
+</p>
+<p>Of course, training is a bit more complicated than this in practice (isn’t it always?). For example, it’s possible to train for <i>too long</i>, actually making your model worse. But you get the general idea: show the training examples, make predictions, update the model’s parameters based on how wrong the predictions are, repeat until the model is good enough.
+</p>
+<p>As you can tell, training machine-learning models is a brute-force and time-consuming process. The algorithm has to figure out how to solve the problem through trial and error. It’s no surprise that it takes a lot of processing power. Depending on the complexity of the algorithm you’ve chosen and the amount of training data, training a model can take anywhere from several minutes to several weeks, even on a computer with very fast processors. If you want to do some serious training, you can rent time on an Amazon, Google or Microsoft server, or even a cluster of servers, which does the job much faster than your laptop or desktop computer.
+</p>
+<h3 class="segment-chapter">What does the model actually learn?</h3>
+
+<p>Exactly what a model learns depends on the algorithm you’ve chosen. A <i>decision tree</i>, for example, literally learns the same kind of <code>if-then-else</code> rules a human would have created. But most other machine-learning algorithms don’t learn rules directly, but a set of numbers called the <em>learned parameters</em>, or just “parameters”, of the model.
+</p>
+<p>These numbers represent what the algorithm has learned, but they don’t always make sense to us humans. We can’t simply interpret them as <code>if-then-else</code>; the math is more complex than that.
+</p>
+<p>It’s not always obvious what’s going on inside these models, even if they produce perfectly acceptable outcomes. A big neural network can easily have 50 million of these parameters, so try wrapping your head around that!
+</p>
+<p>It’s important to realize that we aren’t trying to get the model to <i>memorize</i> the training examples. That’s not what the parameters are for. During the training process, the model parameters should capture some kind of <i>meaning</i> from the training examples, not retain the training data verbatim. This is done by choosing good examples, good labels and a loss function that is suitable to the problem.
+</p>
+<p>Still, one of the major challenges of machine learning is <em>overfitting</em>, which happens when the model does start to remember specific training examples. Overfitting is hard to avoid, especially with models that have millions of parameters.
+</p>
+<p>For the friends detector, the model’s learned parameters somehow encode what human faces look like and how to find them in photos, as well as which face belongs to which person. But the model should be dissuaded from remembering specific blocks of pixel values from the training images, as that would lead to overfitting.
+</p>
+<p>How does the model know what a face is? In the case of a neural network, the model acts as a <em>feature detector</em> and it will literally learn how to tell objects of interest (faces) apart from things that are not of interest (anything else). You’ll look at how neural networks try to make sense of images in the next chapters.
+</p>
+<h3 class="segment-chapter">Transfer learning: Just add data</h3>
+
+<div class="note">
+<p><em>Note</em>: <i>Just</i> add data?! Data is <i>everything</i> in machine learning! You must train the model with data that accurately represents the sort of predictions you want to make. In Chapter 4, you’ll see how much work was needed to create a relatively small dataset of less than 5,000 images.
+</p></div>
+
+<p>The amount of work it takes to create a good machine-learning model depends on your data and the kind of answers you want from the model. An existing free model might do everything you want, in which case you just convert it to Core ML and pop it into your iOS app. Problem solved!
+</p>
+<p>But what if the existing model’s output is different from the output <i>you</i> care about? For example, in the next chapter, you’ll use a model that classifies pictures of snack food as healthy or unhealthy. There was no free-to-use model available on the web that did this — we looked! So we had to make our own.
+</p>
+<p>This is where <em>transfer learning</em> can help. In fact, no matter what sort of problem you’re trying to solve with machine learning, transfer learning is the best way to go about it 99% of the time. With transfer learning, you can reap the benefits of the hard work that other people have already done. It’s the smart thing to do!
+</p>
+<p>When a deep-learning model is trained, it learns to identify features in the training images that are useful for classifying these images. Core ML comes with a number of ready-to-use models that detect thousands of features and understand 1,000 different classes of objects. Training one of these large models from scratch requires a very large dataset, a huge amount of computation and can cost big bucks.
+</p>
+<p>Most of the training time is spent on learning how to detect the best features. Many of the features these models have learned — edges, corners, patches of color and the relationships between these shapes — are probably also useful for classifying <i>your data</i> into the classes you care about, especially if your training examples are similar in nature to the type of data this other model has already been trained on. Most of these big, freely available models are trained on photographs of humans, animals and everyday objects.
+</p>
+<p>So it would be a bit of a waste if you had to train your own model from scratch to learn the exact same thing. Instead, to create a model for your own dataset, you can take an existing pre-trained model and customize it for your data. This is called transfer learning.
+</p>
+<p>You use this existing pre-trained model to extract features from your own training data, and then you  only train the final classification layer of the model so that it learns to make predictions from the extracted features — but this time for your own class labels.
+</p><div class="image-100"><img src="graphics/img13.png"  alt="" title="" /></div>
+<p>Transfer learning has the huge advantage that it is much faster than training the whole model from scratch, plus your dataset can be much smaller. Instead of millions of images, you now only need a few thousand or even a few hundred.
+</p>
+<p>Apple provides two tools that do transfer learning: Create ML and Turi Create. But this is such a useful technique that you can find transfer learning tools for the most popular machine-learning tasks, like image classification or sentiment analysis. Sometimes it’s as easy as drag-and-dropping your data; at most, you write just a few lines of code to read in and structure your data.
+</p>
+<h2 class="segment-chapter">Can mobile devices really do machine learning?</h2>
+
+<p>A trained model might be hundreds of MB in size, and inference typically performs billions of computations, which is why inference often happens on a server with fast processors and lots of memory. For example, Siri needs an internet connection to process your voice commands — your speech is sent to an Apple server that analyzes its meaning, then sends back a relevant response.
+</p>
+<p>This book is about doing state-of-the-art machine learning on mobile, so we’d like to do as much <em>on the device</em> as possible and avoid having to use a server. The good news: Doing inference on iOS devices works very well thanks to core technologies like Metal and Accelerate.
+</p>
+<p>The benefits of on-device inference:
+</p>
+<ol>
+<li>
+<p>Faster response times: It’s more responsive than sending HTTP requests, so doing real-time inference is possible, making for a better user experience.
+</p></li>
+
+<li>
+<p>It’s also good for user privacy: The user’s data isn’t sent off to a backend server for processing, and it stays on the device.
+</p></li>
+
+<li>
+<p>It’s cheaper since the developer doesn’t need to pay for servers and electricity: The user pays for it using battery power. Of course, you don’t want to abuse this privilege, which is why it’s important to make sure your models run as efficiently as possible. We’ll explain, in this book, how to optimize machine-learning models for mobile.
+</p></li>
+</ol>
+
+<p>What about on-device training? That’s the bad news: Mobile devices still have some important limitations. Training a machine-learning model takes a lot of processing power and, except for small models, simply is out of reach of most mobile devices at this point. That said, updating a previously trained model with new data from the user, such as a predictive keyboard that learns as you type (also known as “online training”), is certainly possible today provided that the model is small enough.
+</p>
+<div class="note">
+<p><em>Note</em>: Core ML currently does not allow training on the device; it is for inference only. The Metal framework does have APIs for on-device training but what these can do right now is limited. The current edition of this book focuses on making predictions using a model that was trained offline, and it explains how to train those models on your Mac or a cloud service.
+</p></div>
+
+<h3 class="segment-chapter">Why not in the cloud?</h3>
+
+<p>Companies such as Amazon, Google and Microsoft provide cloud-based services for doing machine learning, and there are a whole lot of smaller players as well. Some of these just provide raw computing power (you rent servers from them). Others provide complete APIs wherein you don’t have to concern yourself with the details of machine learning at all — you just send your data to their API and it returns the results a few seconds later.
+</p>
+<p>There are a lot of benefits to using these cloud services: 1) You don’t need to know anything about machine learning — so you won’t need to read the rest of this book; 2) Using them is as easy as sending an HTTP request; and 3) Other people will take care of running and maintaining the servers.
+</p>
+<p>However, there are also downsides: 1) You’re using a canned service that is often not tailored to your own data; 2) If your app needs to do machine learning in real-time (such as on a video), then sending HTTP requests is going to be way too slow; and 3) Convenience has a price: You have to pay for using these services and, once you’ve chosen one, it’s hard to migrate your app away from them.
+</p>
+<p>In this book, we don’t focus on using cloud services. They can be a great solution for many apps — especially when you don’t need real-time predictions — but as mobile developers we feel that doing machine learning on the device, also known as <i>edge computing</i>, is just more exciting.
+</p>
+<h2 class="segment-chapter">Frameworks, tools and APIs</h2>
+
+<p>It may seem like using machine learning is going to be a pain in the backside. Well, not necessarily... Like every technology you work with, machine learning has levels of abstraction — the amount of difficulty and effort depends on which level you need to work at.
+</p>
+<h3 class="segment-chapter">Apple’s task-specific frameworks</h3>
+
+<p>The highest level of abstraction is the task level. This is the easiest to grasp — it maps directly to what you want to do in your app. Apple and the other major players provide <i>task-focused toolkits</i> for tasks like image or text classification.
+</p>
+<p>As Apple’s web page says: <i>You don’t have to be a machine learning expert</i>!
+</p>
+<p>Apple provides several Swift frameworks for doing specific machine-learning tasks:
+</p>
+<ul>
+<li>
+<p><em>Vision</em>: Detect faces and face landmarks, rectangles, bar codes and text, and to track objects. Vision also makes it easier to use Core ML image models, taking care of formatting the input images correctly.
+</p></li>
+
+<li>
+<p><em>Natural Language</em>: Analyze text to identify the language, part of speech, as well as specific people, places or organizations.
+</p></li>
+
+<li>
+<p><em>Speech</em>: Convert speech to text, and optionally retrieve answers using Apple’s servers or an on-device speech recognizer. Apple sets limits on audio duration and daily number of requests.
+</p></li>
+
+<li>
+<p><em>SiriKit</em>: Handle requests from Siri or Maps for your app’s services by implementing an <i>Intents</i> app extension in one of a growing number of Intent Domains: messaging, lists and notes, workouts, payments, photos and more.
+</p></li>
+
+<li>
+<p><em>GameplayKit</em>: Evaluate decision trees that contain questions, possible answers and consequent actions.
+</p></li>
+</ul>
+
+<p>If you need to do one of the tasks from the above list, you’re in luck. Just call the appropriate APIs and let the framework do all the hard work.
+</p>
+<h3 class="segment-chapter">Core ML ready-to-use models</h3>
+
+<p>Core ML is Apple’s go-to choice for doing machine learning on mobile. It’s very easy to use and integrates well with the Vision framework. Core ML does have its limitations, but it’s a great place to start.
+</p>
+<p>Core ML is not just a framework but also an open file format for sharing machine-learning models. Apple provides six <em>ready-to-use</em> pre-trained image classification models in Core ML format:
+</p><div><img src="graphics/img14.png" height="25%"  alt="" title="" /></div>
+<p>You can also find other pre-trained Core ML models on the Internet in so-called “model zoos.” Here’s one we like: <a href="https://github.com/likedan/Awesome-CoreML-Models">github.com/likedan/Awesome-CoreML-Models</a>.
+</p>
+<p>When you’re adding a model to your iOS app, size matters. Larger models use more battery power and are slower than smaller models. The size of the Core ML file is proportional to the number of learned parameters in the model. For example, ResNet50 has 25.6 million parameters, and VGG16 has 138M parameters. By the way, just because a model has more parameters doesn’t necessarily mean it is more accurate. VGG16 is 22 times larger than MobileNet but both models have similar accuracy.
+</p>
+<p>These models, like other free models you can find on the web, are trained on very generic datasets. If you want to make an app that can detect a faulty thingamajig in the gizmos you manufacture, you’ll have to get lucky and stumble upon a model that someone else has trained and made available for free — fat chance! There’s big money in building good models, so companies aren’t just going to give them away, and you’ll have to know how to make your own model.
+</p>
+<div class="note">
+<p><em>Note</em>: The next chapter shows you how to use a pre-trained Core ML model in an iOS app.
+</p></div>
+
+<h3 class="segment-chapter">Convert existing models with coremltools</h3>
+
+<p>If there’s an existing model that does exactly what you want but it’s not in Core ML format, then don’t panic! There’s a good chance you’ll be able to convert it.
+</p>
+<p>There are many popular open-source packages for training machine-learning models. To name a few:
+</p>
+<ul>
+<li>
+<p>Apache MXNet
+</p></li>
+
+<li>
+<p>Caffe (and the relatively unrelated Caffe2)
+</p></li>
+
+<li>
+<p>Keras
+</p></li>
+
+<li>
+<p>PyTorch
+</p></li>
+
+<li>
+<p>scikit-learn
+</p></li>
+
+<li>
+<p>TensorFlow
+</p></li>
+</ul>
+
+<p>If you have a model that is trained with one of these packages — or others such as XGBoost, LIBSVM, IBM Watson — then you can convert that model to Core ML format using <em>coremltools</em> so that you can run the model from your iOS app.
+</p>
+<p><code>coremltools</code> is a Python package, and you’ll need to write a small Python script in order to use it. Python is the dominant programming language for machine-learning projects, and most of the training packages are also written in Python.
+</p>
+<p>Some popular model formats, such as TensorFlow and MXNet, are not directly supported by coremltools but have their own Core ML converters. IBM’s Watson gives you a Swift project but wraps the Core ML model in its own API.
+</p>
+<p>Because there are now so many different training tools that all have their own, incompatible formats, there are several industry efforts to create a standard format. Apple’s Core ML is one of those efforts, but the rest of the industry seems to have chosen ONNX instead. Naturally, there is a converter from ONNX to Core ML.
+</p>
+<div class="note">
+<p><em>Note</em>: It’s important to note that Core ML has many limitations — it is not as capable as some of the other machine-learning packages. There is no guarantee that a model that is trained with any of these tools can actually be converted to Core ML, because certain operations or neural network layer types may not be supported by Core ML. In that case, you may need to tweak the original model before you can convert it.
+</p></div>
+
+<h3 class="segment-chapter">Transfer learning with Create ML and Turi Create</h3>
+
+<p><em>Create ML</em> and <em>Turi Create</em> use transfer learning to let you customize pre-trained base models with <i>your own data</i>. The base models have been trained on very large datasets, but transfer learning can produce an accurate model for your data with a much smaller dataset and much less training time.
+</p>
+<p>You only need dozens or hundreds of images instead of tens of thousands, and training takes minutes instead of hours or days. That means you can train these kinds of models straight from the comfort of your own Mac.
+</p>
+<p>In fact, both Create ML and Turi Create (as of version 5) can use the Mac’s GPU to speed up the training process.
+</p>
+<p>Apple acquired the startup Turi in August 2016, then released Turi Create as open-source software in December 2017. Turi Create was Apple’s first transfer-learning tool, but it requires you to work in the alien environment of Python.
+</p>
+<p>At WWDC 2018, Apple announced Create ML, which is essentially a Swift-based subset of Turi Create, to give you transfer learning for image and text classification using Swift and Xcode.
+</p>
+<p>Create ML has some special features like the <code>MLImageClassifierBuilder</code> GUI that runs straight from a Swift playground:
+</p><div class="image-100"><img src="graphics/img15.png"  alt="" title="" /></div>
+<p>Turi Create and Create ML are task-specific, rather than model-specific. This means that you specify the <i>type of problem</i> you want to solve, rather than choosing the <i>type of model</i> you want to use. You select the task that matches the type of problem you want to solve, then Turi Create analyzes your data and chooses the right model for the job.
+</p>
+<p>Turi Create has seven task-focused toolkits:
+</p>
+<ul>
+<li>
+<p>Image classification: Label images with labels that are meaningful for your app.
+</p></li>
+
+<li>
+<p>Image similarity: Find images that are similar to a specific image; an example is the Biometric Mirror project described at the end of this chapter.
+</p></li>
+
+<li>
+<p>Recommender system: Provide personalized recommendations for movies, books, holidays etc., based on a user’s past interactions with your app.
+</p></li>
+
+<li>
+<p>Object detection: Locate and classify objects in an image.
+</p></li>
+
+<li>
+<p>Style transfer: Apply the stylistic elements of a style image to a new image.
+</p></li>
+
+<li>
+<p>Activity classification: Use data from a device’s motion sensors to classify what the user is doing, such as walking, running, waving, etc.
+</p></li>
+
+<li>
+<p>Text classifier: Analyze the sentiment — positive or negative — of text in social media, movie reviews, call center transcripts, etc.
+</p></li>
+</ul>
+
+<p>Create ML currently has only two of these toolkits: image classification and text classification. We expect that Apple will add more toolkits in future updates.
+</p>
+<div class="note">
+<p><em>Note</em>: Chapter 3 will show you how to customize Create ML’s image classification model with Swift in Xcode. Chapter 4 will get you started with the Python-based machine-learning universe, and it will teach you how to create the same custom model using Turi Create. Don’t worry, Python is very similar to Swift, and we’ll explain everything as we go along.
+</p></div>
+
+<h3 class="segment-chapter">Turi Create’s statistical models</h3>
+
+<p>So far, we’ve described task-specific solutions. Let’s now look one level of abstraction deeper at the model level. Instead of choosing a task and then letting the API select the best model, here you choose the model yourself. This gives you more control — on the flip side, it’s also more work.
+</p>
+<p>Turi Create includes these general-purpose models:
+</p>
+<ul>
+<li>
+<p>Classification: Boosted trees classifier, decision tree classifier, logistic regression, nearest neighbor classifier, random forest classifier, and Support Vector Machines (SVM).
+</p></li>
+
+<li>
+<p>Clustering: K-Means, DBSCAN (density based).
+</p></li>
+
+<li>
+<p>Graph analytics: Pagerank, shortest path, graph coloring and more.
+</p></li>
+
+<li>
+<p>Nearest neighbors.
+</p></li>
+
+<li>
+<p>Regression: Boosted trees regression, decision tree regression, linear regression and random forest regression.
+</p></li>
+
+<li>
+<p>Text analysis.
+</p></li>
+</ul>
+
+<p>You probably won’t need to learn about these; when you use a task-focused toolkit, Turi Create picks suitable statistical models based on its analysis of your data. They’re listed here so that you know that you can also use them directly if, for example, Turi Create’s choices don’t produce a good enough model.
+</p>
+<p>For more information about Turi Create, visit the user guide at: <a href="https://github.com/apple/turicreate/tree/master/userguide/">github.com/apple/turicreate/tree/master/userguide/</a>.
+</p>
+<h3 class="segment-chapter">Build your own model in Keras</h3>
+
+<p>Apple’s frameworks and task-focused toolkits cover most things you’d want to put in your apps but, if you can’t create an accurate model with Create ML or Turi Create, you have to <em>build your own model</em> from scratch.
+</p>
+<p>This requires you to learn a few new things: the different types of neural network <i>layers</i> and <i>activation functions</i>, as well as <i>batch sizes</i>, <i>learning rates</i> and other <i>hyperparameters</i>. Don’t worry! In Chapter 5, you’ll learn about all these new terms and how to use <em>Keras</em> to configure and train your own deep-learning networks.
+</p>
+<p>Keras is a wrapper around Google’s <em>TensorFlow</em>, which is the most popular deep-learning tool because... well, Google. TensorFlow has a rather steep learning curve and is primarily a low-level toolkit, requiring you to understand things like matrix math, so this book doesn’t use it directly. Keras is much easier to use. You’ll work at a higher level of abstraction, and you don’t need to know any of the math. (Phew!)
+</p>
+<div class="note">
+<p><em>Note</em>: You might have heard of <i>Swift for TensorFlow</i>. This is a Google Brain project, led by Chris Lattner, to provide TensorFlow users with a better programming language than Python. It will make life easier for TensorFlow users, but it won’t make TensorFlow any easier to learn for us Swifties.
+</p></div>
+
+<h3 class="segment-chapter">Gettin’ jiggy with the algorithms</h3>
+
+<p>If you’ve looked at online courses or textbooks on machine learning, you’ve probably seen a lot of complicated math about efficient algorithms for things like gradient descent, back-propagation and optimizers. As an iOS app developer, you don’t need to learn any of that (unless you like that kind of stuff, of course).
+</p>
+<p>As long as you know what high-level tools and frameworks exist and how to use them effectively, you’re good to go. When researchers develop a better algorithm, it quickly finds its way into tools such as Keras and the pre-trained models, without you needing to do anything special. To be a user of machine learning, you usually won’t have to implement any learning algorithms from scratch yourself.
+</p>
+<p>However, Core ML can be a little slow to catch up with the rest of the industry (it is only updated with new iOS releases) and so developers who want to live on the leading edge of machine learning may still find themselves implementing new algorithms, because waiting for Apple to update Core ML is not always an option. Fortunately, Core ML allows you to customize models, so there is flexibility for those who need it.
+</p>
+<p>It’s worth mentioning a few more machine-learning frameworks that are available on iOS. These are more low-level than Core ML, and you’d only use them if Core ML is not good enough for your app.
+</p>
+<ul>
+<li>
+<p><em>Metal Performance Shaders</em>: Metal is the official framework and language for programming the GPU on iOS devices. It’s fairly low-level and not for the faint of heart, but it does give you ultimate control and flexibility. For the best performance, Metal is the right choice but it takes more effort to get going than Core ML.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p><em>Accelerate</em>: All iOS devices come with this underappreciated framework. It lets you write heavily optimized CPU code. Where Metal lets you get the most out of the GPU, Accelerate does the same for the CPU. There is a neural-networking library, BNNS (Basic Neural Networking Subroutines), but it also has optimized code for doing linear algebra and other mathematics. If you’re implementing your own machine-learning algorithms from scratch, you’ll probably end up using Accelerate.
+</p></li>
+</ul>
+
+<h3 class="segment-chapter">Third-party frameworks</h3>
+
+<p>Besides Apple’s own APIs there are also a number of iOS machine learning frameworks from other companies. The most useful are:
+</p>
+<ul>
+<li>
+<p><em>Google ML Kit</em>: This is Google’s answer to the Vision framework. With ML Kit you can easily add image labeling, text recognition, face detection, and other tasks to your apps. ML Kit can run in the cloud but also on the device, and supports both iOS and Android.
+</p></li>
+
+<li>
+<p><em>TensorFlow-Lite</em>: TensorFlow, Google’s popular machine-learning framework, also has a version for mobile devices, TF-Lite. The main advantage of TF-Lite is that it can load TensorFlow models, although you do need to convert them to “lite” format first. Recently support for GPU acceleration on iOS was added, but as of this writing, TF-Lite cannot yet take advantage of the Neural Engine. The API is in C++, which makes it hard to use in Swift.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">ML all the things?</h2>
+
+<p>Machine learning, especially deep learning, has been very successful in problem domains such as image classification and speech recognition, but it can’t solve <i>everything</i>. It works great for some problems but it’s totally useless for others. A deep-learning model doesn’t actually <i>reason</i> about what it sees. It lacks the common sense that you were born with.
+</p>
+<p>It doesn’t know or care that an object could be made up of separate parts, that objects don’t suddenly appear or disappear, that a round object can roll off a table, and that children don’t put baseball bats into their mouths.
+</p><div class="image-40"><img src="graphics/img16.png"  alt="" title="This caption was generated by a deep learning model" /></div>
+<p>At best, the current generation of machine-learning models are very good pattern detectors, nothing more. Having very good pattern detectors is awesome, but don’t fall for the trap of giving these models more credit than they’re due. We’re still a long way from true machine intelligence!
+</p>
+<p>A machine-learning model can only learn from the examples you give it, but the examples you <i>don’t</i> give it are just as important. If the friends detector was only trained on images of humans but not on images of dogs, what would happen if you tried to do inference on an image of a dog? The model would probably “detect” the face of your friend who looks most like a dog (literally!). This happens because the model wasn’t given the chance to learn that a dog’s face is different from a human face.
+</p>
+<p>Machine-learning models might not always learn what you expect them to. Let’s say you’ve trained a classifier that can tell the difference between pictures of cats and dogs. If all the cat pictures you used for training were taken on a sunny day, and all dog pictures were taken on a cloudy day, you have actually inadvertently trained a model that “predicts” the weather!
+</p>
+<p>Because they lack context, deep-learning models can be easily fooled. Although humans can make sense of some of the features that a deep-learning model extracts — edges or shapes — many of the features just look like abstract patterns of pixels to us, but might have a specific meaning to the model. While it’s hard to understand how a model makes its predictions, as it turns out, it’s easy to fool the model into making wrong ones.
+</p>
+<p>Using the same training method that produced the model, you can create <i>adversarial examples</i> by adding a small amount of noise to an image in a way that tricks the model. The image still looks the same to the human eye, but the model will classify this adversarial example as something completely different, with very high confidence — a panda classified as a gibbon, for example. Or worse, a stop sign that is mistaken for a green traffic light. A lot of research is currently being done on these adversarial attacks and how to make models more robust against them.
+</p>
+<p>The lesson here is that understanding and dealing with the limitations of machine learning is just as important as building your models in the first place, or you might be in for unpleasant surprises!
+</p>
+<h2 class="segment-chapter">The ethics of machine learning</h2>
+
+<p>Machine learning is a powerful tool, extending the reach of artificial intelligence into everyday life. Using trained models can be fun, time-saving or profitable, but the misuse of AI can be harmful.
+</p>
+<p>The human brain evolved to favor quick decisions about danger, and it is happy to use shortcuts. Problems can arise when bureaucracies latch onto convenient metrics or rankings to make life-changing decisions about who to hire, fire, admit to university, lend money to, what medical treatment to use, or whether to imprison someone and for how long. And machine-learning model predictions are providing these shortcuts, sometimes based on biased data, and usually with no explanation of how a model made its predictions.
+</p>
+<p>Consider the <em>Biometric Mirror</em> project at <a href="https://socialnui.unimelb.edu.au/research/biometric-mirror/campus-displays/">go.unimelb.edu.au/vi56</a>, which predicts the personality traits that other people might perceive from just looking at your photo. Here are the results for Ben Grubb, a journalist:
+</p><div class="image-80"><img src="graphics/img17.png"  alt="" title="" /></div>
+<p>The title of his article says it all: <i>This algorithm says I’m aggressive, irresponsible and unattractive. But should we believe it?</i> — check it out at <a href="https://www.smh.com.au/technology/this-algorithm-says-i-m-aggressive-irresponsible-and-unattractive-but-should-we-believe-it-20180801-p4zuu6.html">bit.ly/2KWRkpF</a>.
+</p>
+<p>The algorithm is a simple image-similarity model that finds the closest matches to your photo from a dataset of 2,222 facial photos. 33,430 crowd-sourced people rated the photos in the dataset for a range of personality traits, including levels of aggression, emotional stability, attractiveness and weirdness. The model uses their evaluations of your closest matches to predict <i>your</i> personality traits.
+</p>
+<p>The journalist experimented with different photos of himself, and the model told him he was younger and attractive.
+</p>
+<p>It’s amusing, but is it harmful?
+</p>
+<p>The model is part of an interactive application that picks one of your traits — say, level of emotional stability — and asks you to imagine that information in the hands of someone like your insurer, future employer or a law enforcement official. Are you feeling worried now?
+</p>
+<p>In <a href="https://pursuit.unimelb.edu.au/articles/holding-a-black-mirror-up-to-artificial-intelligence">bit.ly/2LMialy</a>, the project’s lead researchers write “[Biometric Mirror] starkly demonstrates the possible consequences of AI and algorithmic bias, and it encourages us [to] reflect on a landscape where government and business increasingly rely on AI to inform their decisions.”
+</p>
+<p>And, on the project page, they write:
+</p>
+<div class="note">
+<p>[O]ur algorithm is correct but the information it returns is not. And that is precisely what we aim to share: We should be careful with relying on artificial intelligence systems, because their internal logic may be incorrect, incomplete or extremely sensitive and discriminatory.
+</p></div>
+
+<p>This project raises two of the ethical questions in the use of AI:
+</p>
+<ul>
+<li>
+<p>Algorithmic bias
+</p></li>
+
+<li>
+<p>Explainable or understandable AI
+</p></li>
+</ul>
+
+<h3 class="segment-chapter">Biased data, biased model</h3>
+
+<p>We consider a machine-learning model to be good if it can make correct predictions on data it was not trained on — it <i>generalizes well</i> from the training dataset. But problems can arise if the training data was biased for or against some group of people: The data might be racist or sexist.
+</p>
+<p>The reasons for bias could be historical. To train a model that predicts the risk of someone defaulting on a loan, or how well someone will perform at university, you would give it historical data about people who did or didn’t default on loans, or who did or didn’t do well at university. And, historically, the data would favor white men because, for a long time, they got most of the loans and university admittances.
+</p>
+<p>Because the data contained fewer samples of women or racial minorities, the model might be 90% accurate overall, but only 50% accurate for women or minorities.
+</p>
+<p>Also, the data might be biased by the people who made the decisions in the first place: Loan officials might have been more tolerant of late payments from white men, or university professors might have been biased against certain demographics.
+</p>
+<p>You can try to overcome bias in your model by explicitly adjusting its training data or parameters to counteract biases. Some model architectures can be tweaked to identify sensitive features and reduce or remove their effect on predictions.
+</p>
+<h3 class="segment-chapter">Explainable/interpretable/transparent AI</h3>
+
+<p>The algorithmic bias problem means it’s important to be able to examine how an ML model makes predictions: Which features did it use? Is that accurate or fair?
+</p>
+<p>In the first diagram of this chapter, <em>training</em> was drawn as a black box. Although you’ll learn something about what happens inside that box, many deep learning models are so complex, even their creators can’t explain individual predictions.
+</p>
+<p>One approach could be to require more transparency about algorithmic biases and what the model designer did to overcome them.
+</p>
+<p>Google Brain has an open source tool <a href="https://github.com/google/svcca">github.com/google/svcca</a> that can be used to interpret what a neural network is learning.
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Machine learning isn’t really that hard to learn — Stick with this book and you’ll see!
+</p></li>
+
+<li>
+<p>Access to large amounts of data and computing power found online has made machine learning a viable technology.
+</p></li>
+
+<li>
+<p>At its core, machine learning is all about models; creating them, training them, and inferring results using them.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Training models can be an inexact science and an exercise in patience. However, easy-to-use transfer learning tools like Create ML and Turi Create can help improve the experience in specific cases.
+</p></li>
+
+<li>
+<p>Mobile devices are pretty good at inferring results. As for creating models on device, we’re not quite there yet.
+</p></li>
+
+<li>
+<p>Don’t confuse machine learning with Artificial Intelligence. Machine learning can be a great addition to your app, but knowing its limitations is equally important.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>We hope you enjoyed that tour of machine-learning from 10,000 feet. If you didn’t absorb everything you read, don’t worry! As with all new things learned, time and patience are your greatest assets.In the next chapter, you’ll write some code! You will learn how to use a pre-trained Core ML image classification model in an iOS app. It’s full of insights into the inner workings of neural networks.
+</p></body></html>

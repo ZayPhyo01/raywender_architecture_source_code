@@ -1,0 +1,1137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 15: Natural Language Transformation, Part 1</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 15: Natural Language Transformation, Part 1</h1>
+
+<p>The previous chapter showed you how to use Apple’s Natural Language framework to perform some useful NLP tasks. But Apple only covers the basics — there are many other things you might like to do with natural language. For example, you might answer questions, summarize documents or translate between languages.
+</p>
+<p>In this chapter, you’ll learn about a versatile network architecture called a <em>sequence-to-sequence (seq2seq)</em> model. You’ll add one to the SMDB app you already built, using it to translate movie reviews from Spanish to English, but the same network design has been used for many types of problems, from question answering to generating image captions. Don’t worry if you didn’t already make SMDB — we provide a starter project if you need it. But you can forget about Xcode for a while — seq2seq models require a lower-level framework, so you’ll work with Python and Keras for most of this chapter.
+</p>
+<h2 class="segment-chapter">Getting started</h2>
+
+<p>Some of the Keras code in this project was initially based on the example found in the file <em>examples/lstm</em><em>_</em><em>seq2seq.py</em> inside the Keras GitHub repository <a href="https://github.com/keras-team/keras">github.com/keras-team/keras</a>. This chapter makes stylistic modifications, explains and expands on the code, and shows how to convert the models you build to Core ML and use them in an app.
+</p>
+<p>In order to go through this and the next chapter, you’ll need access to a Python environment with <code>keras</code>, <code>coremltools</code> and various other packages installed. To ensure you have everything installed, create a new environment using either <em>nlpenv-mac.yml</em> or <em>nlpenv-linux.yml</em>, which you’ll find in <em>projects/notebooks</em>. If you have access to an Nvidia GPU, then uncomment the <code>tensorflow-gpu</code> line in the <em>.</em><em>yml</em> file to greatly increase training speed.
+</p>
+<p>Later instructions assume you have this environment and it’s named <em>nlpenv</em>. If you are unsure how to create an environment from that file, go back over Chapter 4, “Getting Started with Python &amp; Turi Create.”
+</p>
+<p>Once you’ve got your <em>nlpenv</em> environment ready to go, continue reading to get started learning about sequence-to-sequence models.
+</p>
+<h2 class="segment-chapter">The sequence-to-sequence model</h2>
+
+<p>Inside the chapter resources, you’ll find a text file named <em>spa.txt</em> in <em>projects/notebooks/data/</em>. This file comes originally from manythings.org at <a href="http://www.manythings.org/anki/">http://www.manythings.org/anki/</a>, which provides sentence pairs for many different languages. These pairs were culled from an even larger dataset provided by the Tatoeba Project at <a href="http://www.tatoeba.org">www.tatoeba.org</a>.
+</p>
+<p>The file contains lines that look like this:
+</p><div class="image-30"><img src="graphics/img223.png"  alt="" title="The first seven lines of spa.txt" /></div>
+<p>Each line has an English sentence — they aren’t all one-word long like in the image — followed by one possible Spanish translation of that sentence. You’re going to use this data to train a neural network to ingest Spanish text, like “¡Corre!”, and translate it into English text, like “Run!”
+</p>
+<div class="note">
+<p><em>Note</em>: As you can see in the image of samples from the data file, the same phrase may appear multiple times with different translations. If you were training a model to translate from English to Spanish, then this would likely confuse it, possibly forcing it to learn only one of the translations. However, your model will translate from Spanish to English, and there are far fewer duplicate Spanish phrases in the file, so it shouldn’t be an issue.
+</p></div>
+
+<p>There are multiple ways to accomplish this task. The network architecture you’ll use here is called a sequence-to-sequence, or seq2seq, model. At it’s most basic level, it works like this:
+</p><div class="image-60"><img src="graphics/img224.png"  alt="" title="Text translation with seq2seq model" /></div>
+<p>The seq2seq model consists of two networks operating together; these are called the <em>encoder</em> and the <em>decoder</em>.
+</p>
+<p>The encoder processes some input — in this case, Spanish text — and produces some vector of output values that captures the essence of the input. The decoder then processes the encoder’s output and produces its own output — here, English text — which represents its interpretation of the information captured by the encoder.
+</p>
+<p>Intuitively, you can think of this encoder/decoder model acting like a file compression algorithm. You start with an original file — the encoder’s input — and compress it into some new format, which is the encoder’s output. Later, you can uncompress that formatted data to recover the contents of the original file; this is essentially what the decoder does. But, in this case, the decoder would be considered “lossy” because it’s not required to faithfully reproduce the original input data. Instead, you want the model you build to reproduce text with similar <i>meaning</i> but in a different <i>language</i>.
+</p>
+<p>From a deep-learning perspective, you can think of this a bit like the transfer learning you used in the computer vision chapters. There, you started with a pre-trained network and passed inputs through it to extract some set of features as output. Those features are really just the output activations from a specific layer in the network. Then you trained a new model to accept those output values as inputs and produce some new output, like a healthy/unhealthy label prediction.
+</p>
+<p>The seq2seq model works in a similar way, with the encoder acting as the feature extractor and the decoder acting as the classification model. The difference here is that you’re going to build and train the encoder and decoder together from scratch.
+</p>
+<p>Digging a little deeper, the seq2seq model works with sequences both for inputs and outputs. That’s where it gets its name — it transforms a sequence to another sequence. To accomplish this, the encoder and decoder usually both rely on recurrent layers — specifically, this chapter uses the LSTM layer introduced in the sequence classification chapter.
+</p>
+<p>These LSTMs aren’t shown in these diagrams, but keep in mind that the boxes labeled Encoder and Decoder each represent neural networks that include such layers.
+</p>
+<p>The following image gives some more details about how your model will work, showing how it will predict its first output character “H” when translating “Hola.” to “Hello.”:
+</p><div class="image-70"><img src="graphics/img225.png"  alt="" title="Inference with seq2seq, through the first output token" /></div>
+<p>As you can see, the encoder will process its input as a sequence of individual characters. Each character is labeled in the image with its timestep so it’s clear what order the model sees the input. After ingesting the entire sequence, only then will it pass its output on to the decoder.
+</p>
+<p>You learned in the sequence classification project how LSTMs maintain state that lets them keep track of information between timesteps in a sequence. The decoder will take advantage of that fact and use the final state from the encoder’s LSTM layer as the initial state for its own LSTM layer. Along with that state, the decoder will also take as input a special <code>START</code> token. The decoder will then produce a single character as output.
+</p>
+<div class="note">
+<p><em>Note</em>: This chapter’s model uses individual characters as inputs and outputs, and as such may use the terms “character” and “token” interchangeably. However, seq2seq models do not need to work at the character level. You’ll see how to use full-word tokens in the next chapter, and find out about some other options, too. So keep in mind: The images of characters in this chapter apply to any size tokens.
+</p></div>
+
+<p>The encoder is no longer involved after predicting the first character. As you can see in the following image, the decoder continues predicting the rest of its output sequence by passing its own output character back into itself as its next input character:
+</p><div class="image-60"><img src="graphics/img226.png"  alt="" title="Decoder portion of seq2seq model during inference" /></div>
+<p>The arrows pointing down in the above image, going directly from Decoder block to Decoder block, represent the output state from the decoder’s LSTM layer. At each timestep after the first, the decoder uses the output state from the previous timestep as its new initial state. Not shown here is the initial state used to process the <code>START</code> token, which comes from the encoder. Likewise, each timestep after the first takes as input the previous timestep’s output token. This process continues until the decoder produces a special <code>STOP</code> token, or until you stop it yourself if you want to limit the length of its output sequences.
+</p>
+<p>One important feature of the seq2seq architecture is that the model you train will be slightly different from the one you use for inference. During training, your model will actually process each sample like this:
+</p><div class="image-80"><img src="graphics/img227.png"  alt="" title="Training a seq2seq model" /></div>
+<p>Individual timesteps aren’t shown in order to simplify the diagram, but these sequences are still processed one token at a time. The important thing to notice is how the decoder pictured above receives as input the encoder’s output <i>and</i> the full English translation of the encoder’s input surrounded by <code>START</code> and <code>STOP</code> tokens. The target outputs you use to calculate the loss during training don’t include the <code>START</code> token, because the decoder should only ever learn to produce what <i>follows</i> it in the sequence.
+</p>
+<p>At each timestep, the decoder takes a single input token and produces a single output token. As you saw earlier, the <i>trained</i> decoder uses its own output from one timestep as its input for the next one, but during training you’ll always input to each timestep what the output <i>should</i> have been at the previous timestep.
+</p>
+<p>The decoder learns to produce a specific character as output when it sees the <code>START</code> token in conjunction with a specific encoder state. From there, it learns to associate its own internal LSTM states with each new character to produce the next one, eventually learning to produce the entire sequence. Ensuring each timestep starts with the correct values — rather than what the decoder actually outputs while training — greatly increases the speed at which a recurrent network trains, and is a technique known as <em>teacher forcing</em>.
+</p>
+<p>Phew! That was a lot of preliminary information, but hopefully getting the idea down first will make the rest of the chapter easier to follow. There are still quite a few details left to discuss, so let’s get started.
+</p>
+<h2 class="segment-chapter">Prepare your dataset</h2>
+
+<p>First, you need to load your dataset. Activate your <em>nlpenv</em> environment and launch a new Jupyter notebook. Then run a cell with the following code to load the Spanish-English sequence pairs:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+start_token = <span class="hljs-string">"\t"</span>
+stop_token = <span class="hljs-string">"\n"</span>
+<span class="hljs-comment"># 2</span>
+<span class="hljs-keyword">with</span> open(<span class="hljs-string">"data/spa.txt"</span>, <span class="hljs-string">"r"</span>, encoding=<span class="hljs-string">"utf-8"</span>) <span class="hljs-keyword">as</span> f:
+  samples = f.read().split(<span class="hljs-string">"\n"</span>)
+samples = [sample.strip().split(<span class="hljs-string">"\t"</span>)
+           <span class="hljs-keyword">for</span> sample <span class="hljs-keyword">in</span> samples <span class="hljs-keyword">if</span> len(sample.strip()) &gt; <span class="hljs-number">0</span>]
+<span class="hljs-comment"># 3</span>
+samples = [(es, start_token + en + stop_token)
+           <span class="hljs-keyword">for</span> en, es <span class="hljs-keyword">in</span> samples <span class="hljs-keyword">if</span> len(es) &lt; <span class="hljs-number">45</span>]</pre>
+<p>Now, <code>samples</code> contains almost 100,000 sequence pairs. Here’s how you set it up:
+</p>
+<ol>
+<li>
+<p>You define constants here indicating the tab and newline characters will act as the decoder’s <code>START</code> and <code>STOP</code> tokens, respectively. You can assign anything as the <code>START</code> and <code>STOP</code> tokens, but they <i>must not appear elsewhere</i> in any output sequences.
+</p></li>
+
+<li>
+<p>You read each line of the data file, then split them around the tab character to create a list of English-Spanish sentence pairs. Notice how it only processes rows that include more than whitespace — this avoids accidentally adding bad entries for empty rows in <em>spa.txt</em>, but it’s certainly not robust file processing. For example, this would still add bad entries for rows that don’t include exactly one tab.
+</p></li>
+
+<li>
+<p>This line loops over the list you just created and swaps the order of the elements, creating a list of tuples with the Spanish phrases first. It also adds a <code>START</code> token at the beginning of each English phrase and a <code>STOP</code> token at the end.
+</p></li>
+</ol>
+
+<p>Notice you only kept pairs where the Spanish sentence is less than 45 characters long. You’ll read more about how sequence length affects things in the section on training your model, but for now just know we chose 45 based on the length of the Spanish sentences in the SMDB app.
+</p>
+<p>You can display some of the list to be sure things look as expected:
+</p><div class="image-70"><img src="graphics/img228.png"  alt="" title="The first two samples after loading the dataset" /></div>
+<div class="note">
+<p><em>Note</em>: The two lines you wrote to create <code>samples</code> use a Python construct called list comprehensions. If you aren’t familiar with this syntax, it’s an optimized way to create a list by iterating over a collection. The anatomy of a comprehension is <code>[a for b in c]</code>. It creates a new list filled with items made by calling the expression <code>a</code> with each item <code>b</code> from the collection <code>c</code>. Optionally, you can add a condition to limit which items from <code>c</code> you process, like this: <code>[a for b in c if d]</code> where <code>d</code> is some conditional expression involving <code>b</code>. You should get comfortable with this syntax if you plan on using Python since it’s extremely common — plus the Python interpreter runs these more efficiently than <code>for</code> loops that build lists with <code>append</code>.
+</p></div>
+
+<p>If you’ve followed along with the book thus far, then you already know it’s best to have separate training, validation and test sets when building machine learning models. Keras can randomly select samples from your training data to use for validation when you train your model, but you won’t rely on that here. That’s because there’s a situation you need to handle when working with text — <em>out-of-vocabulary (OOV)</em> tokens — and that requires some preprocessing on the validation set. You’ll deal with that in a bit; for now, it means separating the data into training and validation sets yourself. Run a cell with the following code to do so:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> sklearn.model_selection <span class="hljs-keyword">import</span> train_test_split
+
+train_samples, valid_samples = train_test_split(
+  samples, train_size=<span class="hljs-number">.8</span>, random_state=<span class="hljs-number">42</span>)</pre>
+<p>You use scikit-learn’s <code>train_test_split</code> function to randomly assign samples from your dataset into training and validation sets, with 80 percent going towards training. Providing a <code>random_state</code> is optional, but specifying <code>42</code> here generates the same datasets we used when training our models.
+</p>
+<p>Before you can deal with OOV tokens, you need to know what’s <i>in</i> the vocabulary. What does that even mean?
+</p>
+<p>Imagine you trained an image classifier to work with RGB images whose pixel values range from 0-255. You shouldn’t expect it to perform well on values outside that range, like 1 million. Models learn their weights from a specific set of training data, and only generalize well to new data that is reasonably similar to it.
+</p>
+<p>Working with natural language isn’t much different. You’ll train your model to recognize a specific set of input tokens and to produce values from a specific set of output tokens. But don’t worry: Even with a limited set of tokens, it can ingest and produce an infinite number of different sequences.
+</p>
+<p>Run the following code in your notebook to gather the unique tokens in your dataset to act as your model’s vocabulary:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+in_vocab = set()
+out_vocab = set()
+
+<span class="hljs-keyword">for</span> in_seq, out_seq <span class="hljs-keyword">in</span> train_samples:
+  in_vocab.update(in_seq)
+  out_vocab.update(out_seq)
+<span class="hljs-comment"># 2</span>
+in_vocab_size = len(in_vocab)
+out_vocab_size = len(out_vocab)</pre>
+<p>Here’s how you built the input and output vocabularies for your model:
+</p>
+<ol>
+<li>
+<p>You loop over every sample in the training data and store each Spanish or English character in its corresponding vocabulary <code>set</code>. You call <code>update</code> instead of <code>add</code> on the <code>set</code>s so that it adds the individual characters rather than the entire strings.
+</p></li>
+
+<li>
+<p>When you define your Keras model, you’ll need to specify how many tokens each vocabulary contains — you’ll learn why later when you read the discussion about one-hot encoding — so you grab those sizes, here. If you check you’ll see <code>in_vocab_size</code> is 101 and <code>out_vocab_size</code> is 87.
+</p></li>
+</ol>
+
+<p>Now, <code>in_vocab</code> contains every character present in the Spanish sequences from your training set, while <code>out_vocab</code> includes every character from the English sequences. If you’re curious to see what you’re working with, you can display the vocabulary by running a line like the following:
+</p><pre class="code-block">print(sorted(in_vocab))</pre>
+<p>Using <code>sorted</code> isn’t necessary but it makes the list more readable. You’ll see the input vocabulary consists of the following characters:
+</p><pre class="code-block">[<span class="hljs-string">' '</span>, <span class="hljs-string">'!'</span>, <span class="hljs-string">'"'</span>, <span class="hljs-string">'$'</span>, <span class="hljs-string">'%'</span>, <span class="hljs-string">"'"</span>, <span class="hljs-string">'('</span>, <span class="hljs-string">')'</span>, <span class="hljs-string">'+'</span>, <span class="hljs-string">','</span>, <span class="hljs-string">'-'</span>, <span class="hljs-string">'.'</span>, <span class="hljs-string">'/'</span>, <span class="hljs-string">'0'</span>, <span class="hljs-string">'1'</span>, <span class="hljs-string">'2'</span>, <span class="hljs-string">'3'</span>, <span class="hljs-string">'4'</span>, <span class="hljs-string">'5'</span>, <span class="hljs-string">'6'</span>, <span class="hljs-string">'7'</span>, <span class="hljs-string">'8'</span>, <span class="hljs-string">'9'</span>, <span class="hljs-string">':'</span>, <span class="hljs-string">';'</span>, <span class="hljs-string">'?'</span>, <span class="hljs-string">'A'</span>, <span class="hljs-string">'B'</span>, <span class="hljs-string">'C'</span>, <span class="hljs-string">'D'</span>, <span class="hljs-string">'E'</span>, <span class="hljs-string">'F'</span>, <span class="hljs-string">'G'</span>, <span class="hljs-string">'H'</span>, <span class="hljs-string">'I'</span>, <span class="hljs-string">'J'</span>, <span class="hljs-string">'K'</span>, <span class="hljs-string">'L'</span>, <span class="hljs-string">'M'</span>, <span class="hljs-string">'N'</span>, <span class="hljs-string">'O'</span>, <span class="hljs-string">'P'</span>, <span class="hljs-string">'Q'</span>, <span class="hljs-string">'R'</span>, <span class="hljs-string">'S'</span>, <span class="hljs-string">'T'</span>, <span class="hljs-string">'U'</span>, <span class="hljs-string">'V'</span>, <span class="hljs-string">'W'</span>, <span class="hljs-string">'X'</span>, <span class="hljs-string">'Y'</span>, <span class="hljs-string">'Z'</span>, <span class="hljs-string">'a'</span>, <span class="hljs-string">'b'</span>, <span class="hljs-string">'c'</span>, <span class="hljs-string">'d'</span>, <span class="hljs-string">'e'</span>, <span class="hljs-string">'f'</span>, <span class="hljs-string">'g'</span>, <span class="hljs-string">'h'</span>, <span class="hljs-string">'i'</span>, <span class="hljs-string">'j'</span>, <span class="hljs-string">'k'</span>, <span class="hljs-string">'l'</span>, <span class="hljs-string">'m'</span>, <span class="hljs-string">'n'</span>, <span class="hljs-string">'o'</span>, <span class="hljs-string">'p'</span>, <span class="hljs-string">'q'</span>, <span class="hljs-string">'r'</span>, <span class="hljs-string">'s'</span>, <span class="hljs-string">'t'</span>, <span class="hljs-string">'u'</span>, <span class="hljs-string">'v'</span>, <span class="hljs-string">'w'</span>, <span class="hljs-string">'x'</span>, <span class="hljs-string">'y'</span>, <span class="hljs-string">'z'</span>, <span class="hljs-string">'¡'</span>, <span class="hljs-string">'«'</span>, <span class="hljs-string">'°'</span>, <span class="hljs-string">'º'</span>, <span class="hljs-string">'»'</span>, <span class="hljs-string">'¿'</span>, <span class="hljs-string">'Á'</span>, <span class="hljs-string">'É'</span>, <span class="hljs-string">'Ó'</span>, <span class="hljs-string">'Ú'</span>, <span class="hljs-string">'á'</span>, <span class="hljs-string">'è'</span>, <span class="hljs-string">'é'</span>, <span class="hljs-string">'í'</span>, <span class="hljs-string">'ñ'</span>, <span class="hljs-string">'ó'</span>, <span class="hljs-string">'ö'</span>, <span class="hljs-string">'ú'</span>, <span class="hljs-string">'ü'</span>, <span class="hljs-string">'ś'</span>, <span class="hljs-string">'с'</span>, <span class="hljs-string">'—'</span>, <span class="hljs-string">'€'</span>]</pre>
+<p>And running a similar line for <code>out_vocab</code> displays these characters:
+</p><pre class="code-block">[<span class="hljs-string">'\t'</span>, <span class="hljs-string">'\n'</span>, <span class="hljs-string">' '</span>, <span class="hljs-string">'!'</span>, <span class="hljs-string">'"'</span>, <span class="hljs-string">'$'</span>, <span class="hljs-string">'%'</span>, <span class="hljs-string">"'"</span>, <span class="hljs-string">','</span>, <span class="hljs-string">'-'</span>, <span class="hljs-string">'.'</span>, <span class="hljs-string">'/'</span>, <span class="hljs-string">'0'</span>, <span class="hljs-string">'1'</span>, <span class="hljs-string">'2'</span>, <span class="hljs-string">'3'</span>, <span class="hljs-string">'4'</span>, <span class="hljs-string">'5'</span>, <span class="hljs-string">'6'</span>, <span class="hljs-string">'7'</span>, <span class="hljs-string">'8'</span>, <span class="hljs-string">'9'</span>, <span class="hljs-string">':'</span>, <span class="hljs-string">';'</span>, <span class="hljs-string">'?'</span>, <span class="hljs-string">'A'</span>, <span class="hljs-string">'B'</span>, <span class="hljs-string">'C'</span>, <span class="hljs-string">'D'</span>, <span class="hljs-string">'E'</span>, <span class="hljs-string">'F'</span>, <span class="hljs-string">'G'</span>, <span class="hljs-string">'H'</span>, <span class="hljs-string">'I'</span>, <span class="hljs-string">'J'</span>, <span class="hljs-string">'K'</span>, <span class="hljs-string">'L'</span>, <span class="hljs-string">'M'</span>, <span class="hljs-string">'N'</span>, <span class="hljs-string">'O'</span>, <span class="hljs-string">'P'</span>, <span class="hljs-string">'Q'</span>, <span class="hljs-string">'R'</span>, <span class="hljs-string">'S'</span>, <span class="hljs-string">'T'</span>, <span class="hljs-string">'U'</span>, <span class="hljs-string">'V'</span>, <span class="hljs-string">'W'</span>, <span class="hljs-string">'X'</span>, <span class="hljs-string">'Y'</span>, <span class="hljs-string">'Z'</span>, <span class="hljs-string">'a'</span>, <span class="hljs-string">'b'</span>, <span class="hljs-string">'c'</span>, <span class="hljs-string">'d'</span>, <span class="hljs-string">'e'</span>, <span class="hljs-string">'f'</span>, <span class="hljs-string">'g'</span>, <span class="hljs-string">'h'</span>, <span class="hljs-string">'i'</span>, <span class="hljs-string">'j'</span>, <span class="hljs-string">'k'</span>, <span class="hljs-string">'l'</span>, <span class="hljs-string">'m'</span>, <span class="hljs-string">'n'</span>, <span class="hljs-string">'o'</span>, <span class="hljs-string">'p'</span>, <span class="hljs-string">'q'</span>, <span class="hljs-string">'r'</span>, <span class="hljs-string">'s'</span>, <span class="hljs-string">'t'</span>, <span class="hljs-string">'u'</span>, <span class="hljs-string">'v'</span>, <span class="hljs-string">'w'</span>, <span class="hljs-string">'x'</span>, <span class="hljs-string">'y'</span>, <span class="hljs-string">'z'</span>, <span class="hljs-string">'°'</span>, <span class="hljs-string">'á'</span>, <span class="hljs-string">'ã'</span>, <span class="hljs-string">'è'</span>, <span class="hljs-string">'é'</span>, <span class="hljs-string">'ö'</span>, <span class="hljs-string">'‘'</span>, <span class="hljs-string">'’'</span>, <span class="hljs-string">'₂'</span>, <span class="hljs-string">'€'</span>]</pre>
+<p>It looks like the training data includes a good selection of characters, but notice how there are differences between the input and output vocabularies. This isn’t surprising; after all, these are vocabularies for two different languages.
+</p>
+<p>However, it’s important to understand: <i>This vocabulary defines every character your model will</i> ever <i>handle.</i> That means it will never know what to do with an input character not found in <code>in_vocab</code>, and will never produce a sentence using a character not in <code>out_vocab</code>.
+</p>
+<p>For example, notice the Spanish set contains parenthesis but the English one does not. You know parenthesis <i>should</i> be valid characters in English, but your model will <i>never</i> produce an output that includes them, no matter how many might appear in a given input sequence.
+</p>
+<p>Now that you know which tokens your model can handle, any <i>other</i> tokens are considered OOV. There are different ways to handle OOV tokens, but none work perfectly and it’s an open area of research. For this model, you’ll take the most basic approach and remove OOV tokens from any inputs before processing them. For the validation set — and test set, if you had one — you’ll need to remove them from both the inputs and target outputs.
+</p>
+<div class="note">
+<p><em>Note</em>: This chapter’s model processes sequences at the character level, so removing OOV tokens should not remove much information from a sequence. In the next chapter, where you’ll learn about working with full word tokens, dealing with OOV tokens becomes much more difficult.
+</p></div>
+
+<p>When you use your model in iOS, you’ll preprocess each sequence before passing it to the model. But you’ll test against your entire validation set every epoch while training, so it’s more efficient to preprocess all of them at once beforehand. Run a cell with the following code to remove OOV tokens from the validation set:
+</p><pre class="code-block">tmp_samples = []
+<span class="hljs-keyword">for</span> in_seq, out_seq <span class="hljs-keyword">in</span> valid_samples:
+  tmp_in_seq = [c <span class="hljs-keyword">for</span> c <span class="hljs-keyword">in</span> in_seq <span class="hljs-keyword">if</span> c <span class="hljs-keyword">in</span> in_vocab]
+  tmp_out_seq = [c <span class="hljs-keyword">for</span> c <span class="hljs-keyword">in</span> out_seq <span class="hljs-keyword">if</span> c <span class="hljs-keyword">in</span> out_vocab]
+  tmp_samples.append(
+    (<span class="hljs-string">""</span>.join(tmp_in_seq), <span class="hljs-string">""</span>.join(tmp_out_seq)))
+valid_samples = tmp_samples</pre>
+<p>Here, you iterated over all the validation samples and created new sequences that only include characters that are found in the appropriate vocabulary set — <code>in_vocab</code> for the Spanish inputs and <code>out_vocab</code> for the English outputs.
+</p>
+<div class="note">
+<p><em>Note</em>: If you compare your validation samples before and after removing the OOV tokens, you might find little or no difference. That’s just happenstance based on what random split you got earlier from <code>train_test_split</code>, but the premise here still holds true; your model cannot handle tokens it doesn’t see while training, so you need to do some preprocessing when working with sequences containing OOV tokens. This is true while testing and at runtime in your iOS app.
+</p></div>
+
+<p>You aren’t quite ready to train a model yet, but you’ve prepared enough to at least define the architecture. The next section walks you through that process.
+</p>
+<h2 class="segment-chapter">Build your model</h2>
+
+<p>In this section, you’ll use Keras to define a seq2seq model that translates Spanish text into English, one character at a time. Get started by importing the Keras functions you’ll need with the following code:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> keras
+<span class="hljs-keyword">from</span> keras.layers <span class="hljs-keyword">import</span> Dense, Input, LSTM, Masking
+<span class="hljs-keyword">from</span> keras.models <span class="hljs-keyword">import</span> Model</pre>
+<p>You’ll read more about these as you use them in the upcoming cells. First, run the following code in your notebook to define the encoder portion of the seq2seq model:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+latent_dim = <span class="hljs-number">256</span>
+<span class="hljs-comment"># 2</span>
+encoder_in = Input(
+  shape=(<span class="hljs-keyword">None</span>, in_vocab_size), name=<span class="hljs-string">"encoder_in"</span>)
+<span class="hljs-comment"># 3</span>
+encoder_mask = Masking(name=<span class="hljs-string">"encoder_mask"</span>)(encoder_in)
+<span class="hljs-comment"># 4</span>
+encoder_lstm = LSTM(
+  latent_dim, return_state=<span class="hljs-keyword">True</span>, recurrent_dropout=<span class="hljs-number">0.3</span>,
+  name=<span class="hljs-string">"encoder_lstm"</span>)
+<span class="hljs-comment"># 5</span>
+_, encoder_h, encoder_c = encoder_lstm(encoder_mask)</pre>
+<p>It takes only these five lines to define your encoder, but there’s a lot to say about them:
+</p>
+<ol>
+<li>
+<p>The <code>latent_dim</code> variable defines how many nodes your LSTM uses to represent each recurrent step internally. This, in turn, defines the size of the feature vectors used to store the encoding produced by the encoder. In machine learning, we refer to the process of converting an input into a set of features as mapping it into latent space. So <code>latent_dim</code> defines the number of dimensions in the encoder’s latent space as 256. This value directly affects the size and speed of your model: Larger values produce larger, slower models. However, models with more dimensions can technically learn more complicated relationships so they might produce better results. That is, <i>if</i> you can train them — the larger your model, the more data you need to train it. There are a lot of things involved with finding the right value here, but we chose this value arbitrarily. We encourage you to experiment with other values after you’ve finished the chapter.
+</p></li>
+
+<li>
+<p>Here, you make an <code>Input</code> layer, to which you’ll pass batches of sequences during training. You specify two dimensions — <code>None</code> and <code>in_vocab_size</code>. The <code>None</code> tells Keras that you want it to support variable length inputs. That is, you’ll be able to pass sequences of <i>any</i> length, which is good because sentences can come in any length. The <code>in_vocab_size</code> tells it how large the vectors are that hold each character — the same size as how many different possible tokens exist in the vocabulary. Essentially, these two dimensions tell Keras that each input sequence will consist of <i>any</i> number of characters, where <i>each</i> character is represented by a vector of length <code>in_vocab_size</code>. This will be more clear after you read about one-hot encoding later.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>You pass the input layer through a <code>Masking</code> layer. This layer tells the network to ignore any timesteps in the sequence that are filled with zeros. It’s common to train on <em>batches</em> of samples rather than one sample at a time, mainly to take advantage of the parallelism of the GPU. Batches are stored as tensors, and tensors have specific dimensions. But your model can handle variable length sequences, right? So how do you store variable length sequences in a fixed dimension tensor? You’ll see the details later, but you’ll end up padding the end of shorter sequences with zeros — essentially meaningless timesteps added to make all the sequences in a batch the same size. The <code>Masking</code> layer tells Keras not to train on those padding timesteps.  This layer isn’t absolutely necessary, but see the upcoming <em>Note</em> explaining a bit more about the choice to use a <code>Masking</code> layer here.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>You create an LSTM layer to process the input sequence, passing <code>latent_dim</code> to define the size of its output. Setting <code>return_state</code> to <code>True</code> makes the LSTM layer output its hidden and cell states along with its regular output; you’ll use these as the initial state for the decoder. Refer back to the discussion of the seq2seq model if you don’t recall the role of the encoder’s output states. You also use the <code>recurrent_dropout</code> parameter to add some dropout between timesteps in the LSTM. This can help your model generalize better to unseen data later. There are <i>many</i> parameters available to the LSTM initializer, so you should explore the Keras documentation as you dig deeper into the subject.
+</p></li>
+
+<li>
+<p>Here, you actually connect the masking layer as the input to the LSTM. Keras’s functional API allows you to create the function <code>encoder_lstm</code> as an object in the previous line and then call it here with <code>encoder_mask</code> as its input. It will return three values: The first is the actual output from the LSTM layer, but you don’t actually need that for a seq2seq model so you ignore it by assigning it to an underscore. The others are the LSTM’s hidden and cell states, which you store in <code>encoder_h</code> and <code>encoder_c</code>, respectively. These two outputs will each hold vectors of length <code>latent_dim</code> containing whatever information the encoder extracts from its input. (Go back over the model description in the sequence classification chapter if you need a reminder about LSTMs and their hidden and cell states.)
+</p></li>
+</ol>
+
+<div class="note">
+<p><em>Note</em>: You’ll likely come across examples of networks that do not use <code>Masking</code> layers but still pad sequences to store them in batches. These still work, but there’s a subtle issue with them: These networks consider the padding tokens to be just as important as the real tokens. This causes three problems.
+</p>
+<p>First, they <i>appear</i> to have lower loss values when training, but that’s only because such a large percentage of the tokens they test against are the same padding token and it learns to output a lot of them.
+</p>
+<p>The second, more important issue, is that it dilutes the information stored by the encoder because the weights are modified by essentially meaningless tokens. This reduces the power of your encoder. If that isn’t clear now, don’t worry, it will be by the end of the chapter.
+</p>
+<p>Finally, for these networks to produce their expected results, they require the same padding at inference time. For example, if you trained a model to translate “Hola.” as part of a batch with 10-character-long sequences, you’d have five padding tokens.
+</p>
+<p>Your model would likely then only produce the correct result during inference if you tried to translate it with those same five padding tokens, because the same letters <i>without</i> the padding tokens would get encoded differently and likely translate to something else.
+</p>
+<p>One drawback of <i>using</i> <code>Masking</code> layers is that Core ML doesn’t actually support them. It won’t be a problem for this project — you’ll see why later — but it means you won’t be able to perform batched translations in iOS because it’s unlikely that you can create a batch of sequences of equal length without padding.
+</p></div>
+
+<p>Your decoder definition will look quite similar to that of your encoder, with a few minor but important differences. Run a cell with the following code now:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+decoder_in = Input(
+  shape=(<span class="hljs-keyword">None</span>, out_vocab_size), name=<span class="hljs-string">"decoder_in"</span>)
+decoder_mask = Masking(name=<span class="hljs-string">"decoder_mask"</span>)(decoder_in)
+<span class="hljs-comment"># 2</span>
+decoder_lstm = LSTM(
+  latent_dim, return_sequences=<span class="hljs-keyword">True</span>, return_state=<span class="hljs-keyword">True</span>,
+  dropout=<span class="hljs-number">0.2</span>, recurrent_dropout=<span class="hljs-number">0.3</span>, name=<span class="hljs-string">"decoder_lstm"</span>)
+<span class="hljs-comment"># 3</span>
+decoder_lstm_out, _, _ = decoder_lstm(
+  decoder_mask, initial_state=[encoder_h, encoder_c])
+<span class="hljs-comment"># 4</span>
+decoder_dense = Dense(
+  out_vocab_size, activation=<span class="hljs-string">"softmax"</span>, name=<span class="hljs-string">"decoder_out"</span>)
+decoder_out = decoder_dense(decoder_lstm_out)</pre>
+<p>Here are the differences from what you wrote for the encoder:
+</p>
+<ol>
+<li>
+<p>The decoder starts with an <code>Input</code> layer passed through a <code>Masking</code> layer, just like the encoder did. The only difference is that it’s sized for the output vocabulary.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>It uses an LSTM layer just like the encoder, but it adds an additional <code>dropout</code> parameter. Unlike recurrent dropout, which works only on values passed between timesteps, this dropout value affects the original input passed in from the encoder. It’s just an additional bit of regularization that might improve your model’s ability to generalize to unseen data.
+</p></li>
+
+<li>
+<p>You connect the masking layer as the input to the LSTM, and set the LSTM’s initial state to the output states from the <i>encoder’s</i> LSTM. The decoder won’t need to access its hidden or cell states while training — it already has access to them internally – so you ingore them by assigning them to underscore variables. You grab the rest of the outputs in <code>decoder_lstm_out</code>.
+</p></li>
+
+<li>
+<p>You pass the output from the LSTM into the decoder’s final, fully connected layer. It has a node for each token in the output vocabulary and uses a softmax activation to produce a probability distribution over them. You’ll use this to predict the next character in the output sequence.
+</p></li>
+</ol>
+
+<p>With the encoder and decoder defined, run the following code to combine them into a seq2seq model:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+seq2seq_model = Model([encoder_in, decoder_in], decoder_out)
+<span class="hljs-comment"># 2</span>
+seq2seq_model.compile(
+  optimizer=<span class="hljs-string">"rmsprop"</span>, loss=<span class="hljs-string">"categorical_crossentropy"</span>)</pre>
+<p>Here’s how you combine the encoder and decoder to prepare them for training:
+</p>
+<ol>
+<li>
+<p>You construct a Keras <code>Model</code> with the input layers for both the encoder and decoder, as well as the decoder’s output layer. Since you have more than one input layer, you combine them in a <code>list</code>.
+</p></li>
+
+<li>
+<p>The RMSProp optimizer uses an adaptive, per-parameter learning rate. We won’t go into details about it here; it’s enough to know that it’s a good choice for training recurrent neural networks. And as you’ve seen with the various other classification models you’ve created throughout this book, categorical cross entropy is a good loss function when your outputs represent probability distributions across classes; in this case, the classes are the tokens in the output vocabulary.
+</p></li>
+</ol>
+
+<p>Run the following line to display a summary of how the layers in your model connect:
+</p><pre class="code-block">seq2seq_model.summary()</pre>
+<p>Here’s what you’ll see:
+</p><div class="image-100"><img src="graphics/img229.png"  alt="" title="Keras seq2seq model for training" /></div>
+<p>This is one reason it’s a good idea to name your layers: It makes it easier to read summaries like this one. You can see which layers are connected and how data flows through the network —<code>encoder_in</code> connects to <code>encoder_mask</code> which connects to <code>encoder_lstm</code>, and <code>decoder_in</code> connects to <code>decoder_mask</code>, which connects to <code>decoder_in</code>, along with the second two outputs from <code>encoder_lstm</code>. Then <code>decoder_lstm</code>’s output connects to <code>decoder_out</code>, which produces the model’s output.
+</p>
+<p>The summary’s a bit misleading because it doesn’t display the details of all the outputs for the LSTMs. Notice the Output Shape column for <code>encoder_lstm</code> shows the tuple <code>(None, 256)</code> with an opening bracket “[” before it and a comma “,” after it, followed by the start of a second tuple showing <code>(None,</code>. You can see a similarly incomplete tuple for <code>decoder_lstm</code>. These were meant to show <i>lists</i> of outputs, but there’s a glitch with the output displayed for the <code>summary</code> function.
+</p>
+<h2 class="segment-chapter">Train your model</h2>
+
+<p>So far, you’ve defined your model’s architecture in Keras and loaded a dataset. But before you can train with that data, you need to do a bit more preparation.
+</p>
+<p>OK, full disclosure: Neural networks can’t process text. It might seem like a bad time to bring this up, well into a chapter about natural language processing with neural networks, but there it is. Remember from what you learned elsewhere in this book: Neural networks are really just a bunch of math, and that means they only work with numbers. In the last chapter it <i>looked</i> like you used text directly, but internally the Natural Language framework transformed that text into numbers when necessary. Now you’ll learn one way to perform such conversions yourself.
+</p>
+<p>Run the following code in your notebook in order to create dictionaries that map text to or from integers:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+in_token2int = {token : i
+                <span class="hljs-keyword">for</span> i, token <span class="hljs-keyword">in</span> enumerate(sorted(in_vocab))}
+<span class="hljs-comment"># 2</span>
+out_token2int = {token : i
+                 <span class="hljs-keyword">for</span> i, token <span class="hljs-keyword">in</span> enumerate(sorted(out_vocab))}
+out_int2token = {i : token
+                 <span class="hljs-keyword">for</span> token, i <span class="hljs-keyword">in</span> out_token2int.items()}</pre>
+<p>Here’s how you created your conversion maps:
+</p>
+<ol>
+<li>
+<p>This dictionary comprehension — like list comprehensions, but they create <code>dict</code> objects — maps each character in <code>in_vocab</code> to a unique integer. Sorting the vocabulary before assigning the integer values makes the values easier for you to reason about — “A” comes before “B”, etc. — but it isn’t actually necessary for the mapping to work.
+</p></li>
+
+<li>
+<p>Here, you create <i>two</i> dictionaries, one that maps each character in <code>out_vocab</code> to a unique integer, and one that maps back from integers to characters. You only needed one mapping for the Spanish characters because the model only translates <i>from</i> Spanish, not <i>to</i> it. But remember, you defined the model to use teacher forcing, which requires you to feed the target English phrases into the decoder along with the output from the encoder. That means you need to convert English characters to and from integers.
+</p></li>
+</ol>
+
+<p>Now you’ve got Python dictionaries you can use to easily convert Spanish characters into integers, as well as convert English characters both to and from integers. For example, calling <code>out_token2int[&apos;A&apos;]</code> returns the value <code>25</code>, and calling <code>out_int2token[25]</code> gets you back <code>&apos;A&apos;</code>.
+</p>
+<p>You’ve got a way to turn text into numbers — so far, so good. But here’s some <i>more</i> full disclosure: You won’t want to use those numbers for machine learning, either.
+</p>
+<p>While neural networks require numeric input, they don’t want just <i>any</i> numbers. In this case, the numbers are stand-ins for text. But if you use these values as is, it will confuse the network because it appears as though some ordinal relationship exists that doesn’t. For example, the number 10 is twice as big as the number 5, but did you mean to imply that characters encoded as <code>10</code> are twice as important as characters encoded as <code>5</code>?
+</p>
+<p>No, you didn’t, but there’s no way for a machine learning algorithm to know that. Larger values for a given feature affect the model’s calculations more than smaller ones. At worst this will ruin your model, but at best it will slow down the training process as the model attempts to undo those implied relationships.
+</p>
+<p>There are a couple ways to resolve this encoding problem. You’ll see a different option in the next chapter, but here you’ll convert each token’s integer value into what’s called a one-hot encoding.
+</p>
+<p>One-hot encoding a feature involves replacing each value with a vector the same length as the number of all possible values. These vectors are filled with zeros in all but one position, which contains a one. Imagine you wanted to use just the days Monday through Friday as possible inputs to a model.
+</p>
+<p>The following image shows what it looks like to one-hot encode those values:
+</p><div class="image-50"><img src="graphics/img230.png"  alt="" title="One-hot encoded values" /></div>
+<p>As you can see, each vector is length five — the same length as the number of possible values. And each of these vectors is filled with zeros except for a single one in a unique location. This essentially turns one feature — the day of the week — into five mutually exclusive features representing boolean flags indicating their absence or presence.
+</p>
+<p>For your seq2seq model, there are <code>in_vocab_size</code> possible input values, and <code>out_vocab_size</code> possible output values. Rather than pass a sequence of integers to the model, you’ll pass a matrix wherein each row represents a single character, one-hot encoded as a vector the same size as the corresponding vocabulary.
+</p>
+<p>To keep things in more manageable chunks, you’ll split the logic to one-hot encode training batches into two functions. The first will create appropriately sized NumPy arrays filled with zeros, and the second will place ones into those arrays at the correct locations to encode the sequences.
+</p>
+<p>Run the following code to import NumPy and define the first of those two functions:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">make_batch_storage</span><span class="hljs-params">(batch_size, in_seq_len, out_seq_len)</span>:</span>
+  enc_in_seqs = np.zeros(
+    (batch_size, in_seq_len, in_vocab_size),
+    dtype=np.float32)
+  dec_in_seqs = np.zeros(
+    (batch_size, out_seq_len, out_vocab_size),
+    dtype=np.float32)
+  dec_out_seqs = np.zeros(
+    (batch_size, out_seq_len, out_vocab_size),
+    dtype=np.float32)
+
+  <span class="hljs-keyword">return</span> enc_in_seqs, dec_in_seqs, dec_out_seqs</pre>
+<p>You declare <code>make_batch_storage</code> to take three parameters, which — along with the vocabulary sizes — define the dimensions of the storage tensors it creates. It returns three NumPy arrays, sized to hold <code>batch_size</code> sequences that are each <code>in/out_seq_len</code> characters long, with each character being <code>in/out_vocab_size</code> wide. Specifying <code>dtype=np.float32</code> keeps NumPy from defaulting to 64-bit floats.
+</p>
+<p>The <code>in_seq_len</code> and <code>out_seq_len</code> parameters to <code>make_batch_storage</code> deserve more explanation. Consider this: If you create a batch with random samples from your training set, are all their sentences guaranteed to have the same length?
+</p>
+<p>The answer is no, but consider trying to store the following input sequences together in a batch:
+</p><div class="image-50"><img src="graphics/img231.png"  alt="" title="Mixed-length sequences without padding" /></div>
+<p>Each sequence has a different length, but tensors need fixed dimensions. That means each item in a batch needs to fill the same amount of space in the tensor, regardless of how many tokens are in the actual sequences. To accomplish this, you’ll use special padding tokens at the end of each input sequence shorter than <code>in_seq_len</code>, and at the end of each output sequence shorter than <code>out_seq_len</code>. So those same examples would look more like this in a batch:
+</p><div class="image-50"><img src="graphics/img232.png"  alt="" title="Mixed-length sequences with padding" /></div>
+<p>This image shows padding as crossed-out boxes, but you could use anything that isn’t already in the vocabulary. And even though this looks like characters arranged in a two-dimensional batch, in reality it’s three-dimensional with each character represented by a one-hot encoding. For this project, you’ll pad sequences with zero-filled vectors. Since <code>make_batch_storage</code> returns a batch filled with zeros, that means it’s basically pre-padded and there’s no need to add new padding-specific tokens to the vocabularies.
+</p>
+<p>Now, run the following code to define the second of the two functions for one-hot encoding — the one that actually encodes the batch:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">encode_batch</span><span class="hljs-params">(samples)</span>:</span>
+  <span class="hljs-comment"># 1</span>
+  batch_size = len(samples)
+  max_in_length = max([len(seq) <span class="hljs-keyword">for</span> seq, _ <span class="hljs-keyword">in</span> samples])
+  max_out_length = max([len(seq) <span class="hljs-keyword">for</span> _, seq <span class="hljs-keyword">in</span> samples])
+
+  enc_in_seqs, dec_in_seqs, dec_out_seqs = \
+    make_batch_storage(
+      batch_size, max_in_length, max_out_length)
+  <span class="hljs-comment"># 2</span>
+  <span class="hljs-keyword">for</span> i, (in_seq, out_seq) <span class="hljs-keyword">in</span> enumerate(samples):
+    <span class="hljs-keyword">for</span> time_step, token <span class="hljs-keyword">in</span> enumerate(in_seq):
+      enc_in_seqs[i, time_step, in_token2int[token]] = <span class="hljs-number">1</span>
+
+    <span class="hljs-keyword">for</span> time_step, token <span class="hljs-keyword">in</span> enumerate(out_seq):
+      dec_in_seqs[i, time_step, out_token2int[token]] = <span class="hljs-number">1</span>
+    <span class="hljs-comment"># 3</span>
+    <span class="hljs-keyword">for</span> time_step, token <span class="hljs-keyword">in</span> enumerate(out_seq[<span class="hljs-number">1</span>:]):
+      dec_out_seqs[i, time_step, out_token2int[token]] = <span class="hljs-number">1</span>
+
+  <span class="hljs-keyword">return</span> enc_in_seqs, dec_in_seqs, dec_out_seqs</pre>
+<p>Here’s how this function one-hot encodes a list of samples as a training batch:
+</p>
+<ol>
+<li>
+<p>You find the batch size and the lengths of the longest input and output sequences in the batch, then use those values to create empty tensors to store the batch data.
+</p></li>
+
+<li>
+<p>You loop over the samples and one-hot encode each of their sequences into <code>enc_in_seqs</code>, <code>dec_in_seqs</code> and <code>dec_out_seqs</code> as appropriate. That is, for each token in a sequence, you place a <code>1</code> in its corresponding location within a vector of zeros.
+</p></li>
+
+<li>
+<p>Notice how when you populate <code>dec_out_seqs</code>, you use <code>out_seq[1:]</code> to skip the <code>START</code> token in the sequence. That’s because this tensor contains the outputs your model learns to <em>predict</em>. It will never predict the <code>START</code> token because it’s always <i>given</i> that as its first input, and it learns to predict the <i>next</i> token.
+</p></li>
+</ol>
+
+<p>The only thing left to do is one-hot encode your datasets, then you’re ready to train. You <i>could</i> encode them all at once and then let Keras randomly sample batches —  that works and it’s how many people do it. However, if you ensure batches contain only sequences of similar lengths, you can minimize the amount of padding necessary.
+</p>
+<p>Why does that matter? The <code>Masking</code> layers you added to <code>seq2seq_model</code> ensure the padding doesn’t affect your training results, but it still takes time to process those steps in the sequences. With this model and dataset, minimizing padding makes training go nearly <i>twice</i> as fast.
+</p>
+<p>The chapter resources include a file called <em>seq2seq</em><em>_</em><em>util.py</em> in the <em>notebooks</em> folder. It defines a class called <code>Seq2SeqBatchGenerator</code> that you’ll use to generate properly randomized batches while minimizing necessary padding. We won’t go over the details of its code here; read through the code and comments in the file if you’re interested.
+</p>
+<p>Run the following code in a new cell to import the <code>Seq2SeqBatchGenerator</code> class and create instances of it for your training and validation datasets:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> seq2seq_util <span class="hljs-keyword">import</span> Seq2SeqBatchGenerator
+
+batch_size = <span class="hljs-number">64</span>
+train_generator = Seq2SeqBatchGenerator(
+  train_samples, batch_size, encode_batch)
+valid_generator = Seq2SeqBatchGenerator(
+  valid_samples, batch_size, encode_batch)</pre>
+<p>You’ll use these objects while training your model to create batches with the given batch size. <code>Seq2SeqBatchGenerator</code> needs a way to one-hot encode each batch of samples, so you pass it the <code>encode_batch</code> function.
+</p>
+<div class="note">
+<p><em>Warning</em>: Running the following cell will take considerable time. Expect it to run for multiple hours even with a GPU. If you don’t want to wait that long, change the <code>epoch</code> value to something small, like <code>10</code> or even just one or two. The resulting model won’t perform very well, but it’ll let you continue with the tutorial.
+</p></div>
+
+<p>Now, run a cell with the following code to train your model:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+<span class="hljs-keyword">from</span> keras.callbacks <span class="hljs-keyword">import</span> EarlyStopping
+early_stopping = EarlyStopping(
+  monitor=<span class="hljs-string">"val_loss"</span>, patience=<span class="hljs-number">5</span>, restore_best_weights=<span class="hljs-keyword">True</span>)
+<span class="hljs-comment"># 2</span>
+seq2seq_model.fit_generator(
+  train_generator, validation_data=valid_generator,
+  epochs=<span class="hljs-number">500</span>, callbacks=[early_stopping])</pre>
+<p>There are many parameters available to control training models. Here’s how you trained this one:
+</p>
+<ol>
+<li>
+<p>Keras lets you add callbacks to monitor and modify the training process between epochs. You create an <code>EarlyStopping</code> callback that will stop training if the validation loss stops improving. The <code>patience</code> parameter tells it to keep training for that number of epochs even if the loss isn’t improving, and <code>restore_best_weights</code> tells it to use the model weights from the epoch with the best value rather than the last epoch.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>You call <code>fit_generator</code> on the <code>seq2seq_model</code> object you created earlier, passing it the two <code>Seq2SeqBatchGenerator</code> objects you just made. This function trains the model, using those objects to create batches for training and validation. You told it to train for 500 epochs, but the <code>early_stopping</code> callback should stop it long before it reaches that number.
+</p></li>
+</ol>
+
+<p>The model provided with the chapter had its best validation loss of <code>0.5905</code> at epoch <code>179</code>. If you try training your own model, you’ll get different results, but probably not <i>too</i> different. The specific values aren’t really important, here, just that you understand the architecture so you can apply it to your own problems in the future.
+</p>
+<p>Now that you have a trained model, continue on to the next section to learn how to perform inference with seq2seq models, which requires some changes from what you did for training.
+</p>
+<h2 class="segment-chapter">Inference with sequence-to-sequence models</h2>
+
+<p>The model you’ve trained so far isn’t actually useful for inference — at least, not in its current form. Why is that? Because the decoder portion of the model requires the correctly translated text as one of its inputs! What good is a translation model that needs <i>you</i> to do the translations?
+</p>
+<p>But don’t worry: You won’t have to throw out all your hard work. The model has learned something useful, you just have to access it a different way.
+</p>
+<p>First, separate the encoder and decoder into two models. Keras makes this easy. You declare a new <code>Model</code> and pass it the input and output layers you want to use, like this:
+</p><pre class="code-block">inf_encoder = Model(encoder_in, [encoder_h, encoder_c])</pre>
+<p>Running a cell with the above code creates a new encoder model called <code>inf_encoder</code>, short for “inference encoder”. It uses the same input layer and encoder state output layers that you created earlier: <code>encoder_in</code>, <code>encoder_h</code> and <code>encoder_c</code>. Keras maintains a graph of layer connections, so it automatically adds to this <code>Model</code> any existing layers necessary to connect these inputs and outputs. This means you’re actually using the same <code>LSTM</code> and <code>Masking</code> layers that you trained as part of <code>seq2seq_model</code>, too. In essense, <code>inf_encoder</code> accesses <i>only</i> the encoder portion of your original trained model.
+</p>
+<p>You can run the <code>summary</code> function to see what Keras actually built:
+</p><pre class="code-block">inf_encoder.summary()</pre>
+<p>Which produces the following output:
+</p><div class="image-80"><img src="graphics/img233.png"  alt="" title="Keras encoder model for inference" /></div>
+<p>It shows <code>encoder_in</code> feeds into <code>encoder_mask</code>, which feeds into <code>encoder_lstm</code>, and the final layer outputs two length 256 vectors. These are all layers you created earlier to train <code>seq2seq_model</code>, just repurposed in a new <code>Model</code> object.
+</p>
+<p>You’ve isolated the encoder, so now do the same for the decoder. Run the following code:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+inf_dec_h_in = Input(shape=(latent_dim,), name=<span class="hljs-string">"decoder_h_in"</span>)
+inf_dec_c_in = Input(shape=(latent_dim,), name=<span class="hljs-string">"decoder_c_in"</span>)
+<span class="hljs-comment"># 2</span>
+inf_dec_lstm_out, inf_dec_h_out, inf_dec_c_out = decoder_lstm(
+  decoder_in, initial_state=[inf_dec_h_in, inf_dec_c_in])
+<span class="hljs-comment"># 3</span>
+inf_dec_out = decoder_dense(inf_dec_lstm_out)
+<span class="hljs-comment"># 4</span>
+inf_decoder = Model(
+  [decoder_in, inf_dec_h_in, inf_dec_c_in],
+  [inf_dec_out, inf_dec_h_out, inf_dec_c_out])</pre>
+<p>This looks a lot more complicated than what you did for the encoder, but it’s really only a <i>little</i> more complicated. Go through it step by step:
+</p>
+<ol>
+<li>
+<p>You create two new <code>Input</code> layers the same shapes as the encoder’s two outputs — <code>inf_dec_h_in</code> and <code>inf_dec_c_in</code>. (The names are getting longer so we’re abbreviating more heavily now.) Remember how in the full seq2seq model, the decoder’s initial state came directly from the encoder. For this new model, you’ll provide the initial state programmatically, and you’ll use these inputs to do it.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Here, you connect the new inputs as the initial state for your trained LSTM layer, along with the original <code>decoder_in</code> that lets you give the decoder a one-hot encoded sequence. You passed entire sequences to <code>decoder_in</code> while training <code>seq2seq_model</code>, but during inference you’ll only give it the most recently predicted character for each new prediction. You also grab the LSTM’s state outputs as <code>inf_dec_h_out</code> and <code>inf_dec_c_out</code>, rather than discard them like you did in <code>seq2seq_model</code>. You’ll pass these outputs from one prediction as inputs for the next one.
+</p></li>
+
+<li>
+<p>This line connnects the new output from the LSTM layer to the dense layer you trained earlier, giving you a new output layer for the decoder model.
+</p></li>
+
+<li>
+<p>Finally, you build the new decoder <code>Model</code>. Notice it includes outputs from different layers in the network — the dense layer’s character probabilities and the LSTM’s output states. There’s nothing about neural networks that says the outputs can only come from the last layer!
+</p></li>
+</ol>
+
+<p>Once again, the <code>summary</code> function shows you how Keras connected the model’s layers:
+</p><pre class="code-block">inf_decoder.summary()</pre>
+<p>Which outputs this:
+</p><div class="image-100"><img src="graphics/img234.png"  alt="" title="Keras decoder model for inference" /></div>
+<p>As you can see, <code>decoder_in</code>, <code>decoder_h_in</code> and <code>decoder_c_in</code> all flow into <code>decoder_lstm</code>, which in turn leads to <code>decoder_out</code>. Once again, the summary doesn’t display all the values in the Output Shape column, but you get the idea.
+</p>
+<p>You’re going to write a function that translates sequences using the separate encoder and decoder models you just created. But before you do, run the following code to define a few useful constants:
+</p><pre class="code-block">max_out_seq_len = max(len(seq) <span class="hljs-keyword">for</span> _, seq <span class="hljs-keyword">in</span> samples)
+start_token_idx = out_token2int[start_token]
+stop_token_idx = out_token2int[stop_token]</pre>
+<p>The values for these three constants are all specific to this project, but you’ll need to think about them in your own projects as well. Here’s what they’re for:
+</p>
+<ul>
+<li>
+<p><code>max_out_seq_len</code>: This value defines the maximum length of a translation. Ideally, your decoder will predict a STOP token at some point, but this specifies how long you’re willing to wait for one before giving up. You could choose any value here — the model has no limit to the length of sequence it can process — but this line uses the length of the longest English sentence in the training set. Why? Because you know the model never got any practice creating sequences longer than this, so it seems like as good a place as any to call it quits.
+</p></li>
+
+<li>
+<p><code>start_token_idx</code>: This is the integer encoding of the <code>START</code> token. You’ll need to know this to signal the decoder to start translating a new sequence.
+</p></li>
+
+<li>
+<p><code>stop_token_idx</code>: This is the integer encoding of the <code>STOP</code> token. You’ll need to know this because it’s how the decoder signals to you that it’s done translating a sequence.
+</p></li>
+</ul>
+
+<p>With those constants defined, you’re ready to actually use your models to translate text. Define the following function in your notebook. It takes a one-hot encoded sequence, such as the ones <code>batch_encode</code> creates, along with an encoder-decoder model pair, and returns the sequence’s translation:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">translate_sequence</span><span class="hljs-params">(one_hot_seq, encoder, decoder)</span>:</span>
+  <span class="hljs-comment"># 1</span>
+  encoding = encoder.predict(one_hot_seq)
+  <span class="hljs-comment"># 2</span>
+  decoder_in = np.zeros(
+    (<span class="hljs-number">1</span>, <span class="hljs-number">1</span>, out_vocab_size), dtype=np.float32)
+  <span class="hljs-comment"># 3</span>
+  translated_text = <span class="hljs-string">""</span>
+  done_decoding = <span class="hljs-keyword">False</span>
+  decoded_idx = start_token_idx
+  <span class="hljs-keyword">while</span> <span class="hljs-keyword">not</span> done_decoding:
+    <span class="hljs-comment"># 4</span>
+    decoder_in[<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, decoded_idx] = <span class="hljs-number">1</span>
+    <span class="hljs-comment"># 5</span>
+    decoding, h, c = decoder.predict([decoder_in] + encoding)
+    <span class="hljs-comment"># 6</span>
+    encoding = [h, c]
+    <span class="hljs-comment"># 7</span>
+    decoder_in[<span class="hljs-number">0</span>, <span class="hljs-number">0</span>, decoded_idx] = <span class="hljs-number">0</span>
+    <span class="hljs-comment"># 8</span>
+    decoded_idx = np.argmax(decoding[<span class="hljs-number">0</span>, <span class="hljs-number">-1</span>, :])
+    <span class="hljs-comment"># 9</span>
+    <span class="hljs-keyword">if</span> decoded_idx == stop_token_idx:
+      done_decoding = <span class="hljs-keyword">True</span>
+    <span class="hljs-keyword">else</span>:
+      translated_text += out_int2token[decoded_idx]
+    <span class="hljs-comment"># 10</span>
+    <span class="hljs-keyword">if</span> len(translated_text) &gt;= max_out_seq_len:
+      done_decoding = <span class="hljs-keyword">True</span>
+
+  <span class="hljs-keyword">return</span> translated_text</pre>
+<p>This logic drives the translation process, so let’s go over it carefully:
+</p>
+<ol>
+<li>
+<p>The function receives a NumPy array containing a one-hot encoded sequence — <code>one_hot_seq</code> — and passes it to <code>encoder</code>’s <code>predict</code> function to process it. The encoder model passed to this function should output its LSTM’s <code>h</code> and <code>c</code> states as a list, which you save as <code>encoding</code>.
+</p></li>
+
+<li>
+<p>Next, you create a NumPy array to store a one-hot encoded character you’ll give the decoder. Remember from the diagrams earlier in the chapter, you’ll call the decoder repeatedly with the most recently predicted character as input.
+</p></li>
+
+<li>
+<p>These variables keep track of the translation so far and control the decoding loop. You’ll set <code>decoded_idx</code> to the one-hot encoding index of the decoder’s most recently predicted character. However, you <em>initialize</em> it to the <code>START</code> token’s index, because you trained the decoder to start decoding sequences using the encoder’s output and <code>START</code> as the initial token.
+</p></li>
+
+<li>
+<p>The loop starts by one-hot encoding the current character, indicated by <code>decoded_idx</code>. <em>Important</em>: This <em>must</em> initially equal the index of the <code>START</code> token.
+</p></li>
+
+<li>
+<p>It calls <code>predict</code> on the decoder, passing in the most recently predicted character and the most recent cell state. Remember, the first time through this loop, <code>decoder_in</code> contains the <code>START</code> token and <code>encoding</code> contains the outputs from the encoder.
+</p></li>
+
+<li>
+<p>Next, you save the decoder’s output <code>h</code> and <code>c</code> states as <code>encoding</code>. You’ll pass these back to the decoder as inputs to <code>predict</code> when predicting the next character.
+</p></li>
+
+<li>
+<p>Finally, you clear out the one-hot encoded index, so now <code>decoder_in</code> contains all zeros once again.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>The decoder doesn’t return a character. Instead, it returns a <em>probability distribution</em> over all <i>possible</i> characters. So which one do you choose? Here you take a greedy approach and always choose the character predicted with the highest probability. This isn’t necessarily the best approach, which you’ll read about later.
+</p></li>
+
+<li>
+<p>Given the index of the predicted character, you check to see if it’s the <code>STOP</code> token. If so, the translation is complete and you stop the loop. Otherwise, you convert the index to text and add it to the translation.
+</p></li>
+
+<li>
+<p>The final check ensures the loop doesn’t go on forever, by stopping it if the translation length reaches its limit.
+</p></li>
+</ol>
+
+<p>Now you’re ready to see what your model can do. The <em>notebook</em> folder’s <em>seq2seq</em><em>_</em><em>util.py</em> includes a function that loops over a list of sample tuples and displays the predictions along with the correct translations for comparison. It takes as arguments, the encoder and decoder models, along with a function to one-hot encode sequences and a decoding function like the one you just wrote.
+</p>
+<p>To see how your model performs, use code like the following, which displays your model’s output for the first 100 samples in the validation set:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> seq2seq_util <span class="hljs-keyword">import</span> test_predictions
+
+test_predictions(valid_samples[:<span class="hljs-number">100</span>],
+                 inf_encoder, inf_decoder,
+                 encode_batch, translate_sequence)</pre>
+<p>Let’s look at some of the results <i>we</i> got on the validation set when training the model included with the chapter resources. Yours will likely be different but should be in the same quality range.
+</p>
+<p>First, there are several like the following which produced the expected results perfectly. Who needs Google Translate, amirite?
+</p><div class="image-100"><img src="graphics/img235.png"  alt="" title="Great results on validation samples: Source, Target, Model Output" /></div>
+<p>Then there are several like the following, which seem like reasonable translations even if they aren’t exactly what the human translators wrote:
+</p><div class="image-100"><img src="graphics/img236.png"  alt="" title="Good results on validation samples: Source, Target, Model Output" /></div>
+<p>Sadly, there are quite a few where our model basically spit out nonsense, like these:
+</p><div class="image-100"><img src="graphics/img237.png"  alt="" title="Bad results on validation samples: Source, Target, Model Output" /></div>
+<p>And, finally, there are some translations like these, that start off looking great and then take horrible turns:
+</p><div class="image-100"><img src="graphics/img238.png"  alt="" title="Almost-right-but-horribly-wrong results on validation samples: Source, Target, Model Output" /></div>
+<p>Considering eating children? Laughing at poor Mary’s eyes day in and day out? We’ve created an AI monster!
+</p>
+<p>In all seriousness, it’s pretty amazing that with so little effort, you’ve created a piece of software that learned to look at Spanish text — one character at a time — and generate English — again, <i>one character at a time</i> — that consists of properly spelled words, mostly arranged in grammatically correct sentences complete with proper punctuation!
+</p>
+<p>And the fact that it generates text that also sometimes translates between languages <i>correctly</i>? That’s a bit mind blowing.
+</p>
+<p>Let’s save the discussion about model quality until the end of the chapter. For now, go on to the next section to learn how to convert your seq2seq model for use in iOS.
+</p>
+<h2 class="segment-chapter">Converting your model to Core ML</h2>
+
+<p>So far, you’ve used teacher forcing to train a Keras seq2seq model to translate Spanish text to English, then you used those trained layers to create separate encoder and decoder models that work without you needing to provide them with the correct translation. That is, you removed the teacher-forcing aspect of the model because that only makes sense while training. At this point, you <i>should</i> just be able to convert those encoder and decoder models to Core ML and use them in your app.
+</p>
+<p>But is it ever that easy?
+</p>
+<p>Currently, there are issues with Core ML and/or <code>coremltools</code> (the Python package that converts models into Core ML format), preventing you from exporting the models you’ve made. Don’t worry — this section shows you how to work around each of them and convert your models to Core ML. Start with the encoder: Run the following code to do a bunch of stuff you shouldn’t have to do, which is all explained after the code block:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+coreml_enc_in = Input(
+  shape=(<span class="hljs-keyword">None</span>, in_vocab_size), name=<span class="hljs-string">"encoder_in"</span>)
+coreml_enc_lstm = LSTM(
+  latent_dim, return_state=<span class="hljs-keyword">True</span>, name=<span class="hljs-string">"encoder_lstm"</span>)
+coreml_enc_out, _, _ = coreml_enc_lstm(coreml_enc_in)
+coreml_encoder_model = Model(coreml_enc_in, coreml_enc_out)
+<span class="hljs-comment"># 2</span>
+coreml_encoder_model.output_layers = \
+  coreml_encoder_model._output_layers
+<span class="hljs-comment"># 3</span>
+inf_encoder.save_weights(<span class="hljs-string">"Es2EnCharEncoderWeights.h5"</span>)
+coreml_encoder_model.load_weights(<span class="hljs-string">"Es2EnCharEncoderWeights.h5"</span>)</pre>
+<p>Everything you just wrote is to work around a conversion problem you’d otherwise have if you didn’t do these things. Here’s what’s going on:
+</p>
+<ol>
+<li>
+<p>This bit creates a new, untrained encoder model, completely separate from the one you trained. This is necessary to work around <i>two</i> issues you would encounter without it. First, Core ML does not currently support <code>Masking</code> layers, so you need to create a new connection from the <code>Input</code> layer directly to the <code>LSTM</code> to remove the <code>Masking</code> layer from the network. The second issue is a bug that causes the converter to crash when exporting models that contain shared layers. That is, layers used by more than one model. Currently, you’re sharing several layers between your seq2seq model and the encoder and decoder models you made for inference. By creating new <code>Input</code> and <code>LSTM</code> layers, this encoder now contains no shared layers.
+</p></li>
+
+<li>
+<p>This line is a bit ridiculous, but when using the versions of Keras and <code>coremltools</code> that we used for this book, the Core ML converter looks for the layers using the name <code>output_layers</code> instead of its actual name, <code>_output_layers</code>. This super hacky line just adds a new property on the model, using the name the converter expects. Hopefully, this bug will get fixed soon and this will no longer be necessary.
+</p></li>
+
+<li>
+<p>Finally, you extract the weights from your original, trained encoder and apply them to the new, untrained one. The <code>load_weights</code> function attempts to match weights by layer names, like “encoder_lstm”, but if the layers don’t have identical names then it will try its best to match them based on the architecture. In the end, your new <code>coreml_encoder_model</code> is separate from the models you trained earlier, but contains the same trained weights so it will produce the same results for a given input.
+</p></li>
+</ol>
+
+<p>The <code>coremltools</code> Python package provides converters and other utilities to help get models from various machine learning frameworks into Core ML format. Run the following code to use the Keras converter to export your encoder model:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> coremltools
+
+coreml_encoder = coremltools.converters.keras.convert(
+  coreml_encoder_model,
+  input_names=<span class="hljs-string">"encodedSeq"</span>, output_names=<span class="hljs-string">"ignored"</span>)
+coreml_encoder.save(<span class="hljs-string">"Es2EnCharEncoder.mlmodel"</span>)</pre>
+<p>After importing the <code>coremltools</code> package, you use the Keras converter to create a Core ML definition of your model and save it to disk. Notice the <code>input_names</code> and <code>output_names</code> parameters: These are used by Xcode to name the inputs and outputs in the classes it generates, so it’s a good idea to put something descriptive here. You named them “encodedSeq” and “ignored”, respectively, to indicate the input is a one-hot encoded sequence and the output is unused by the app.
+</p>
+<div class="note">
+<p><em>Note</em>: You do <i>not</i> mention the LSTM’s <code>h</code> and <code>c</code> states that you intend to pass from your encoder to your decoder — the converter adds those automatically and currently doesn’t let you change their names. You’ll see the final set of names later in Xcode.
+</p></div>
+
+<p>With your encoder exported, it’s time to turn to the decoder. Run the following code to perform the same workarounds to prepare your decoder for export to Core ML:
+</p><pre class="code-block">coreml_dec_in = Input(shape=(<span class="hljs-keyword">None</span>, out_vocab_size))
+coreml_dec_lstm = LSTM(
+  latent_dim, return_sequences=<span class="hljs-keyword">True</span>, return_state=<span class="hljs-keyword">True</span>,
+  name=<span class="hljs-string">"decoder_lstm"</span>)
+coreml_dec_lstm_out, _, _ = coreml_dec_lstm(coreml_dec_in)
+coreml_dec_dense = Dense(out_vocab_size, activation=<span class="hljs-string">"softmax"</span>)
+coreml_dec_out = coreml_dec_dense(coreml_dec_lstm_out)
+coreml_decoder_model = Model(coreml_dec_in, coreml_dec_out)
+
+coreml_decoder_model.output_layers = \
+  coreml_decoder_model._output_layers
+
+inf_decoder.save_weights(<span class="hljs-string">"Es2EnCharDecoderWeights.h5"</span>)
+coreml_decoder_model.load_weights(<span class="hljs-string">"Es2EnCharDecoderWeights.h5"</span>)</pre>
+<p>This code does for the decoder all the same things you did for the encoder. It makes a new model that mirrors the one you trained but without any <code>Masking</code> or shared layers, performs the <code>output_layers</code> hack, and copies the weights from the trained decoder onto the new one.
+</p>
+<p>Then export the decoder like you did for the encoder:
+</p><pre class="code-block">coreml_decoder = coremltools.converters.keras.convert(
+  coreml_decoder_model,
+  input_names=<span class="hljs-string">"encodedChar"</span>, output_names=<span class="hljs-string">"nextCharProbs"</span>)
+coreml_decoder.save(<span class="hljs-string">"Es2EnCharDecoder.mlmodel"</span>)</pre>
+<p>Here, you convert the decoder model to Core ML and save it to disk, the same way you did for the encoder. The descriptive names for the input and output will make your iOS code more readable later; they remind you that the model takes as input a single one-hot encoded character, and outputs a probability distribution for a single character.
+</p>
+<p>The models you’ve saved are fine for use in an iOS app, but there’s one more simple step you should always consider. With apps, download size matters. Your model stores its weights and biases as 32-bit floats, but you won’t lose much in performance if you convert them all to 16-bits. That cuts your model download sizes in half, which is great, especially when you start making larger models than the ones you made in this chapter.
+</p>
+<p>Run a cell with the following code to define a function you can use to convert existing Core ML models from 32 to 16-bit floating point weights:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">convert_to_fp16</span><span class="hljs-params">(mlmodel_filename)</span>:</span>
+  basename = mlmodel_filename[:-len(<span class="hljs-string">".mlmodel"</span>)]
+  spec = coremltools.utils.load_spec(mlmodel_filename)
+
+  spec_16bit = coremltools.utils.\
+    convert_neural_network_spec_weights_to_fp16(spec)
+
+  coremltools.utils.save_spec(
+    spec_16bit, <span class="hljs-string">f"<span class="hljs-subst">{basename}</span>16Bit.mlmodel"</span>)</pre>
+<p>This takes advantage of functions from <code>coremltools</code> to load an existing Core ML model, convert its weights into 16-bit floats, and then save a new version back to disk. It derives a new filename so it won’t overwrite the original model.
+</p>
+<p>Now, call that function for each of your models to create 16-bit versions:
+</p><pre class="code-block">convert_to_fp16(<span class="hljs-string">"Es2EnCharEncoder.mlmodel"</span>)
+convert_to_fp16(<span class="hljs-string">"Es2EnCharDecoder.mlmodel"</span>)</pre>
+<p>If everything worked, you should now have four model files saved in your <em>notebooks</em> folder: <em>Es2EnCharEncoder.mlmodel</em>, <em>Es2EnCharDecoder.mlmodel</em>, <em>Es2EnCharEncoder16Bit.mlmodel</em> and <em>Es2EnCharDecoder16Bit.mlmodel</em>. It’s nice to keep both versions in case you want to compare their performance, but the rest of this chapter will use the models with 16-bit weights.
+</p>
+<p>One last thing: When you use your models in your iOS app, you’ll need to do the same one-hot encoding you did here to convert input sequences from Spanish characters into the integers your encoder expects, and then convert your decoder’s numerical output into English characters.
+</p>
+<p>To ensure you use the correct values, run the following code to save out the dictionaries you’ve been using:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> json
+
+<span class="hljs-keyword">with</span> open(<span class="hljs-string">"esCharToInt.json"</span>, <span class="hljs-string">"w"</span>) <span class="hljs-keyword">as</span> f:
+  json.dump(in_token2int, f)
+<span class="hljs-keyword">with</span> open(<span class="hljs-string">"intToEnChar.json"</span>, <span class="hljs-string">"w"</span>) <span class="hljs-keyword">as</span> f:
+  json.dump(out_int2token, f)</pre>
+<p>Using Python’s <code>json</code> package, you save <code>in_token2int</code> and <code>out_int2token</code> as JSON files. You’ll use these files, along with the Core ML versions of your encoder and decoder models, in an iOS app in the next section.
+</p>
+<h2 class="segment-chapter">Using your model in iOS</h2>
+
+<p>Most of this chapter has been about understanding and building sequence-to-sequence models for translating natural language. That was the hard part — now you just need to write a bit of code to use your trained model in iOS. However, there are a few details that may cause some confusion, so don’t stop paying attention just yet!
+</p>
+<p>You’ll continue working on your finished project from the previous chapter, so open it now in Xcode. If you skipped that chapter, you can use the <em>SMDB</em> starter project in this chapter’s resources.
+</p>
+<p>Drag your trained Core ML model files — <em>Es2EnCharEncoder16Bit.mlmodel</em> and <em>Es2EnCharDecoder16Bit.mlmodel</em> — into Xcode to add them to the <em>SMDB</em> project. Or, if you’d prefer to use the larger versions, use the models with the same name minus the “16Bit”. Keep in mind that if you choose not to use the 16-bit versions, you’ll need to remove <code>16Bit</code> from any code instructions that include it.
+</p>
+<p>Select <em>Es2EnCharEncoder16Bit.mlmodel</em> in the Project Navigator to view details about the encoder. You’ll see the following, which should remind you a bit of the model you saw in the sequence classification chapters.
+</p><div class="image-90"><img src="graphics/img239.png"  alt="" title="Looking at the encoder mlmodel file" /></div>
+<p>As you can see, the summary includes the <code>encoderSeq</code> and <code>ignored</code> input and output values that you specified when you exported the encoder as Core ML. But notice it also includes <code>h</code> and <code>c</code> state vectors for the LSTM; you didn’t specify these but Core ML always adds them automatically for recurrent networks.
+</p>
+<p>The most important thing to point out here is the misleading size shown for <code>encodedSeq</code>. According to this report, it expects an <code>MLMultiArray</code> of 101 Doubles. That’s not entirely untrue; it <i>can</i> accept such an input. However, recall from the one-hot encoding section that you’re storing each character in a sequence as a length 101 vector, so this makes it appear as though your model can only take a single character as input. This is <i>not</i> the case.
+</p>
+<p>The encoder can take a one-dimensional array <i>or</i> a three-dimensional array. You’ll use the second option to provide the entire sequence at once rather than feeding it one character at a time. You’ll go over more details about this when you get to the code.
+</p>
+<p>To be thorough, select <em>Es2EnCharDecoder16Bit.mlmodel</em> in the Project navigator to view the decoder model:
+</p><div class="image-90"><img src="graphics/img240.png"  alt="" title="Looking at the decoder mlmodel file" /></div>
+<p>This summary shouldn’t hold any surprises for you. Notice again the <code>encodedChar</code> input claims to be an <code>MLMultiArray</code> with a single dimension. In this case, it’s telling you the truth: You actually will provide inputs to the decoder one character at a time.
+</p>
+<p>With your models in Xcode, you can finally write some code to use them. The first problem you need to solve: How to one-hot encode your inputs?
+</p>
+<p>When you one-hot encode characters in iOS, you’ll need to ensure each character maps to the same integer you used when you trained your model. Fortunately, you saved your conversion mappings as JSON files — <em>esCharToInt.json</em> and <em>intToEnChar.json</em>. Add those files to your Xcode project now.
+</p>
+<div class="note">
+<p><em>Note</em>: In the following step, you’ll add some globals to <em>NLPHelper.swift</em>, along with all the global functions you’ve been writing in this and the previous chapter. Rest assured, we aren’t proposing you forget everything you’ve probably learned about avoiding globals. You should continue to organize and encapsulate your own code well, but we chose to structure SMDB this way so that you could see working results quickly without dealing with details of app architecture.
+</p></div>
+
+<p>Add the following code to load the mapping files as Swift dictionaries:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> esCharToInt = loadCharToIntJsonMap(from: <span class="hljs-string">"esCharToInt"</span>)
+<span class="hljs-keyword">let</span> intToEnChar = loadIntToCharJsonMap(from: <span class="hljs-string">"intToEnChar"</span>)</pre>
+<p>The two functions you call here are provided in <em>Util.swift</em>. They load the JSON files and convert their contents to the expected data types.
+</p>
+<p>With the conversion maps loaded, add the following function that builds inputs for your encoder model:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getEncoderInput</span><span class="hljs-params">(<span class="hljs-number">_</span> text: String)</span></span> -&gt; <span class="hljs-type">MLMultiArray</span>? {
+  <span class="hljs-comment">// 1</span>
+  <span class="hljs-keyword">let</span> cleanedText =
+    text.<span class="hljs-built_in">filter</span>( { esCharToInt.keys.<span class="hljs-built_in">contains</span>($<span class="hljs-number">0</span>) } )
+  <span class="hljs-keyword">if</span> cleanedText.<span class="hljs-built_in">count</span> == <span class="hljs-number">0</span> {
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nil</span>
+  }
+  <span class="hljs-comment">// 2</span>
+  <span class="hljs-keyword">let</span> vocabSize = esCharToInt.<span class="hljs-built_in">count</span>
+  <span class="hljs-keyword">let</span> encoderIn =
+    initMultiArray(shape: [<span class="hljs-type">NSNumber</span>(value: cleanedText.<span class="hljs-built_in">count</span>),
+                           <span class="hljs-number">1</span>,
+                           <span class="hljs-type">NSNumber</span>(value: vocabSize)])
+
+  <span class="hljs-comment">// 3</span>
+  <span class="hljs-keyword">for</span> (i, <span class="hljs-built_in">c</span>) <span class="hljs-keyword">in</span> cleanedText.enumerated() {
+    encoderIn[i * vocabSize + esCharToInt[<span class="hljs-built_in">c</span>]!] = <span class="hljs-number">1</span>
+  }
+  <span class="hljs-keyword">return</span> encoderIn
+}</pre>
+<p>Here’s how the function one-hot encodes text for use with your encoder:
+</p>
+<ol>
+<li>
+<p>First, you remove any OOV tokens from the text, and return <code>nil</code> if you end up removing everything.
+</p></li>
+
+<li>
+<p>Then you use <code>initMultiArray</code>, a helper function provided in <em>Util.swift</em>, to create an <code>MLMultiArray</code> filled with zeros. Notice the dimensions: The first is the length of the sequence — i.e., how many characters you’re encoding. The second is always one; this dimension exists as a side effect of Core ML’s computer-vision-focused design. It doesn’t affect how much space you allocate, but your app will crash without it. The third dimension is the input vocabulary size, since each character needs to be one-hot encoded into a vector of that length.
+</p></li>
+
+<li>
+<p>Finally, you loop over the characters in the cleaned text and set the appropriate item in the array to one. You index the multi-dimensional <code>MLMultiArray</code> as if it’s a standard flat array, because that’s how its memory is arranged. And remember it’s filled with zeros, so you only have to worry about where to put the ones and you’ll end up with properly one-hot encoded vectors.
+</p></li>
+</ol>
+
+<p>That does it for the encoder’s input. Now add another function, this time to process encoded inputs and produce the initial input for your decoder model:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getDecoderInput</span><span class="hljs-params">(encoderInput: MLMultiArray)</span></span> -&gt;
+  <span class="hljs-type">Es2EnCharDecoder16BitInput</span> {
+  <span class="hljs-comment">// 1</span>
+  <span class="hljs-keyword">let</span> encoder = <span class="hljs-type">Es2EnCharEncoder16Bit</span>()
+  <span class="hljs-keyword">let</span> encoderOut = <span class="hljs-keyword">try</span>! encoder.prediction(
+    encodedSeq: encoderInput,
+    encoder_lstm_h_in: <span class="hljs-literal">nil</span>, encoder_lstm_c_in: <span class="hljs-literal">nil</span>)
+  <span class="hljs-comment">// 2</span>
+  <span class="hljs-keyword">let</span> decoderIn = initMultiArray(
+    shape: [<span class="hljs-type">NSNumber</span>(value: intToEnChar.<span class="hljs-built_in">count</span>)])
+  <span class="hljs-comment">// 3</span>
+  <span class="hljs-keyword">return</span> <span class="hljs-type">Es2EnCharDecoder16BitInput</span>(
+    encodedChar: decoderIn,
+    decoder_lstm_h_in: encoderOut.encoder_lstm_h_out,
+    decoder_lstm_c_in: encoderOut.encoder_lstm_c_out)
+}</pre>
+<p>Here’s how this function produces the input you’ll pass to your decoder model:
+</p>
+<ol>
+<li>
+<p>First, you create your encoder model and pass <code>encoderInput</code> to its <code>prediction</code> function. This call returns an <code>Es2EnCharEncoder16BitOutput</code> object that contains the encoder’s latent state after processing the input sequence.
+</p></li>
+
+<li>
+<p>You create a zero-filled <code>MLMultiArray</code> just large enough for a single, one-hot encoded character. Notice you use <code>intToEnChar.count</code> because the decoder has a different vocabulary from the encoder. You leave it as all zeros for now.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Finally, you create and return an <code>Es2EnCharDecoder16BitInput</code> object, using the empty <code>MLMultiArray</code> you just built as storage for the <code>encodedChar</code> field. You’ll reuse this object for each character you pass to the decoder, but for now you set its initial state inputs to the states from <code>encoderOut</code>. Remember this is what you did earlier in the Jupyter notebook, passing the input text to the encoder and then using the encoder’s output as the initial <code>h</code> and <code>c</code> states for the decoder.
+</p></li>
+</ol>
+
+<p>Before writing the guts of the translation logic, add the following constants in <em>NLPHelper.swift</em>:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> maxOutSeqLen = <span class="hljs-number">87</span>
+<span class="hljs-keyword">let</span> startTokenIdx = <span class="hljs-number">0</span>
+<span class="hljs-keyword">let</span> stopTokenIdx = <span class="hljs-number">1</span></pre>
+<p>These are the values you found for the similarly named constants in the Jupyter notebook. A quick refresher:
+</p>
+<ul>
+<li>
+<p><code>maxOutSeqLen</code>: Defines the maximum length of a translation. If the decoder produces this many tokens without predicting a <code>STOP</code> token, you’ll stop translating to avoid an infinite loop.
+</p></li>
+
+<li>
+<p><code>startTokenIdx</code>: <code>Int</code> value of <code>START</code> token in <code>intToEnChar</code>. Used for one-hot encoding.
+</p></li>
+
+<li>
+<p><code>stopTokenIdx</code>: <code>Int</code> value of <code>STOP</code> token in <code>intToEnChar</code>. Used for one-hot encoding.
+</p></li>
+</ul>
+
+<p>The starter project already includes an empty function called <code>spanishToEnglish</code> in <em>NLPHelper.swift</em>, and that’s where you’ll put together everything you’ve added so far to translate reviews. This logic essentially duplicates the <code>translate_sequence</code> function you wrote in Python earlier, but we’ll go over the details again.
+</p>
+<p>Start by adding the following code at the beginning of the function:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-keyword">guard</span> <span class="hljs-keyword">let</span> encoderIn = getEncoderInput(text) <span class="hljs-keyword">else</span> {
+  <span class="hljs-keyword">return</span> <span class="hljs-literal">nil</span>
+}
+<span class="hljs-comment">// 2</span>
+<span class="hljs-keyword">let</span> decoderIn = getDecoderInput(encoderInput: encoderIn)
+<span class="hljs-comment">// 3</span>
+<span class="hljs-keyword">let</span> decoder = <span class="hljs-type">Es2EnCharDecoder16Bit</span>()
+<span class="hljs-keyword">var</span> translatedText = [<span class="hljs-type">Character</span>]()
+<span class="hljs-keyword">var</span> doneDecoding = <span class="hljs-literal">false</span>
+<span class="hljs-keyword">var</span> decodedIdx = startTokenIdx</pre>
+<p>Here’s what you’ve done so far:
+</p>
+<ol>
+<li>
+<p>First, you call <code>getEncoderInput</code> to one-hot encode the input text, and exit the function if that fails.
+</p></li>
+
+<li>
+<p>Using <code>getDecoderInput</code> and <code>encoderIn</code>, you create the initial input for the decoder.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Then you create the decoder model, along with some variables you’ll use to keep track of the translation’s progress. Notice you initialize <code>decodedIdx</code> to the index of the <code>START</code> token.
+</p></li>
+</ol>
+
+<p>Now add the following code, still inside <code>spanishToEnglish</code> but <i>after</i> what you just added and <i>before</i> the <code>return</code> statement:
+</p><pre class="code-block"><span class="hljs-keyword">while</span> !doneDecoding {
+  <span class="hljs-comment">// 1</span>
+  decoderIn.encodedChar[decodedIdx] = <span class="hljs-number">1</span>
+  <span class="hljs-comment">// 2</span>
+  <span class="hljs-keyword">let</span> decoderOut = <span class="hljs-keyword">try</span>! decoder.prediction(input: decoderIn)
+  <span class="hljs-comment">// 3</span>
+  decoderIn.decoder_lstm_h_in = decoderOut.decoder_lstm_h_out
+  decoderIn.decoder_lstm_c_in = decoderOut.decoder_lstm_c_out
+  <span class="hljs-comment">// 4</span>
+  decoderIn.encodedChar[decodedIdx] = <span class="hljs-number">0</span>
+}</pre>
+<p>You aren’t done writing this <code>while</code> loop yet, so don’t worry about the fact that it currently has no way to stop. Here’s what it <i>does</i> do, so far:
+</p>
+<ol>
+<li>
+<p>The loop starts by one-hot encoding the most recently predicted character, indicated by <code>decodedIdx</code>, and storing it in <code>decoderIn</code>.
+</p></li>
+
+<li>
+<p>It calls <code>prediction</code> on the decoder model. Remember, the first time through this loop, <code>decoderIn</code> contains the output state from the encoder that was set in <code>getDecoderInput</code> and its <code>encodedChar</code> is the <code>START</code> token.
+</p></li>
+
+<li>
+<p>Next, <code>decoderIn</code>’s <code>h</code> and <code>c</code> states are set to the <code>h</code> and <code>c</code> output states from the call to <code>prediction</code>. These will serve as the initial state when the loop repeats to predict the next character in the translation.
+</p></li>
+
+<li>
+<p>Finally, you clear out the one-hot encoded index to ensure <code>decoderIn</code>’s <code>encodedChar</code> contains only zeros.
+</p></li>
+</ol>
+
+<p>Now, add the following code, at the end — but still <i>inside</i> — of the <code>while</code> loop you were just writing:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+decodedIdx = argmax(array: decoderOut.nextCharProbs)
+<span class="hljs-comment">// 2</span>
+<span class="hljs-keyword">if</span> decodedIdx == stopTokenIdx {
+  doneDecoding = <span class="hljs-literal">true</span>
+} <span class="hljs-keyword">else</span> {
+  translatedText.append(intToEnChar[decodedIdx]!)
+}
+<span class="hljs-comment">// 3</span>
+<span class="hljs-keyword">if</span> translatedText.<span class="hljs-built_in">count</span> &gt;= maxOutSeqLen {
+  doneDecoding = <span class="hljs-literal">true</span>
+}</pre>
+<p>This code extracts the predicted character, as well as stops the <code>while</code> loop when appropriate. Here are some details:
+</p>
+<ol>
+<li>
+<p>Here you use <code>argmax</code>, provided in <em>Util.swift</em>, to find the index of the highest value in the probability distribution returned by the decoder. Remember we mentioned earlier that this greedy approach does not necessarily produce the best results.
+</p></li>
+
+<li>
+<p>Check to see if the decoder predicted the <code>STOP</code> token. If so, stop the loop; otherwise, add the token to the translation.
+</p></li>
+
+<li>
+<p>This check stops the loop if the translation length reaches its limit. Without this, you run the risk of an infinite loop.
+</p></li>
+</ol>
+
+<p>Finally, replace the <code>return</code> statement included with the starter code with the following line. It converts the list of <code>Character</code> predictions into a <code>String</code>:
+</p><pre class="code-block"><span class="hljs-keyword">return</span> <span class="hljs-type">String</span>(translatedText)</pre>
+<p>The final version of <code>spanishToEnglish</code> should look like this:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">spanishToEnglish</span><span class="hljs-params">(text: String)</span></span> -&gt; <span class="hljs-type">String</span>? {
+  <span class="hljs-keyword">guard</span> <span class="hljs-keyword">let</span> encoderIn = getEncoderInput(text) <span class="hljs-keyword">else</span> {
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nil</span>
+  }
+  <span class="hljs-keyword">let</span> decoderIn = getDecoderInput(encoderInput: encoderIn)
+
+  <span class="hljs-keyword">let</span> decoder = <span class="hljs-type">Es2EnCharDecoder</span>()
+  <span class="hljs-keyword">var</span> translatedText = [<span class="hljs-type">Character</span>]()
+  <span class="hljs-keyword">var</span> doneDecoding = <span class="hljs-literal">false</span>
+  <span class="hljs-keyword">var</span> decodedIdx = <span class="hljs-number">0</span>
+
+  <span class="hljs-keyword">while</span> !doneDecoding {
+    decoderIn.encodedChar[decodedIdx] = <span class="hljs-number">1</span>
+
+    <span class="hljs-keyword">let</span> decoderOut = <span class="hljs-keyword">try</span>! decoder.prediction(input: decoderIn)
+
+    decoderIn.decoder_lstm_h_in = decoderOut.decoder_lstm_h_out
+    decoderIn.decoder_lstm_c_in = decoderOut.decoder_lstm_c_out
+
+    decoderIn.encodedChar[decodedIdx] = <span class="hljs-number">0</span>
+
+    decodedIdx = argmax(array: decoderOut.nextCharProbs)
+    <span class="hljs-keyword">if</span> decodedIdx == stopTokenIdx {
+      doneDecoding = <span class="hljs-literal">true</span>
+    } <span class="hljs-keyword">else</span> {
+      translatedText.append(intToEnChar[decodedIdx]!)
+    }
+    <span class="hljs-keyword">if</span> translatedText.<span class="hljs-built_in">count</span> &gt;= maxOutSeqLen {
+      doneDecoding = <span class="hljs-literal">true</span>
+    }
+  }
+  <span class="hljs-keyword">return</span> <span class="hljs-type">String</span>(translatedText)
+}</pre>
+<p>With that function done, there’s just one final bit of code you need to write — a helper function to break reviews into sentences. Replace <code>getSentences</code> in <em>NLPHelper.swift</em> with the following:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getSentences</span><span class="hljs-params">(text: String)</span></span> -&gt; [<span class="hljs-type">String</span>] {
+  <span class="hljs-keyword">let</span> tokenizer = <span class="hljs-type">NLTokenizer</span>(unit: .sentence)
+  tokenizer.string = text
+  <span class="hljs-keyword">let</span> sentenceRanges =
+    tokenizer.tokens(<span class="hljs-keyword">for</span>: text.startIndex..&lt;text.endIndex)
+  <span class="hljs-keyword">return</span> sentenceRanges.<span class="hljs-built_in">map</span>{ <span class="hljs-type">String</span>(text[$<span class="hljs-number">0</span>]) }
+}</pre>
+<p>This uses <code>NLTokenizer</code> from the Natural Language framework, which you explored in the previous chapter. It attempts to divide the given text into sentences and returns them as a list. You’re going to translate reviews one sentence at a time for two reasons: First, you only trained your model on single sentence examples, so it’s unlikely it will ever produce anything other than a <code>STOP</code> token after a sentence-ending punctuation mark. And secondly, your model’s performance degrades as its input sequences get longer. By giving it only one sentence at a time, your model has a better chance to produce reasonable results. More discussion on this later.
+</p>
+<div class="note">
+<p><em>Note</em>: While it’s fine for this project, and might be good enough in many other situations, translating sentences individually without maintaining any context between them is unlikely to produce state of the art results. There are many cases where information in one sentence might influence the translation of another one. Still, reduced performance in exchange for simpler models that are easier to train is a reasonable concession, here.
+</p></div>
+
+<p>The project’s starter code uses the <code>getSentences</code> and <code>spanishToEnglish</code> functions you just wrote to translate reviews when possible. For each review, code inside <em>ReviewsManager.swift</em> calls <code>translateReview</code>, which does the following:
+</p>
+<ol>
+<li>
+<p>Ensures it’s a Spanish-language review, because that’s all it currently knows how to handle. You could modify it to handle other languages if you train a model that supports them.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Calls <code>getSentences</code> to tokenize the review into sentences. This gives the model shorter text chunks to translate, which should improve the results because you only trained the model on short sentences.
+</p></li>
+
+<li>
+<p>Trims whitespace from the ends of the tokenized sentences. This is important because your model didn’t train with any extra whitespace and you <i>will</i> get different translations for a sentence if it includes even a single extra space at the end.
+</p></li>
+
+<li>
+<p>Translates each sentence with <code>spanishToEnglish</code>, then stores the translation as part of the <code>Review</code>. The logic in <em>ReviewsTableViewController.swift</em> ensures table cells display the translation, along with the original text, for reviews that have one.
+</p></li>
+</ol>
+
+<p>So how well does your model actually perform? Build and run the app, go to the <em>By Language</em> tab and choose <em>Spanish</em> from the list.
+</p>
+<p>You should see something like the following results, though they likely won’t be exactly the same unless you are running with the pre-trained model we provided.
+</p><div class="image-35"><img src="graphics/img241.png"  alt="" title="SMDB app with translated reviews" /></div>
+<p>Yikes! Even if you don’t know Spanish, it’s pretty clear these translations aren’t very good. Does that mean there’s no hope for this model?
+</p>
+<h2 class="segment-chapter">Let’s talk translation quality</h2>
+
+<p>Judging from these results, no one would blame you for thinking this model isn’t very good. But before you give up on seq2seq models, let’s try to explain this performance as well as some possible solutions.
+</p>
+<p>First, this chapter described the most basic version of a seq2seq model — the encoder and decoder each consist of just a single LSTM layer. LSTMs don’t stack as well as convolutional layers do, but you can still see improvement using more than one. In the next chapter, you’ll try a slightly different encoder that should improve things a bit.
+</p>
+<p>Secondly, we performed absolutely <em>no</em> hyperparameter tuning. How would it perform if the LSTMs had more units, like 512 instead of 256? What about a different optimizer or learning rate? Tuning the model’s hyperparameters would almost certainly lead to at least slightly better results, even training with this same dataset.
+</p>
+<p>And that brings us to the dataset. There are several reasons why this particular dataset likely won’t lead to great results:
+</p>
+<ul>
+<li>
+<p>It’s <i>way</i> too small. To create a reasonable Spanish-to-English translator, you’d need a dataset with many millions — or better yet, billions — of words, which would make training far too resource intensive for this book. Why? Because the possibilities of language are infinite and each individual sample is extremely sparse. That is, each sample sentence you train with covers such a small portion of all the sentences that <i>could</i> exist, so your model learns very little from each sample. Or it learns <i>too much</i> and overfits your training data, which is just as bad. However, remember that if you have a more restricted use case — translating words you might find on common street signs, for example — then you can get away with a small dataset.
+</p></li>
+
+<li>
+<p>It’s biased toward certain types of phrases, so it likely won’t translate just <i>any</i> sentence. For example, Tom and Mary are the only two names used — they each appear thousands of times, with Tom appearing five times more than Mary. Your model learns what letters are likely to follow other letters, so seeing just these names so many times biases it, especially when dealing with proper nouns. Notice in the image, the model’s translation for the review of the Sound of MusicKit ends up mentioning Tom, and the one for Night of the Living Deadlocks mentions Mary! Those two are everywhere!
+</p></li>
+</ul>
+
+<div class="note">
+<p><em>Note</em>: To be fair, please keep in mind the dataset you used here was <i>not</i> created for machine learning. It’s actually made up of flashcards meant to help people learning English as a foreign language. However, it’s well formatted and easy to work with so it serves as a good starting point for exploring machine translation.
+</p></div>
+
+<p>So what if you had a huge dataset, and you performed rigorous hyperparameter tuning to create the best version of this model possible? Would it be good enough to translate any Spanish text to English? Not exactly, due to some other important issues.
+</p>
+<p>First, there’s one major drawback to encoder-decoder models implemented the way we do here: The encoder processes the <i>entire</i> input sequence, and then outputs a <i>fixed size</i> vector meant to encode it. Why’s that a problem? If you consider that longer sequences contain more information, it means as sequences get longer it grows more difficult to include all their information into that fixed-size vector. You can increase the size of this vector to improve performance to a point, but there will always be some limit to how much information you can store in any fixed-sized space. The best current solution to this problem involves something called attention. We won’t implement it in this book, but we’ll explain the concept in the next chapter.
+</p>
+<p>The second issue with your current implementation involves the greedy algorithm for choosing each character. If you always take the next token with the highest probability, you force the results down well-trodden paths. For example, imagine an English sentence that starts with the letters “Th.” If you just go by probability, the next letter is likely “e” because “The” is such a common word, but maybe this sentence starts with “Though.” Hopefully, the encoder signals to the decoder something about this sentence to make it predict “o” instead of “e”, but there will always be times when the correct result doesn’t end up being the top prediction. The next chapter will discuss a method called beam search that can help improve this situation.
+</p>
+<p>Finally, there’s one more detail about this model that warrants discussion: It tokenizes text at the character level. Is that a good idea? Don’t we lose all sorts of information about words when we look at them as individual letters? Yes we do, but it’s a good way to introduce the topic because it simplifies some details like how we deal with OOV tokens. There are other benefits of character-level models, too, but we’ll save that discussion for the next chapter, where we’ll also point out the changes necessary to work on word-level tokens.
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p><em>Encoder/decoder</em> pairs are powerful and versatile; they’ve been used for many tasks, including translation, image captioning and question answering.
+</p></li>
+
+<li>
+<p>Encoders map their inputs into latent space. Decoders map an encoder’s latent space to a desired output. You train them together in an end-to-end process, passing inputs to the encoder and minimizing a loss function against the decoder’s outputs.
+</p></li>
+
+<li>
+<p>The <em>sequence-to-sequence model</em> architecture is an instance of the encoder-decoder architecture. It takes a sequence as input and produces one as output.
+</p></li>
+
+<li>
+<p>Use padding tokens to make all sequences in one batch the same length.
+</p></li>
+
+<li>
+<p>The Keras <code>Masking</code> layer ensures models ignore padding tokens. Without this layer, models will assume the padding tokens are just as significant as all the others.
+</p></li>
+
+<li>
+<p>Speed up training by using batches of similarly-sized sequences to reduce padding.
+</p></li>
+
+<li>
+<p>When translating languages, you’ll always need <i>some</i> way to deal with OOV tokens. In this chapter, you just dropped them, but the next chapter considers other options.
+</p></li>
+
+<li>
+<p>You can one-hot encode nominal categorical features, like characters in text, to represent them as numbers without implying any ordinal relationships.
+</p></li>
+
+<li>
+<p>Greedy algorithms for choosing the decoder’s predicted token do not alway produce the best results. The next chapter briefly describes an alternative.
+</p></li>
+
+<li>
+<p>Core ML and the <code>coremltools</code> Python package are actively evolving and using them sometimes requires workarounds. For example, <code>coremltools</code> currently cannot convert Keras models that include shared layers, requiring you to build new encoder and decoder models and set their weights from your trained seq2seq model.
+</p></li>
+
+<li>
+<p>Reduce your app’s download size by converting your model weights from 32-bit floats down to 16-bit instead.
+</p></li>
+
+<li>
+<p>In model summaries, Xcode displays sequential inputs as an <code>MLMultiArray</code> big enough for <i>one</i> element in a sequence, but models can actually accept sequences of any length. To pass a <i>sequence</i> to a model, use a three-dimensional <code>MLMultiArray</code> with shape <code>SEQUENCE_LENGTH x 1 x ITEM_SIZE</code>. When one-hot encoding, <code>ITEM_SIZE</code> is the number of possible values, such as the vocabulary sizes used in this chapter.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>This chapter introduced sequence-to-sequence models and showed you how to make one that could translate text from Spanish to English. Sometimes. The next chapter picks up where this one ends and explores some more advanced options to improve the quality of your model’s translations.
+</p></body></html>

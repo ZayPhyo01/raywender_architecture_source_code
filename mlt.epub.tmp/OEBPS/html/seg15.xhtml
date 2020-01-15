@@ -1,0 +1,603 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 5: Digging Deeper Into Turi Create</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 5: Digging Deeper Into Turi Create</h1>
+
+<p>In this chapter, you’ll use the SqueezeNet base model to train the snacks classifier, then explore more ways to evaluate its results. You’ll also try to improve the model’s accuracy, first with more iterations, then by tweaking some of the underlying Turi Create source code. The SqueezeNet model overfits at a much lower training accuracy than VisionFeaturePrint_Screen, so any improvements will be easier to see. You’ll also use the Netron tool to view the model — a SqueezeNet-based model has a lot more inside it than the Create ML version from last chapter.
+</p>
+<h2 class="segment-chapter">Getting started</h2>
+
+<p>You can continue to use the <em>turienv</em> environment, <em>Jupyter</em> notebook, and <em>snacks</em> dataset from the previous chapter, or start fresh with the <em>DiggingDeeper</em><em>_</em><em>starter</em> notebook in this chapter’s <em>starter</em> folder.
+</p>
+<p>If you skipped Chapter 4, “Getting Started with Python &amp; Turi Create”, the quickest way to set up the <em>turienv</em> environment is to import <em>starter/turienv.yaml</em> into <em>Anaconda Navigator</em>, set the <em>Environments</em> tab to <em>turienv</em>, then launch <em>Jupyter Notebook</em>. In the web browser window that opens, navigate to the <em>starter/notebook</em> folder for this chapter, and open <em>DiggingDeeper</em><em>_</em><em>starter.ipynb</em>.
+</p>
+<p>If you downloaded the snacks dataset for a previous chapter, copy or move it into <em>starter/notebook</em>. Otherwise, double-click <em>starter/notebook/snacks-download-link.webloc</em> to download and unzip the <em>snacks</em> dataset in your default download location, then move the <em>snacks</em> folder into <em>starter/notebook</em>.
+</p>
+<h2 class="segment-chapter">Transfer learning with SqueezeNet</h2>
+
+<p>If you’re not continuing from the previous chapter’s notebook, then run the following cells one by one.
+</p>
+<div class="note">
+<p><em>Note:</em> If you are continuing from last chapter’s notebook, but have shut down Jupyter in the mean time, then you’ll also need to re-run these cells. Jupyter does not automatically restore the Python state. You can skip the data exploration cells.
+</p></div>
+
+<ol>
+<li>
+<p>Import the required Python modules:
+</p></li>
+</ol>
+<pre class="code-block"><span class="hljs-keyword">import</span> turicreate <span class="hljs-keyword">as</span> tc
+<span class="hljs-keyword">import</span> matplotlib.pyplot <span class="hljs-keyword">as</span> plt</pre>
+<ol>
+<li>
+<p>Load training and testing data and display lengths to make sure there’s data:
+</p></li>
+</ol>
+<pre class="code-block">train_data = tc.image_analysis.load_images(<span class="hljs-string">"snacks/train"</span>, 
+                                           with_path=<span class="hljs-keyword">True</span>)
+len(train_data)</pre><pre class="code-block">test_data = tc.image_analysis.load_images(<span class="hljs-string">"snacks/test"</span>, with_path=<span class="hljs-keyword">True</span>)
+len(test_data)</pre>
+<ol>
+<li>
+<p>Extract labels from the image paths and display label count values:
+</p></li>
+</ol>
+<pre class="code-block"><span class="hljs-keyword">import</span> os
+train_data[<span class="hljs-string">"label"</span>] = train_data[<span class="hljs-string">"path"</span>].apply(
+              <span class="hljs-keyword">lambda</span> path: os.path.basename(os.path.split(path)[<span class="hljs-number">0</span>]))
+
+test_data[<span class="hljs-string">"label"</span>] = test_data[<span class="hljs-string">"path"</span>].apply(
+              <span class="hljs-keyword">lambda</span> path: os.path.basename(os.path.split(path)[<span class="hljs-number">0</span>]))
+
+train_data[<span class="hljs-string">"label"</span>].value_counts().print_rows(num_rows=<span class="hljs-number">20</span>)
+test_data[<span class="hljs-string">"label"</span>].value_counts().print_rows(num_rows=<span class="hljs-number">20</span>)</pre>
+<p>Now that the dataset has been loaded, you can create the image classifier. This is the same as before, except now you’ll use the arguments <code>model=&quot;squeezenet_v1.1&quot;</code> and <code>max_iterations=100</code>:
+</p><pre class="code-block">model = tc.image_classifier.create(train_data, target=<span class="hljs-string">"label"</span>,
+                                   model=<span class="hljs-string">"squeezenet_v1.1"</span>,
+                                   verbose=<span class="hljs-keyword">True</span>, max_iterations=<span class="hljs-number">100</span>)</pre>
+<p>When you run this cell, you’ll be pleasantly surprised at how fast the feature extraction is. This is because SqueezeNet extracts only 1000 features from 227×227-pixel images, compared with VisionFeaturePrint_Screen’s 2,048 features from 299×299 images.
+</p>
+<div class="note">
+<p><em>Note</em>: If you don’t want to wait for your Mac to train this model, load the pre-trained model instead:
+</p>
+<p><code>model = tc.load_model(&quot;HealthySnacks.model&quot;)</code>
+</p></div>
+
+<p>However, you’ll probably be disappointed by the training and validation accuracies:
+</p><div class="image-95"><img src="graphics/img104.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: It’s likely you’ll get slightly different training results than what are shown in this book. Recall that untrained models, in this case the logistic regression part of the model, are initialized with random numbers. This can cause variations between different training runs. Just try it again if you get a training accuracy that is much less than 67%. Advanced users of machine learning actually take advantage of these differences between training runs to combine multiple models into one big ensemble that gives more robust predictions.
+</p></div>
+
+<p>Like Create ML, Turi Create randomly chooses 5% of the training data as validation data, so validation accuracies can vary quite a bit between training runs. The model might do better on a larger fixed validation dataset that you choose yourself.
+</p>
+<p>Evaluate the model and display some metrics:
+</p><pre class="code-block">metrics = model.evaluate(test_data)
+print(<span class="hljs-string">"Accuracy: "</span>, metrics[<span class="hljs-string">"accuracy"</span>])
+print(<span class="hljs-string">"Precision: "</span>, metrics[<span class="hljs-string">"precision"</span>])
+print(<span class="hljs-string">"Recall: "</span>, metrics[<span class="hljs-string">"recall"</span>])</pre>
+<p>No surprises here — accuracy is pretty close to the validation accuracy:
+</p><pre class="code-block">Accuracy:  0.6607142857142857
+Precision:  0.6625686789687794
+Recall:  0.6577568027210883</pre>
+<h2 class="segment-chapter">Getting individual predictions</h2>
+
+<p>So far, you’ve just repeated the steps from the previous chapter. The <code>evaluate()</code> metrics give you an idea of the model’s overall accuracy but you can get a lot more information about individual predictions. Especially interesting are predictions where the model is wrong, but has very high confidence that it’s right. Knowing where the model is wrong can help you improve your training dataset.
+</p><div><img src="graphics/img105.png" height="20%"  alt="" title="" /></div>
+<h3 class="segment-chapter">Predicting and classifying</h3>
+
+<p>Turi Create models have other functions, in addition to <code>evaluate()</code>. Enter and run these commands in the next cell, and wait a while:
+</p><pre class="code-block">model.predict(test_data)</pre>
+<p>This command displays the actual prediction for each individual image:
+</p><pre class="code-block">[&apos;apple&apos;, &apos;grape&apos;, &apos;orange&apos;, &apos;orange&apos;, &apos;orange&apos;, &apos;apple&apos;, &apos;orange&apos;, &apos;apple&apos;, &apos;candy&apos;, &apos;apple&apos;, &apos;grape&apos;, &apos;apple&apos;, ’strawberry&apos;, &apos;apple&apos;, &apos;apple&apos;, &apos;carrot&apos;, &apos;candy&apos;, &apos;ice cream&apos;, &apos;apple&apos;, &apos;apple&apos;, &apos;apple&apos;, ...</pre>
+<p>The first prediction corresponds to the image from <code>test_data[0]</code>, the second to the image from <code>test_data[1]</code>, and so on. The first 50 test images are all apples, but the model classified the second image as “grape,” so take a look at the image. Enter and run this command in the next cell:
+</p><pre class="code-block">plt.imshow(test_data[<span class="hljs-number">1</span>][<span class="hljs-string">"image"</span>].pixel_data)</pre>
+<p>This displays the second image — does it look like grapes?
+</p><div class="image-65"><img src="graphics/img106.png"  alt="" title="grapes?" /></div>
+<p>Maybe the model isn’t really sure, either. Enter and run these commands, and wait a while:
+</p><pre class="code-block">output = model.classify(test_data)
+output</pre>
+<p>The <code>classify()</code> function gets you the probability for each prediction, but only the highest-probability value, which is the model’s confidence in the class it predicts:
+</p><div class="image-35"><img src="graphics/img107.png"  alt="" title="The head of the SFrame with classification results" /></div>
+<p>So the model is 69.96% confident that the second image is “grape”! And 93% confident the fourth image is “orange”! But it’s less than 50% confident about the other images it labelled “orange.”
+</p>
+<p>It’s helpful to see the images that correspond to each prediction. Enter and run these commands:
+</p><pre class="code-block">imgs_with_pred = test_data.add_columns(output)
+imgs_with_pred.explore()</pre>
+<p>The first command adds the <code>output</code> columns to the original <code>test_data</code> columns. Then you display the merged SFrame with <code>explore()</code>.
+</p>
+<p>The <em>label</em> column is the correct class, and <em>class</em> is the model’s highest-confidence prediction:
+</p><div class="image-100"><img src="graphics/img108.png"  alt="" title="Visually inspecting the classification results" /></div>
+<p>The most interesting images are the rows where the two labels disagree, but the probability is very high — over 90%, for example. Enter the following commands:
+</p><pre class="code-block">imgs_filtered = imgs_with_pred[(imgs_with_pred[<span class="hljs-string">"probability"</span>] &gt; <span class="hljs-number">0.9</span>) &amp;
+                 (imgs_with_pred[<span class="hljs-string">"label"</span>] != imgs_with_pred[<span class="hljs-string">"class"</span>] )]
+imgs_filtered.explore()</pre>
+<p>The first command filters the <code>test_data</code> + <code>output</code> SFrame to include only those rows with high-probability wrong predictions: The first term selects the rows whose probability column has a value greater than 90%, the second term selects the rows where the <code>label</code> and <code>class</code> columns are not the same.
+</p>
+<p>The subset of matching rows is saved into a new SFrame, then displayed.
+</p><div class="image-100"><img src="graphics/img109.png"  alt="" title="Inspecting the filtered classification results" /></div>
+<p>The true label of the highlighted image is “strawberry,” but the model is 97% confident it’s “juice,” probably because the glass of milk(?) is much larger than the strawberries.
+</p>
+<p>You can learn a lot about how your model sees the world by looking at these confident-but-wrong predictions: Sometimes the model gets it completely wrong, but sometimes the predictions are actually fairly reasonable — even if it is strictly speaking “wrong,” since what was predicted wasn’t the official label.
+</p>
+<p>But if the image contains more than one object, such as the example with the drink and the strawberries, you could argue that the training label is actually wrong — or at least, misleading.
+</p>
+<h3 class="segment-chapter">Sorting the prediction probabilities</h3>
+
+<p>Turi Create’s <code>predict()</code> method can also give you the probability distribution for each image. Enter and run these lines, then wait a while:
+</p><pre class="code-block">predictions = model.predict(test_data, output_type=<span class="hljs-string">'probability_vector'</span>)</pre>
+<p>You add the optional argument <code>output_type</code> to get the <em>probability vector</em> for each image — the predicted probability for each of the 20 classes. Then let’s look at the second image again, but now display all of the probabilities, not just the top one:
+</p><pre class="code-block">print(<span class="hljs-string">"Probabilities for 2nd image"</span>, predictions[<span class="hljs-number">1</span>])</pre><pre class="code-block">[0.20337662077520557, 0.010500386379535839, 2.8464920324200633e-07, 0.0034932724790819624, 0.0013391166287066811, 0.0005122369124003818, 5.118841868115829e-06, 0.699598450277612, 2.0208374302686123e-07, 7.164497444549948e-07, 2.584012081941193e-06, 5.5645094234565224e-08, 0.08066298157942492, 0.00021689939485918623, 2.30074608705137e-06, 3.6511378835730773e-10, 5.345215832976188e-05, 9.897270575019545e-06, 2.1477438456101293e-08, 0.00022540187389448156]</pre>
+<p>The probabilities are sorted alphanumerically by name of the class in the training set, so the first value is for “apple,” the second is “banana,” the third is “cake” ... Ack! — you need to add class labels to make this useful! Enter and run the following:
+</p><pre class="code-block">labels = test_data[<span class="hljs-string">"label"</span>].unique().sort()
+preds = tc.SArray(predictions[<span class="hljs-number">1</span>])
+tc.SFrame({<span class="hljs-string">'preds'</span>: preds, <span class="hljs-string">'labels'</span>: labels}).sort([(<span class="hljs-string">'preds'</span>, <span class="hljs-keyword">False</span>)])</pre>
+<p>First, you get the set of labels from the <code>test_data</code> SFrame, sort them so they match the order in the probability vector, and store the result in <code>labels</code>, which is an <em>SArray</em> — a Turi Create array. Then you create another SArray from the probability vector of the second image. In the last line, you merge the two SArrays into an SFrame, then sort it on the <code>preds</code> column, in descending order (ascending = False).
+</p>
+<p>Here are the top five:
+</p><div class="image-40"><img src="graphics/img110.png"  alt="" title="Top five probabilities for the second image." /></div>
+<p>So the model does at least give 20% confidence to “apple.” Top-three or top-five accuracy is a fairer metric for a dataset whose images can contain multiple objects.
+</p>
+<h2 class="segment-chapter">Increasing max iterations</h2>
+
+<p>So, is a validation accuracy of 67% good? Meh, not really. Turi Create knows it, too — at the end of the training output it says:
+</p><pre class="code-block">This model may not be optimal. To improve it, consider increasing `max_iterations`.</pre>
+<p>Turi Create has recognized that this model still has some issues. Let’s train again, this time with more iterations — 200 instead of 100:
+</p><pre class="code-block">model200 = tc.image_classifier.create(train_data, target=<span class="hljs-string">"label"</span>,
+                                   model=<span class="hljs-string">"squeezenet_v1.1"</span>,
+                                   verbose=<span class="hljs-keyword">True</span>, max_iterations=<span class="hljs-number">200</span>)</pre>
+<div class="note">
+<p><em>Note</em>: Like Create ML, Turi Create has to extract the features again. It does not keep those feature vectors around — if it had, training the model again would be a lot quicker. If 100 iterations already took a very long time on your Mac, feel free to load the pre-trained model:
+</p>
+<p><code>model200 = tc.load_model(&quot;HealthySnacks_200.model&quot;)</code>
+</p></div>
+
+<p>Now the final score is:
+</p><div class="image-95"><img src="graphics/img111.png"  alt="" title="" /></div>
+<p>The training accuracy is now 90%! This means on the training set of 4582 examples it only gets 10% wrong, as opposed to 21% before.
+</p>
+<p>That’s pretty good, but remember that you shouldn’t put too much faith in the training accuracy by itself. The validation accuracy is also higher, at 74%. Actually, between 100 and 200 iterations, the validation accuracy fluctuates a lot. It’s highest — 76% — at 160 iterations, but seems to be hovering around 73% in general.
+</p>
+<p>This particular run did an exceptional job on the validation accuracy. However, this only means the validation dataset was a pretty good match for the training dataset.
+</p>
+<p>Enter and run the usual code to evaluate the model and display the metrics:
+</p><pre class="code-block">metrics200 = model200.evaluate(test_data)
+print(<span class="hljs-string">"Accuracy: "</span>, metrics200[<span class="hljs-string">"accuracy"</span>])
+print(<span class="hljs-string">"Precision: "</span>, metrics200[<span class="hljs-string">"precision"</span>])
+print(<span class="hljs-string">"Recall: "</span>, metrics200[<span class="hljs-string">"recall"</span>])</pre>
+<p>Evaluating this model on the test dataset produces metrics around 64%, not 74%:
+</p><pre class="code-block">Accuracy:  0.6428571428571429
+Precision:  0.6447263553620883
+Recall:  0.6406734693877552</pre>
+<p>The sweet spot for this model seems to be somewhere between 135 and 160 iterations. If you train for longer, the validation accuracy starts to drop and the model becomes worse, even though the training accuracy will slowly keep improving. A classic sign of overfitting.
+</p>
+<p>Unfortunately, Turi does not save the iteration of the model with the best validation accuracy, only the very last iteration, and so you’ll have to train again with <code>max_iterations=160</code> to get the best possible result.
+</p>
+<p>Overfitting has a bad rap, and it’s certainly an issue you’ll run into when you start training your own models. But overfitting isn’t necessarily a bad thing to experience, as it means that your model still has capacity to learn more. It’s just learning the wrong things, and techniques such as regularization will help your model to stay on the right path.
+</p>
+<h2 class="segment-chapter">Confusing apples with oranges?</h2>
+<div><img src="graphics/img112.png" height="25%"  alt="" title="" /></div>
+<p>A picture says more than a thousand numbers, and a really useful visualization of how well the model does is the <em>confusion matrix</em>. This matrix plots the predicted classes versus the images’ real class labels, so you can see where the model tends to make its mistakes.
+</p>
+<p>In the previous chapter, you ran this command:
+</p><pre class="code-block">print(<span class="hljs-string">"Confusion Matrix:\n"</span>, metrics[<span class="hljs-string">"confusion_matrix"</span>])</pre>
+<p>This displayed a table:
+</p><pre class="code-block">+--------------+-----------------+-------+
+| target_label | predicted_label | count |
++--------------+-----------------+-------+
+|    cookie    |      juice      |   1   |
+|    carrot    |    watermelon   |   1   |
+|   pretzel    |     pretzel     |   14  |
+|     cake     |    ice cream    |   2   |
+|  pineapple   |      carrot     |   1   |
+|   doughnut   |      muffin     |   1   |
+|    muffin    |     doughnut    |   7   |</pre>
+<p>The <code>target_label</code> column shows the real class, while <code>predicted_label</code> has the class that was predicted, and <code>count</code> is how many of this particular mistake were made.
+</p>
+<p>The table shows the model predicted “muffin” 7 times when the image was really “doughnut,” predicted “cake” twice when the image was really “ice cream,” and so on.
+</p>
+<p>However, presented this way, the confusion matrix doesn’t look much like a matrix, and we promised to show you how to get a better visualization.
+</p>
+<p>Start by entering and running the following code:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+<span class="hljs-keyword">import</span> seaborn <span class="hljs-keyword">as</span> sns
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">compute_confusion_matrix</span><span class="hljs-params">(metrics, labels)</span>:</span>
+    num_labels = len(labels)
+    label_to_index = {l:i <span class="hljs-keyword">for</span> i,l <span class="hljs-keyword">in</span> enumerate(labels)}
+
+    conf = np.zeros((num_labels, num_labels), dtype=np.int)
+    <span class="hljs-keyword">for</span> row <span class="hljs-keyword">in</span> metrics[<span class="hljs-string">"confusion_matrix"</span>]:
+        true_label = label_to_index[row[<span class="hljs-string">"target_label"</span>]]
+        pred_label = label_to_index[row[<span class="hljs-string">"predicted_label"</span>]]
+        conf[true_label, pred_label] = row[<span class="hljs-string">"count"</span>]
+
+    <span class="hljs-keyword">return</span> conf
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">plot_confusion_matrix</span><span class="hljs-params">(conf, labels, figsize=<span class="hljs-params">(<span class="hljs-number">8</span>, <span class="hljs-number">8</span>)</span>)</span>:</span>
+    fig = plt.figure(figsize=figsize)
+    heatmap = sns.heatmap(conf, annot=<span class="hljs-keyword">True</span>, fmt=<span class="hljs-string">"d"</span>)
+    heatmap.xaxis.set_ticklabels(labels, rotation=<span class="hljs-number">45</span>,
+                                 ha=<span class="hljs-string">"right"</span>, fontsize=<span class="hljs-number">12</span>)
+    heatmap.yaxis.set_ticklabels(labels, rotation=<span class="hljs-number">0</span>,
+                                 ha=<span class="hljs-string">"right"</span>, fontsize=<span class="hljs-number">12</span>)
+    plt.xlabel(<span class="hljs-string">"Predicted label"</span>, fontsize=<span class="hljs-number">12</span>)
+    plt.ylabel(<span class="hljs-string">"True label"</span>, fontsize=<span class="hljs-number">12</span>)
+    plt.show()</pre>
+<p>You define two new functions: one to compute the confusion matrix and one to draw it.
+</p>
+<p><code>compute_confusion_matrix()</code> looks at all the rows in the <code>metrics[&quot;confusion_matrix&quot;]</code> table, and fills up a 2D-array with the counts of each pair of labels. It uses the NumPy package for this.
+</p>
+<p>Then, <code>plot_confusion_matrix()</code> takes this NumPy array, and plots it as a <i>heatmap</i> using Seaborn, a plotting package that adds useful plot types to Matplotlib. You installed Seaborn when you created the <code>turienv</code> environment in the previous chapter.
+</p>
+<p>Now, enter and run the following commands to call these functions:
+</p><pre class="code-block">conf = compute_confusion_matrix(metrics200, labels)
+plot_confusion_matrix(conf, labels, figsize=(<span class="hljs-number">16</span>, <span class="hljs-number">16</span>))</pre>
+<p>And enjoy the display!
+</p><div class="image-95"><img src="graphics/img113.png"  alt="" title="The confusion matrix" /></div>
+<p>A heatmap shows small values as “cool” colors — black and dark purple — and large values as “hot” colors — red to pink to white. The larger the value, the brighter it gets. In the confusion matrix, you expect to see a lot of high values on the diagonal, since these are the correct matches.
+</p>
+<p>For example, the row for the “pretzel” class shows 14 correct matches and 11 wrong ones. The wrong predictions are one “apple,” two “cookie,” one “doughnut,” and seven “hotdog.” Notice that apples often get mistaken for oranges, and cookie, doughnut, and muffin also get mixed up often.
+</p>
+<p>The confusion matrix is very useful because it shows potential problem areas for the model. From this particular confusion matrix, it’s clear the model has learned a great deal already, since the diagonal really stands out, but it’s still far from perfect. Ideally, you want everything to be zero except the diagonal. It may be a little misleading from the picture since at first glance it appears that there aren’t that many mistakes. But all the small numbers in the dark squares add up to 340 misclassified images out of 952 total, or 36% wrong.
+</p>
+<p>Keep in mind that some categories have more images than others. For example, pretzel has only 25 images in the test set, while most of the other classes have 50, so it will never have as many correct matches. Still, it only scores 14 out of 25 correct (56%), so overall the model actually does poorly on pretzels.
+</p>
+<h3 class="segment-chapter">Computing recall for each class</h3>
+
+<p>Turi Create’s <code>evaluate()</code> function gives you the overall test dataset accuracy but, as mentioned in the AI Ethics section of the first chapter, accuracy might be much lower or higher for specific subsets of the dataset. With a bit of code, you can get the accuracies for the individual classes from the confusion matrix:
+</p><pre class="code-block"><span class="hljs-keyword">for</span> i, label <span class="hljs-keyword">in</span> enumerate(labels):
+    correct = conf[i, i]
+    images_per_class = conf[i].sum()
+    print(<span class="hljs-string">"%10s %.1f%%"</span> % (label, <span class="hljs-number">100.</span> * correct/images_per_class))</pre>
+<p>For each row of the confidence matrix, the number on the diagonal is how many images in this class that the model predicted correctly. You’re dividing this number by the sum over that row, which is the total number of test images in that class.
+</p>
+<p>This gives you the percentage of each class that the model classified correctly — for example, how many “apple” images did the model find among the total number of “apple” images? This the <em>recall</em> metric for each class:
+</p><pre class="code-block">     apple 64.0%
+    banana 68.0%
+      cake 54.0%
+     candy 58.0%
+    carrot 66.0%
+    cookie 56.0%
+  doughnut 62.0%
+     grape 84.0%
+   hot dog 76.0%
+ ice cream 44.0%
+     juice 74.0%
+    muffin 50.0%
+    orange 74.0%
+ pineapple 67.5%
+   popcorn 62.5%
+   pretzel 56.0%
+     salad 72.0%
+strawberry 67.3%
+    waffle 62.0%
+watermelon 64.0%</pre>
+<p>The best classes are grape (84% correct) and hot dog (76%). At 74%, juice and orange are also good. The worst performing classes are ice cream (44%), muffin (50%), cake (54%), and pretzel (56%). These would be the classes to pay attention to, in order to improve the model — for example, by gathering more or better training images for these classes.
+</p>
+<h2 class="segment-chapter">Wrangling Turi Create code</h2>
+<div class="image-40"><img src="graphics/img114.png"  alt="" title="" /></div>
+<p>One of the appealing benefits of Turi Create is that, once you have your data in an SFrame, it takes only a single line of code to train the model. The downside is that the Turi Create API gives you only limited control over the training process. Fortunately, Turi Create is open source, so you can look inside to see what it does, and even hack around some of its limitations.
+</p>
+<p>We’ve already briefly mentioned <em>hyperparameters</em>. This is simply a fancy name for the configuration settings for your model. The things that the model learns from the training data are called “parameters”; the things you configure by hand, which don’t get changed by training, are the “hyperparameters.”
+</p>
+<p>A typical hyperparameter that machine learning practitioners like to play with is the amount of <em>regularization</em> that’s being used by the model. Regularization helps to prevent overfitting, but the Turi Create <code>image_classifier.create()</code> function doesn’t provide access to change this hyperparameter.
+</p>
+<p>Since overfitting seemed to be an issue for our model, it will be instructive to play with this regularization setting, whether Turi Create likes it or not.
+</p>
+<p>The code for <code>tc.image_classifier.create()</code> is in the file <code>turicreate/src/unity/python/turicreate/toolkits/image_classifier/image_classifier.py</code> in the GitHub repo at <a href="https://github.com/apple/turicreate">github.com/apple/turicreate</a>. You’re simply going to copy-paste some of that code into the notebook, and play with the hyperparameters.
+</p>
+<h3 class="segment-chapter">Using a fixed validation dataset</h3>
+
+<p>Turi Create extracts a random validation dataset from the training dataset — 5% of the images. The problem with using a small random validation dataset is that sometimes you get great results, but only because — this time! — the validation dataset just happens to be in your favor.
+</p>
+<p>Now that you have more control over the code (mwah hah hah!), you can use your own validation set. By using a set of validation images that is always the same, you can control your experiments better and get reproducible results. You can now run a few experiments with different hyperparameters, and properly compare the results. If you were to use a different validation set each time, then the variation in the chosen images could obscure the effect of the changed hyperparameter. This is also why you don’t use the test set for validation.
+</p>
+<p>The snacks dataset already comes with a <em>val</em> folder containing images for this purpose. Load these images into their own SFrame, using the same code as before:
+</p><pre class="code-block">val_data = tc.image_analysis.load_images(<span class="hljs-string">"snacks/val"</span>, with_path=<span class="hljs-keyword">True</span>)
+val_data[<span class="hljs-string">"label"</span>] = val_data[<span class="hljs-string">"path"</span>].apply(<span class="hljs-keyword">lambda</span> path:
+      os.path.basename(os.path.split(path)[<span class="hljs-number">0</span>]))
+len(val_data)</pre>
+<p>The last statement should output <em>955</em>, which is almost the same number of images as in <code>test_data</code>, and a lot more than 5% of the 4838 <code>train_data</code> images.
+</p>
+<h3 class="segment-chapter">Saving the extracted features</h3>
+
+<p>Before you start playing around with the different regularization parameters, wouldn’t it be nice if there was a way we could save time during the training phase, and not have to continuously regenerate the features extracted by SqueezeNet? Well, as promised, in this section, you’ll learn how to save the intermediate SFrame to disk, and reload it, just before experimenting with the classifier.
+</p>
+<div class="note">
+<p><em>Note</em>: If you don’t want to wait for the feature extraction, just load the features from the current folder:
+</p>
+<p><code>extracted_train_features = tc.SFrame(&quot;extracted_train_features.sframe&quot;)</code>
+</p>
+<p><code>extracted_val_features = tc.SFrame(&quot;extracted_val_features.sframe&quot;)</code>
+</p></div>
+<div class="image-35"><img src="graphics/img115.png"  alt="" title="" /></div>
+<p>First, load the pre-trained SqueezeNet model and grab its feature extractor:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> turicreate.toolkits <span class="hljs-keyword">import</span> _pre_trained_models
+<span class="hljs-keyword">from</span> turicreate.toolkits <span class="hljs-keyword">import</span> _image_feature_extractor
+
+ptModel = _pre_trained_models.MODELS[<span class="hljs-string">"squeezenet_v1.1"</span>]()
+feature_extractor = _image_feature_extractor.MXFeatureExtractor(ptModel)</pre>
+<p><code>MXFeatureExtractor</code> is an object from the MXNet machine learning framework that Turi Create is built on. In Python, names starting with an underscore are considered to be private, but you can still import them. Next, enter and run this code statement:
+</p><pre class="code-block">train_features = feature_extractor.extract_features(train_data,
+                                          <span class="hljs-string">"image"</span>, verbose=<span class="hljs-keyword">True</span>)</pre>
+<p>You’re using the <code>MXFeatureExtractor</code> object to extract the SqueezeNet features from the training dataset. This is the operation that took the most time when you ran <code>tc.image_classifier.create()</code>. By running this separately now, you won’t have wait for feature extraction every time you want to train the classifier. Next, enter and run this code statement:
+</p><pre class="code-block">extracted_train_features = tc.SFrame({
+    <span class="hljs-string">"label"</span>: train_data[<span class="hljs-string">"label"</span>],
+    <span class="hljs-string">'__image_features__'</span>: train_features,
+    })</pre>
+<p>Here, you’re just combining the features of each image with its respective label into a new SFrame. This is worth saving for later use! Enter and run this code statement:
+</p><pre class="code-block">extracted_train_features.save(<span class="hljs-string">"extracted_train_features.sframe"</span>)</pre>
+<p>You’re saving <code>extracted_train_features</code> to a file. The next time you want to do more training with these same features, you can simply load the SFrame again, which takes a fraction of the time it took to extract the features:
+</p><pre class="code-block"><span class="hljs-comment"># Run this tomorrow or next week</span>
+extracted_train_features = tc.SFrame(<span class="hljs-string">"extracted_train_features.sframe"</span>)</pre>
+<h3 class="segment-chapter">Inspecting the extracted features</h3>
+
+<p>Let’s see what these features actually look like — enter and run this command:
+</p><pre class="code-block">extracted_train_features.head()</pre><div class="image-30"><img src="graphics/img116.png"  alt="" title="The head of the extracted features table" /></div>
+<p>Each row has the extracted features for one training image. The <code>__image_features__</code> column contains a list with numbers, while the <code>label</code> column has the corresponding class name for this row. Enter and run this command:
+</p><pre class="code-block">extracted_train_features[<span class="hljs-number">0</span>][<span class="hljs-string">"__image_features__"</span>]</pre>
+<p>This shows you what a feature vector looks like — it prints something like:
+</p><pre class="code-block">array(&apos;d&apos;, [6.1337385177612305, 10.12844181060791, 13.025101661682129, 7.931194305419922, 12.03809928894043, 15.103202819824219, 12.722893714904785, 10.930903434753418, 12.778315544128418, 14.208030700683594, 16.8399658203125, 11.781684875488281, ...</pre>
+<p>This is a list of 1,000 numbers — use the <code>len()</code> function to verify this. They all appear to be numbers between 0 and about 30. What do they represent? I have no idea, but they are features that SqueezeNet has determined to be important — how long, round, square, orange, etc. the objects are. All that matters is that you can train a logistic classifier to learn from these features.
+</p>
+<p>In the same way, extract the features for the images from the validation dataset, and save this SFrame to a file too:
+</p><pre class="code-block">val_features = feature_extractor.extract_features(val_data,
+                                      <span class="hljs-string">"image"</span>, verbose=<span class="hljs-keyword">True</span>)
+
+extracted_val_features = tc.SFrame({
+    <span class="hljs-string">"label"</span>: val_data[<span class="hljs-string">"label"</span>],
+    <span class="hljs-string">'__image_features__'</span>: val_features,
+    })
+
+extracted_val_features.save(<span class="hljs-string">"extracted_val_features.sframe"</span>)   </pre>
+<h3 class="segment-chapter">Training the classifier with regularization</h3>
+
+<p>Now you’re ready to train the classifier! Enter and run this statement:
+</p><pre class="code-block">lr_model = tc.logistic_classifier.create(extracted_train_features,
+                             features=[<span class="hljs-string">'__image_features__'</span>],
+                             target=<span class="hljs-string">"label"</span>,</pre><pre class="code-block">                             validation_set=extracted_val_features,
+                             max_iterations=<span class="hljs-number">200</span>,
+                             seed=<span class="hljs-keyword">None</span>,
+                             verbose=<span class="hljs-keyword">True</span>,
+                             l2_penalty=<span class="hljs-number">10.0</span>,
+                             l1_penalty=<span class="hljs-number">0.0</span>,
+                             convergence_threshold=<span class="hljs-number">1e-8</span>)</pre>
+<p>This is the Turi Create code that creates and trains the logistic regression model using the <code>extracted_train_features</code> SFrame as the input data, and <code>extracted_val_features</code> for validation.
+</p>
+<p>You’ve actually added three additional arguments to this function call that are not in the original Turi source code: <code>l2_penalty</code>, <code>l1_penalty</code> and <code>convergence_threshold</code>.  Setting the <code>convergence_threshold</code> to a very small value means that the training won’t stop until it has done all 200 iterations.
+</p>
+<p><code>l2_penalty</code> and <code>l1_penalty</code> are hyperparameters that add <em>regularization</em> to reduce overfitting.
+</p>
+<p>What’s regularization? Recall that a model learns parameters — also called weights or coefficients — for combining feature values, to maximize how many training data items it classifies correctly. Overfitting can happen when the model gives too much weight to some features, by giving them very large coefficients. Setting <code>l2_penalty</code> greater than 0 penalizes large coefficients, encouraging the model to learn smaller coefficients. Higher values of <code>l2_penalty</code> reduce the size of coefficients, but can also reduce the training accuracy.
+</p>
+<p>Setting <code>l1_penalty</code> greater than 0 also penalizes large coefficients. In addition, it discards features that have very small coefficients, by setting these to 0. Typically, you’d use either <code>l2_penalty</code> or <code>l1_penalty</code>, but not both in the same training session.
+</p><div class="image-30"><img src="graphics/img117.png"  alt="" title="" /></div>
+<p>In my training session, the model still overfits, even with these settings, but the training accuracy doesn’t race off to 95% or 100% anymore.
+</p><div class="image-95"><img src="graphics/img118.png"  alt="" title="" /></div>
+<p>Now that you’re not having to extract features for each training session, training is fast, so you can train the classifier several times, trying out different values for <code>l2_penalty</code> and <code>l1_penalty</code>: this is called <em>hyperparameter tuning</em>. Selecting the correct hyperparameters for your training procedure can make a big difference in the quality of the model you end up with. The validation accuracy gives you an indication of the effect of these hyperparameters.
+</p>
+<p>Hyperparameter tuning is more trial and error than science, so play with these hyperparameters to get a feeling for how they affect your model. Try setting <code>l2_penalty</code> to 100: you’ll note that the training accuracy won’t go over 65% or so, as now you’re punishing the model too hard.
+</p>
+<h3 class="segment-chapter">Saving the model</h3>
+
+<p>Finally, to turn your model into a valid <code>ImageClassifier</code> object that you can export to Core ML, do:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> turicreate.toolkits.image_classifier <span class="hljs-keyword">import</span> ImageClassifier
+
+state = {
+    <span class="hljs-string">'classifier'</span>: lr_model,
+    <span class="hljs-string">'model'</span>: ptModel.name,
+    <span class="hljs-string">'max_iterations'</span>: lr_model.max_iterations,
+    <span class="hljs-string">'feature_extractor'</span>: feature_extractor,
+    <span class="hljs-string">'input_image_shape'</span>: ptModel.input_image_shape,
+    <span class="hljs-string">'target'</span>: lr_model.target,
+    <span class="hljs-string">'feature'</span>: <span class="hljs-string">"image"</span>,
+    <span class="hljs-string">'num_features'</span>: <span class="hljs-number">1</span>,
+    <span class="hljs-string">'num_classes'</span>: lr_model.num_classes,
+    <span class="hljs-string">'classes'</span>: lr_model.classes,
+    <span class="hljs-string">'num_examples'</span>: lr_model.num_examples,
+    <span class="hljs-string">'training_time'</span>: lr_model.training_time,
+    <span class="hljs-string">'training_loss'</span>: lr_model.training_loss,
+}
+model = ImageClassifier(state)</pre>
+<p>You combine the base model with the classifier you trained into the <code>state</code> structure, and create an <code>ImageClassifier</code> object from this.
+</p>
+<p>Then you can save the model as a Turi Create model:
+</p><pre class="code-block">model.save(<span class="hljs-string">"HealthySnacks_regularized.model"</span>)</pre>
+<p>Or export a Core ML model:
+</p><pre class="code-block">model.export_coreml(<span class="hljs-string">"HealthySnacks_regularized.mlmodel"</span>)</pre>
+<p>To learn more about the model, run the following:
+</p><pre class="code-block">model</pre>
+<p>This shows you some high-level information about the model and its training:
+</p><pre class="code-block">Class                                    : ImageClassifier
+
+Schema
+------
+Number of classes                        : 20
+Number of feature columns                : 1
+Input image shape                        : (3, 227, 227)</pre><pre class="code-block">Training summary
+----------------
+Number of examples                       : 4838
+Training loss                            : 3964.3015
+Training time (sec)                      : 147.8538</pre>
+<p>Training loss — the overall error over the training dataset — changes when you change the hyperparameters. Enter and run this to see a bit more information:
+</p><pre class="code-block">model.classifier</pre>
+<p>This shows you information about the classifier portion of the model:
+</p><pre class="code-block">Class                          : LogisticClassifier
+
+Schema
+------
+Number of coefficients         : 19019
+Number of examples             : 4838
+Number of classes              : 20
+Number of feature columns      : 1
+Number of unpacked features    : 1000
+
+Hyperparameters
+---------------
+L1 penalty                     : 0.0
+L2 penalty                     : 10.0
+
+Training Summary
+----------------
+Solver                         : lbfgs
+Solver iterations              : 200
+Solver status                  : Completed (Iteration limit reached).
+Training time (sec)            : 147.8538
+
+Settings
+--------
+Log-likelihood                 : 3964.3015
+
+Highest Positive Coefficients
+-----------------------------
+(intercept)                    : 0.3801
+(intercept)                    : 0.2549
+(intercept)                    : 0.1376
+(intercept)                    : 0.0923
+(intercept)                    : 0.0851
+
+Lowest Negative Coefficients
+----------------------------
+(intercept)                    : -0.2885
+(intercept)                    : -0.2884
+(intercept)                    : -0.2365
+(intercept)                    : -0.1734
+(intercept)                    : -0.1229</pre>
+<p>This information is mostly useful for troubleshooting or when you’re just curious about how the logistic regression classifier works.
+</p>
+<p>Notable is <i>Number of coefficients</i> — 19,019 — the number of parameters this model learned in order to classify images of snacks into the 20 possible categories. Here’s where that number comes from: each input feature vector has 1,000 numbers, and there are 20 possible outputs, so that is 1,000 × 20 = 20,000 numbers, plus 20 “bias” values for each output, making 20,020 coefficients.
+</p>
+<p>However, if there are 20 possible classes, then you actually only need to learn about 19 of those classes, giving 19,019 coefficients. If the prediction is none of these 19 classes, then it must be the 20th class. Interestingly, in the Core ML .mlmodel file, the logistic regression layer does have 20,020 parameters. You can see this for yourself with Netron in the next section.
+</p>
+<p>Under the <em>Settings</em> heading, <i>Log-likelihood</i> is the more mathematical term for <i>Training loss</i>. Below this are the highest and lowest coefficients — remember, the purpose of the regularization hyperparameter is to reduce the size of the coefficients.
+</p>
+<p>To compare with the coefficients of the original no-regularization model, enter and run these lines:
+</p><pre class="code-block">no_reg_model = tc.load_model(<span class="hljs-string">"HealthySnacks.model"</span>)
+no_reg_model.classifier</pre>
+<p>This reloads the pre-trained model, and you inspect its classifier. This model had higher training accuracy, so <i>Log-likelihood</i> aka <i>Training loss</i> is lower: 2,400. As you’d expect, its highest and lowest coefficients are larger — in absolute value — than the model with regularization:
+</p><pre class="code-block">Settings
+--------
+Log-likelihood                 : 2400.3284
+
+Highest Positive Coefficients
+-----------------------------
+(intercept)                    : 0.3808
+(intercept)                    : 0.3799
+(intercept)                    : 0.1918
+__image_features__[839]        : 0.1864
+(intercept)                    : 0.15
+
+Lowest Negative Coefficients
+----------------------------
+(intercept)                    : -0.3996
+(intercept)                    : -0.3856
+(intercept)                    : -0.3353
+(intercept)                    : -0.2783
+__image_features__[820]        : -0.1423</pre>
+<p>In the next chapter we’ll talk more about what all of this means, as you’ll be writing code to train your own logistic regression from scratch, as well as a complete neural network that will outperform Turi Create’s SqueezeNet-based model.
+</p>
+<h2 class="segment-chapter">A peek behind the curtain</h2>
+
+<p>SqueezeNet and VisionFeaturePrint_Screen are <i>convolutional neural networks</i>. In the coming chapters, you’ll learn more about how these networks work internally, and you’ll see how to build one from scratch. In the meantime, it might be fun to take a peek inside your Core ML model.
+</p>
+<p>There is a cool free tool called Netron (<a href="https://github.com/lutzroeder/Netron">github.com/lutzroeder/Netron</a>) that creates a nice visualization of the model architecture. On the GitHub page, scroll down to the <em>Install</em> instructions, and click the <em>macOS Download</em> link. On the next page, click the <em>Netron-x.x.x.dmg</em> link, then run this file to install Netron.
+</p>
+<p>Open your .mlmodel file in Netron. This shows all the transformation stages that go into you model’s pipeline.
+</p>
+<p>The input image is at the top, followed by convolutions, activations, pooling, and so on. These are the names of the different types of transformations — or layers — used by this kind of neural network.
+</p>
+<p>Notice how this pipeline sometimes branches and then comes back together again — that’s the “squeeze” feature that gives SqueezeNet its name.
+</p>
+<p>Click on one of these building blocks to learn more about its configuration, its inputs and its output.
+</p><div class="image-100"><img src="graphics/img119.png"  alt="" title="Using Netron to examine the .mlmodel file" /></div>
+<p>At the very end of the pipeline is an <i>innerProduct</i> layer followed by something called a <i>softmax</i> — these two blocks make up the logistic classifier. Everything up until the <i>flatten</i> block is the SqueezeNet feature extractor.
+</p>
+<p>In Chapters 6 and 7, you’ll learn all about what these different kinds of layers do, but for now we suggest that you spend a few minutes playing with Netron to get a rough idea of what these models look like on the inside.
+</p>
+<p>Netron works with any Core ML model, as well as models from many other machine learning frameworks. If you downloaded a model from Apple’s website in the last chapter, also take a look at that.
+</p>
+<p>It should look quite similar to this one, as all neural networks are very alike at their core. Often what is different is the number of layers and the branching structure.
+</p>
+<div class="note">
+<p><em>Note</em>: Apple’s own models such as <code>VisionFeaturePrint_Screen</code> are included in iOS 12 and do not get bundled into the .mlmodel file. The .mlmodel file itself doesn’t contain any of the <code>VisionFeaturePrint_Screen</code> layers. For customized models based on these built-in feature extractors, Netron can’t show you anything more than what you see in Xcode’s description: inputs, outputs, metadata. The internal architecture of these models remains a mystery and a secret.
+</p></div>
+
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>In this chapter, you’ve gotten a taste of training your own Core ML model with Turi Create. In fact, this is exactly how the models were trained that you used in chapter 2, “Getting Started with Image Classification”.
+</p></li>
+
+<li>
+<p>Turi Create is pretty easy to use, especially from a Jupyter notebook. It only requires a little bit of Python code. However, we weren’t able to create a super accurate model. This is partly due to the limited dataset.
+</p></li>
+
+<li>
+<p>More images is better. We use 4,800 images, but 48,000 would have been better, and 4.8 million would have been even better. However, there is a real cost associated with finding and annotating training images, and for most projects, a few hundred images or at most a few thousand images per class may be all you can afford. Use what you’ve got — you can always retrain the model at a later date once you’ve collected more training data. Data is king in machine learning, and who has the most of it usually ends up with a better model.
+</p></li>
+
+<li>
+<p>Another reason why Turi Create’s model wasn’t super is that SqueezeNet is a small feature extractor, which makes it fast and memory-friendly, but this also comes with a cost: It’s not as accurate as bigger models. But it’s not just SqueezeNet’s fault — instead of training a basic logistic regression on top of SqueezeNet’s extracted features, it’s possible to create more powerful classifiers too.
+</p></li>
+
+<li>
+<p>Turi Create does not offer a lot of control over tweaking the training process, so we can’t get a good grip on the overfitting. Lastly, Turi Create does not allow us to fine-tune the feature extractor or use data augmentation. Those are more advanced features, and they result in slower training times, but also in better models.
+</p></li>
+</ul>
+
+<p>In the next chapter, we’ll look at fixing all of these issues when we train our image classifier again, but this time using Keras. You’ll also learn more about what all the building blocks are in these neural networks, and why we use them in the first place.
+</p>
+<h2 class="segment-chapter">Challenges</h2>
+
+<h3 class="segment-chapter">Binary classifier</h3>
+
+<p>Remember the healthy/unhealthy snacks model? Try to train that binary classifier using Turi Create. The approach is actually very similar to what you did in this chapter. The only difference is that you need to assign the label “healthy” or “unhealthy” to each row in the training data SFrame.
+</p><pre class="code-block">healthy = [
+    <span class="hljs-string">'apple'</span>, <span class="hljs-string">'banana'</span>, <span class="hljs-string">'carrot'</span>, <span class="hljs-string">'grape'</span>, <span class="hljs-string">'juice'</span>, <span class="hljs-string">'orange'</span>,
+    <span class="hljs-string">'pineapple'</span>, <span class="hljs-string">'salad'</span>, <span class="hljs-string">'strawberry'</span>, <span class="hljs-string">'watermelon'</span>
+]
+
+unhealthy = [
+    <span class="hljs-string">'cake'</span>, <span class="hljs-string">'candy'</span>, <span class="hljs-string">'cookie'</span>, <span class="hljs-string">'doughnut'</span>, <span class="hljs-string">'hot dog'</span>,
+    <span class="hljs-string">'ice cream'</span>, <span class="hljs-string">'muffin'</span>, <span class="hljs-string">'popcorn'</span>, <span class="hljs-string">'pretzel'</span>, <span class="hljs-string">'waffle'</span>
+]
+
+train_data[<span class="hljs-string">"label"</span>] =
+  train_data[<span class="hljs-string">"path"</span>].apply(<span class="hljs-keyword">lambda</span> path: <span class="hljs-string">"healthy"</span>
+      <span class="hljs-keyword">if</span> any(<span class="hljs-string">"/"</span> + class_name <span class="hljs-keyword">in</span> path <span class="hljs-keyword">for</span> class_name <span class="hljs-keyword">in</span> healthy)
+                                      <span class="hljs-keyword">else</span> <span class="hljs-string">"unhealthy"</span>)
+test_data[<span class="hljs-string">"label"</span>] =
+  test_data[<span class="hljs-string">"path"</span>].apply(<span class="hljs-keyword">lambda</span> path: <span class="hljs-string">"healthy"</span>
+      <span class="hljs-keyword">if</span> any(<span class="hljs-string">"/"</span> + class_name <span class="hljs-keyword">in</span> path <span class="hljs-keyword">for</span> class_name <span class="hljs-keyword">in</span> healthy)
+                                      <span class="hljs-keyword">else</span> <span class="hljs-string">"unhealthy"</span>)</pre>
+<p>First, you assign each class into a <code>healthy</code> or <code>unhealthy</code> array — there are 10 classes in each array. Then, you set each image’s <code>label</code> column to <code>&quot;healthy&quot;</code> or <code>&quot;unhealthy&quot;</code>, depending on which array the image’s path name is in. The result is, you’ve divided 20 classes of images into two classes, based on the name of the subdirectory they’re in.
+</p>
+<div class="note">
+<p><em>Note</em>: The process to do this same exercise in Create ML is much more manual. You’d have to create a new <code>train</code> folder with subfolders <code>healthy</code> and <code>unhealthy</code>, then copy or move all the images from each of the 20 food-labelled folders into the correct <code>healthy</code> or <code>unhealthy</code> folder. You’d do this either in Finder or Terminal.
+</p></div>
+
+<p>Verify that the resulting model gets about 80% accuracy on the test dataset.
+</p>
+<p>You may wonder why you can’t use the multi-class snacks model for this, and simply look if the predicted category is in the list of healthy or unhealthy classes. This is possible but, by training from scratch on just these two categories, the model has a chance to learn what healthy/unhealthy means, and it might use a more intricate rule than just “this class label is in the list of healthy categories.”
+</p>
+<p>If you want to be sure which approach works better, use the 20-class model to <code>classify()</code> the healthy/unhealthy test dataset, and merge its <code>output</code> with <code>test_data</code> as before. The <em>label</em> column contains “healthy” or “unhealthy,” while the <em>class</em> column contains “apple,” “banana,” etc.
+</p>
+<p>Then use <code>filter_by(healthy, &apos;class&apos;)</code> to find images the model predicts to be in a class listed in the <code>healthy</code> array. Filter these images with <code>filter_by([&apos;unhealthy&apos;], &apos;label&apos;)</code> to find images that are really in unhealthy classes. Manually calculate the accuracy of the 20-class model in predicting healthy/unhealthy. I got 47%.
+</p>
+<h3 class="segment-chapter">ResNet50-based model</h3>
+
+<p>Train the 20-class classifier using the ResNet-50 model and see if that gets a better validation and test set score. Use <code>model_type=&quot;resnet-50&quot;</code> when creating the classifier object. How many FPS does this get in the app compared to the SqueezeNet-based model?
+</p>
+<h3 class="segment-chapter">Use another dataset</h3>
+
+<p>Create your own training, validation, and test datasets from Google Open Images or some other image source. I suggest keeping the number of categories limited.
+</p></body></html>

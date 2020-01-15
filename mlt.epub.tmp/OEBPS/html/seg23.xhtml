@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 12: Training a Model for Sequence Classification</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 12: Training a Model for Sequence Classification</h1>
+
+<p>In the previous chapter, you learned about collecting and analyzing sequences of data, both crucial parts of successfully using machine learning. This chapter introduces a new type of neural network specifically designed for sequential data, and you’ll build one to classify the data you collected as device motions.
+</p>
+<p>If you’re jumping into this chapter without first having gone through the previous one, you’ll need a Python environment with access to Turi Create. We’ll assume you have one named <em>turienv</em>, but if you don’t then you can create it now using the file at <em>projects/notebooks/turienv.yaml</em>. If you’re unsure how to do so, refer back to Chapter 4, “Getting Started with Python &amp; Turi Create.”
+</p>
+<h2 class="segment-chapter">Creating a model</h2>
+
+<p>You’ve got access to a clean dataset — either the one you made in the previous chapter or one we’ll provide for you — and now you’re ready to train a model. Or maybe several models until you find one that works well. This section shows how to use Turi Create’s task-focused API to train a model for activity detection.
+</p>
+<div class="note">
+<p><em>Note</em>: Training your own model is <i>highly</i> recommended, especially if you collected data to add to the provided dataset. But if for whatever reason you skipped the previous chapter, you can find a trained model named <em>GestureClassifier.mlmodel</em> inside the <em>notebooks/pre-trained</em> subfolder of the chapter resources required for this chapter.
+</p></div>
+
+<p>In this section you’ll continue working with Jupyter in your <em>turienv</em> Anaconda environment. Create a new notebook in the <em>notebooks</em> folder of the chapter resources. If you’d like to see how we trained our provided model, you can check out the completed notebook <em>notebooks/Model</em><em>_</em><em>Training</em><em>_</em><em>Complete.ipynb</em>.
+</p>
+<p>Import the same packages as you used in the previous chapter’s notebook:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> turicreate <span class="hljs-keyword">as</span> tc
+<span class="hljs-keyword">import</span> activity_detector_utils <span class="hljs-keyword">as</span> utils</pre>
+<p>Then run the following code to load your training, validation and testing datasets:
+</p><pre class="code-block">train_sf = tc.SFrame(<span class="hljs-string">"data/cleaned_train_sframe"</span>)
+valid_sf = tc.SFrame(<span class="hljs-string">"data/cleaned_valid_sframe"</span>)
+test_sf = tc.SFrame(<span class="hljs-string">"data/cleaned_test_sframe"</span>)</pre>
+<p>As mentioned in the previous chapter, Turi Create stores structured data in <code>SFrame</code> objects. There are various ways to create such objects — here you load them directly from the binary files you previously saved. If you’d prefer to use the files supplied with the resources, change the paths to <code>pre-trained/data/cleaned_train_sframe</code>, <code>pre-trained/data/cleaned_valid_sframe</code> and <code>pre-trained/data/cleaned_test_sframe</code>.
+</p>
+<p>Training any classifier involves using multiple datasets for training, validation and testing. But dealing with sequences includes a few wrinkles that require some explanation.
+</p>
+<h3 class="segment-chapter">Splitting sequential data</h3>
+
+<p>If you’ve ever trained an image classifier, you may have divided the images into training, validation and test sets <i>randomly</i>. Or maybe those sets were provided for you, in which case someone <i>else</i> divided them randomly.
+</p>
+<p>This works because each image is its own sample — no one image relates any more or less to any other image. (See the upcoming Note for an important caveat to this statement.) But the very nature of sequences is that samples <i>do</i> relate to each other. Order and grouping both matter — that’s what <i>makes</i> them sequences! For example, if you’re counting by twos — two, four, six, eight — and then randomly shuffle that data — eight, two, six, four — you’ve lost the sequence and now the data is meaningless. Or worse, you may have accidentally reordered them into a sequence with a different meaning — eight, six, four, two — now the sequence counts <i>down</i> by twos!
+</p>
+<p>So the first rule for training with sequences: keep samples related to individual sequences grouped together and in order. Any shuffling or sampling you do should take into account these groupings.
+</p>
+<div class="note">
+<p><em>Note</em>: There <i>can</i> be situations where relationships exist between images in datasets meant to train classifiers, but those usually indicate mistakes that you should try to avoid. For example, if some images are identical or nearly so, as is common when dealing with large numbers of images, then having some in the training set and some in the validation or test sets may mislead you into thinking your model generalizes better than it does. It’s a tricky situation, because sometimes your in-production model <i>will</i> encounter examples that are nearly identical to those it saw while training. For example, consider a model meant to identify product images from the internet — it’s unlikely that you’ll manage to create a good training set without also including some of the very images its meant to recognize. But in general, do your best to keep training and test sets as separate as possible, while realizing there are going to be times when some similarity sneaks in.
+</p></div>
+
+<p>There’s a second potential concern, relating to the <i>sources</i> of the sequences. Consider the case you’ve been working on throughout this chapter — gesture recognition. There’s certainly <i>some</i> variation each time you perform a gesture — after all, the app collects several floating point values from multiple sensors, many times per second, so its basically impossible to get two <i>identical</i> recordings. However, identical isn’t the same as <i>really similar</i>.
+</p>
+<p>Different recordings of one person making a gesture are going to be similar to each other. That’s not entirely bad — it’s that similarity you want the model to recognize. You may even find it’s fairly easy to train a model that recognizes gestures from a <i>specific</i> person — it may not even require many training examples. But it might not work as well when you use the model with someone else.
+</p>
+<p>That’s because recordings from one person are more similar to <i>each other</i> than they are to recordings from <i>someone else</i>. For example, the following plots show some data from two people performing the same actions — step up exercises:
+</p><div class="image-100"><img src="graphics/img194.png"  alt="" title="Data collected from two users both performing the same activity — step up exercises" /></div>
+<p>These two plots show similar values for several features, but some features are quite different between users. A model trained on data from one of these users might have trouble recognizing the activity when presented with data from the other — and the more data you show your model from one user, the more different the other user’s data will seem. It’s certainly good to collect lots of data from each source, but it’s more important to collect data from lots of sources.
+</p>
+<p>So if you have the choice of getting 1000 recordings from one person, versus 100 recordings from 10, the second will probably produce a better model. And 10 recordings from 100 people would probably be even better. By all means, get more data from each person if you can, but definitely try to collect data from as many people as possible.
+</p>
+<p>And that’s the second rule for training with sequences, or really any data where the data’s source affects its features: use data from as many sources as possible. The more sources you have in your training set, the better your model should generalize to unseen examples.
+</p>
+<p>But even if you have a great dataset chock full of examples from many different people, there’s another issue — how best to split it up into train, validation and test sets?
+</p>
+<p>You might be tempted to split the data randomly (keeping in mind the earlier rule about maintaining samples as sequences, of course). However, you should avoid this. Remember how different recordings from the same person are similar to each other? Well, if you train with data from one person, then test with different data from the <i>same</i> person, your model may appear to perform better than it really does. That’s because it essentially trained on some of the test data.
+</p>
+<p>So the third rule for training with sequences: don’t split your datasets by sequence, split them by <i>source</i>. Make sure you know the source of each of your data samples, and try to put all the data from any particular source into the same set: train, validation or test.
+</p>
+<div class="note">
+<p><em>Note</em>: Those last two problems occur with more than just sequences. Many data types are affected by their sources. For example, sensors from different phones will report slightly different values in the same situations, camera lenses have slightly different distortions, and so on. All physical devices are produced with some variance, so data collected from different devices can be slightly different even when measuring the same thing. In these cases, the same rules apply: try to train with as many different sources as possible, and try to test on data collected from multiple sources. Unless of course the model is <i>meant</i> to work with a specific source — such as correcting lense distortion for images from a <i>specific</i> camera. Then by all means test on data collected from the same source to ensure your model works correctly in its intended production environment.
+</p></div>
+
+<h3 class="segment-chapter">But sometimes...</h3>
+
+<p>And now, in a shocking plot twist, you’re about to be told to sometimes do what you were just told not to do — train and validate on data from the same people! What?!
+</p>
+<p>Real talk: There are going to be times — maybe <i>most</i> of the time — when you won’t have as much data as you want. In those cases, you can stretch your dataset out a bit by starting with just two datasets — training and test — and then grabbing a chunk of your training set to use for validation.
+</p>
+<p>Depending on how many different sources are present in your training set, you might not be able to follow the recommended procedure of separating based on source. For example, the one provided with the chapter contains data from just two people. You’d lose too much training data if you separated these users, so you’d need to accept training and validating on data from both of them.
+</p>
+<p>It’s not ideal — your validation accuracy will be artificially closer to your training accuracy because the two datasets are more similar, making it harder to tell if your model overfits. But if there’s enough variety in your training set to start, then this still works fairly well.
+</p>
+<p>To help split your training data, Turi Create provides a nice utility function that divides an <code>SFrame</code> randomly into two smaller <code>SFrame</code>s, while still maintaining proper sequence groupings. The following code demonstrates how to use it:
+</p><pre class="code-block">train, valid =
+  tc.activity_classifier.util.random_split_by_session(
+    train_sf, session_id=’sessionId’, fraction=<span class="hljs-number">0.9</span>)</pre>
+<p>This uses Turi Create’s <code>activity_classifier.util.random_split_by_session</code> function with a training set, telling it which column name identifies the sessions, and what percentage of the data should be used in the first split. It returns two <code>SFrame</code>s, the first will contain the given percentage of the original <code>SFrame</code>’s sessions, and the second will contain the remaining sessions.
+</p>
+<p>After running this code, <code>train</code> would contain about 90% of the sessions and <code>valid</code> would contain the other 10%. You would then use these two <code>SFrame</code>s for your training and validation sets.
+</p>
+<p>The most important thing about this function is that it splits data based on session IDs, which means it keeps sequences organized together. Any samples with the same session ID are kept together and in order, but any particular session ID could end up in the training or the validation set.
+</p>
+<p>The results of this call are not necessarily going to give you a perfectly balanced split. For example, here are the results of calling <code>utils.count_actvities</code> on <code>train</code> and <code>valid</code> from one sample run:
+</p><div class="image-65"><img src="graphics/img195.png"  alt="" title="Random train/validation split counts" /></div>
+<p>That’s probably fine, but if you see a particularly bad split — especially when you know the original data was well balanced — then you should try splitting it again.
+</p>
+<p>If you want to experiment later, try combining the training and validation data and then use this function to randomly split it. You’ll end up with more variety in your training data in exchange for a less trustworthy validation set. For now, you’ll just use the separate datasets you’ve already built.
+</p>
+<h3 class="segment-chapter">Training the model</h3>
+
+<p>Now it’s time to build and train your model. Almost.
+</p>
+<p>Whenever you train with a new model or dataset, it’s good to first take a small portion of your training data and see if you can get the model to overfit it. Overfitting is usually a bad thing — it means your model is memorizing the training data instead of learning a more general solution — but it also shows that the model is actually capable of learning <i>something</i> from your data. If your model is going to work on a real dataset, then it should definitely be able to overfit on a tiny version of it. And if it can’t, then you’ve got one of several problems you’ll need to address:
+</p>
+<ul>
+<li>
+<p>A bug in the model. This is especially common when implementing neural nets from scratch using frameworks such as Keras.
+</p></li>
+
+<li>
+<p>A model too simple to solve the problem. You might need more layers, or more nodes per layer.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>A model architecture incapable of solving the problem. Different architectures work better for different problems, so pick something appropriate.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Poorly tuned hyperparameters. Sometimes all it takes is a change to the learning rate, other times you might need different activation functions, optimization algorithms or loss functions.
+</p></li>
+
+<li>
+<p>Maybe the problem is the problem itself. Machine learning isn’t the right solution to every problem, so don’t try to force it.
+</p></li>
+</ul>
+
+<p>The point of this exercise is to prove to yourself that your dataset is applicable to the problem, your model is built correctly and it’s tuned well enough to learn. You’ll still usually have to do more tuning later with your full dataset, but those training sessions take longer. This step is critical to keep yourself from wasting time trying to tune a model that isn’t ever going to work.
+</p>
+<p>To save space we don’t show the results of the overfitting step here, but you can find them in the notebook <em>Model</em><em>_</em><em>Training</em><em>_</em><em>Complete.ipynb</em> in the <em>notebooks</em> folder.
+</p>
+<p>Ok, <i>now</i> it’s time to build and train your model. Turi Create’s activity classification API makes this process easy — it just takes one function call! Add the following code to a notebook cell, but <em>don’t</em> run it yet:
+</p><pre class="code-block">model = tc.activity_classifier.create(
+  dataset=train_sf, session_id=’sessionId’, target=’activity’,
+  features=[
+    <span class="hljs-string">"rotX"</span>, <span class="hljs-string">"rotY"</span>, <span class="hljs-string">"rotZ"</span>, <span class="hljs-string">"accelX"</span>, <span class="hljs-string">"accelY"</span>, <span class="hljs-string">"accelZ"</span>],
+  prediction_window=<span class="hljs-number">20</span>, validation_set=valid_sf,
+  max_iterations=<span class="hljs-number">20</span>)</pre>
+<p>This one line of code is doing a lot, so it warrants quite a bit of explanation. Here goes:
+</p>
+<ul>
+<li>
+<p><code>dataset</code>: Your training dataset, stored as an <code>SFrame</code>.
+</p></li>
+
+<li>
+<p><code>session_id</code>: The name of the column in <code>dataset</code> that stores the session ID associated with each row. <code>create</code> keeps data with the same session ID grouped together and in order, and then trains over it in chunks the size of <code>prediction_window</code> rows.
+</p></li>
+
+<li>
+<p><code>target</code>: The name of the column that contains the labels you want the model to predict. In this case, it’s <code>activity</code>.
+</p></li>
+
+<li>
+<p><code>features</code>: This is an optional list of columns to use for training. If you don’t supply it, then <code>create</code> uses all the columns as features except for the ones you specified for <code>session_id</code> and <code>target</code>. More on this in a bit.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p><code>prediction_window</code>: How many samples (i.e. rows of data) the model looks at to make a prediction. More on this later.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p><code>validation_set</code>: Your validation dataset, stored as an <code>SFrame</code>. This is optional — if you don’t supply it, and <code>dataset</code> contains more than 100 sessions, then <code>create</code> will automatically make a validation set by randomly selecting sessions from <code>dataset</code>. But if it contains fewer sessions than that, <code>create</code> trains the model without a validation set. It’s best not to rely on this logic, and supply your own data instead.
+</p></li>
+
+<li>
+<p><code>max_iterations</code>: The maximum number of epochs <code>create</code> will train over. That is, the number of times it will go through the training set. Note: the parameter name and documentation claim this is a “maximum,” as if <code>create</code> <i>could</i> stop training sooner. However, there appears to be no evidence that training ever stops before this value is reached, so think of it as the actual number instead of a maximum.
+</p></li>
+</ul>
+
+<p>Notice how the <code>features</code> parameter is a list including just six of the 12 motion features available in your dataset — the rotation and acceleration due to the user.
+</p>
+<p>These were chosen a bit arbitrarily, mostly to show that you don’t <i>need</i> to use all columns in your dataset. In the previous section you saw how each activity appeared with a distinct pattern. But take a look at the following plots, which show just user rotation values for samples of each activity:
+</p><div class="image-100"><img src="graphics/img196.png"  alt="" title="Rotations for 100 samples of ‘shake_it’, ‘chop_it’, and ‘drive_it’ activities from training dataset" /></div>
+<p>As you can see, there are still clearly visible patterns, even when using just these three features. You are encouraged to train models with different feature combinations to see if/how it effects the results. There is no one correct answer here — many combinations will produce usable models for this project.
+</p>
+<div class="note">
+<p><em>Note</em>: For any specific problem, there is likely some minimum set of features necessary to train a good model. It just needs <i>enough</i> information to perceive differences between the classes, and different features may be more or less useful for each class. The final set of features you settle on will always be project dependant, but when in doubt — use more. That gives your model the most leeway to decide for itself.
+</p></div>
+
+<p>The prediction window is an important aspect of Turi Create’s activity classification model. It specifies how many samples the model needs to look at each time it makes a prediction. That means this value — combined with Core Motion’s update interval — determines the amount of <i>time</i> each prediction represents.
+</p>
+<p>For example, if the prediction window is 50 and Core Motion sends the app 10 updates per second, it will take five seconds to collect enough data to make one prediction. But if you’re getting updates 100 times per second, it would take 0.5 seconds. As was mentioned earlier, be sure you train your model with a prediction window that makes sense for the update rate you are using. You collected data at 25 samples per second, so this window size of 20 means the model needs 0.8 seconds worth of data per prediction.
+</p>
+<p>The prediction window suggested here works well with the provided dataset and satisfies our goals for the book. However, you should train multiple models using different window sizes to see what you think works best. You won’t <i>really</i> know if you’re satisfied until you use the model in its target environment — in this case, the game you’ll make in the next chapter. There’s no one “correct” size — it’s based on the specific use case, the dataset, and a bit of personal preference. Traditional software developers often struggle with this aspect of machine learning more than any other — you can’t usually sit down and just write the “solution” to a problem; it’s more about running lots of experiments until you discover what works best for your specific use case.
+</p>
+<p>Ok, now create your model by running the cell with your call to <code>create</code>. The first output you’ll see will be something like this:
+</p><div class="image-50"><img src="graphics/img197.png"  alt="" title="Initial training output" /></div>
+<p>Here’s a rundown of what this tells you:
+</p>
+<ul>
+<li>
+<p>The first line reports how many samples — individual rows — are in the training dataset. The function performs some pre-processing on the data, including chunking it into fixed-length sequences.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>The second line let’s you know Turi Create will be training on sequences of 400 samples. That’s because you’re training with a prediction window of 20 samples, and Turi Create’s underlying implementation always trains in chunks of 20 consecutive windows. If a session doesn’t have enough samples available, the end of the sequence gets padded with zeros.
+</p></li>
+</ul>
+
+<p>This is why you shouldn’t have very short recording sessions — tiny sessions result in too much padding and the model will have trouble learning.
+</p>
+<ul>
+<li>
+<p>Finally, it reports the number of sessions in your training dataset. This matters most when you don’t supply a validation set, because <code>create</code> will use some of these sessions for validation <i>if</i> there are more than 100 sessions available.
+</p></li>
+</ul>
+
+<p>Ater that, you’ll see updates appear for each training iteration — or epoch — as your model continues to train. You need to check these updates for signs of overfitting. If the training accuracy continues to improve but the validation accuracy stalls or begins to decline, then the model has begun to overfit.
+</p>
+<p>The output for the provided model isn’t included here, but you can see it in <em>notebooks/Model</em><em>_</em><em>Training</em><em>_</em><em>Complete.ipynb</em>. It actually overfits slightly, but we decided to stick with that model anyway for a couple reasons.
+</p>
+<p>First, it’s good to show to readers as an example of overfitting. And secondly, the difference between the final model’s validation accuracy and the epoch with the best value was only about 1%. The validation set is very small, with only four recordings of each gesture from each of two users.
+</p>
+<p>A 1% difference in accuracy in such a small dataset really isn’t significant enough to prove anything about the model’s expected real world performance — it might just be certain epochs arrived at weights that happened to work well with that particular validation set. This is why you should strive to get a lot of variety in your datasets by collecting data from many different sources.
+</p>
+<p>The final epoch for the model that ships with the book as <em>notebooks/pre-trained/GestureClassifier.mlmodel</em> had a training accuracy of 98.5% and a validation accuracy of 95.2%. If you include training data collected from other sources, you’re likely to get <i>lower</i> training accuracy while getting <i>higher</i> validation accuracy. Don’t get hung up on the specific numbers, though — the idea is just to get something that looks like it trained well before moving on to testing with your test set.
+</p>
+<div class="note">
+<p><em>Note</em>: Turi Create is great, as it builds and trains sophisticated models without you needing to do much more than provide the data. However, that comes at the cost of flexibility. There isn’t much you can do here to tweak your model’s performance.
+</p></div>
+
+<div class="note">
+<p>Besides changing your dataset, you can also try different prediction windows, feature combinations, batch sizes (not discussed here — you just used the default), and number of epochs.If none of that leads to a model suited to your app, then you’ll need to build something customized in a more flexible framework like Keras. You’ll work with sequences in Keras in later chapters.
+</p></div>
+
+<p>When you think the model’s ready for testing, go ahead and run code like the following:
+</p><pre class="code-block">metrics = model.evaluate(test_sf)
+print(metrics[’accuracy’])</pre>
+<p>You use the model’s <code>evaluate</code> method to classify everything in your test set and gather the results inside a dictionary named <code>metrics</code>. You’ve also displayed the accuracy the model achieved with those classifications, which for the provided dataset should be in the very high 90s — the model included with the chapter resources scores over 97%.
+</p>
+<p>Accuracy isn’t everything, though. You have access to various other results, including precision, recall, a confusion matrix, and more. You can access each of these by name, like you did with accuracy. To see a quick rundown, just print the entire <code>metrics</code> object:
+</p><pre class="code-block">print(metrics)</pre>
+<p>The confusion matrix is particularly useful here. It lets you know not just whether or not your model was correct, but <i>where</i> it made mistakes. This let’s you see if there’s a particular class that’s giving your model extra trouble. If so, you might need to tweak your datasets by gathering more data for the more difficult classes.
+</p>
+<p>But you should also consider trying a different prediction window size, since sometimes models are better at recognizing different classes using different windows — your goal is to find the one that gives you the best overall performance.
+</p>
+<div class="note">
+<p><em>Note</em>: If you find different activities are only recognized at different window sizes, then you might need a more complicated setup using multiple models, each trained to spot a subset of your classes. You may know about “ensemble” methods already, where multiple models combine their predictions to produce a final answer. The technique required here is <i>almost</i> an ensemble, but it’s slightly more complex, because it requires extra logic in your app to ensure your different models predict on different schedules. That won’t be covered further in this book.
+</p></div>
+
+<p>Here’s the confusion matrix for the model included with the book:
+</p><div class="image-70"><img src="graphics/img198.png"  alt="" title="Confusion matrix for trained model" /></div>
+<p>The first thing you might notice is the large numbers of predictions — your dataset didn’t have nearly that many gestures, did it? That’s because it’s providing a prediction for every <i>window</i>, not every <i>activity</i>. So it makes many predictions over any single activity sequence, and this shows the results for all of them.
+</p>
+<p>Next, notice the predictions with the highest counts: They are all <i>correct</i> predictions, with over 5,000 for each of the gestures and over 13,000 for <code>rest_it</code>. On the other hand, each of the <i>incorrect</i> predictions happened only a small number of times, with the fewest being <code>rest_it</code> predicted as <code>drive_it</code> only 17 times and the most being <code>drive_it</code> predicted as <code>rest_it</code> 184 times. Almost all of the errors involved the <code>rest_it</code> activity, which you would expect. After all, you never know what people did while recording their rest data — they may even have been doing the other gestures!
+</p>
+<p>In fact, notice that the only incorrect predictions that did <i>not</i> involve the <code>rest_it</code> activity were the 176 <code>chop_it</code> gestures predicted as <code>shake_it</code>. It makes sense that there might be mistakes between these two gestures, since chopping is actually quite similar to shaking — if a person chops very quickly it might appear similar to a shake, or if the shake is over exaggerated it might look a bit like a chop.
+</p>
+<p>Keep in mind, your model’s performance in your app may be better than its test results, because you’ll ignore low-confidence predictions. But if you’re still unhappy with the model, you should create another one. Some sticklers will tell you not to reuse your training data because you’ll be leaking data into your model. That’s <i>technically</i> true, and you should listen to them...except you probably won’t. Unless you have an endless stream of free data available, you probably don’t have the luxury of testing just once per test set. The good news is — in many cases that’s probably ok. For example, with a project like this one, you want the <i>app</i> to perform well, and your test data is just a tool to help you get there. Once your model works well on that, you’ll run it on actual devices with live data from real people. Those are your <i>real</i> tests, and they are always unique — so you can even tell those sticklers you’re using a new test set each time! Metrics like test accuracy are great, but be sure to beta test your app with many people before releasing it, so you know it really works the way you want it to.
+</p>
+<p>When you think your model is ready for testing on a device, go ahead and save it with the following code:
+</p><pre class="code-block">model.export_coreml(<span class="hljs-string">"GestureClassifier.mlmodel"</span>)
+model.save(<span class="hljs-string">"GestureClassifier"</span>)</pre>
+<p>This exports it to Core ML for use in your app, and saves a copy that you can reload in Python in case you want to work more with it later.
+</p>
+<p>You’ve saved your model, trained to analyze iPhone motion data and recognize when that data indicates specific gestures have occurred. It seems to perform well, at least when tested against <i>recorded</i> motion data. That’s a good start, but you want it to work in real time, evaluating motion data <i>as it’s produced on the device</i>. For that you need an app! Continue reading to learn how to build one.
+</p>
+<h2 class="segment-chapter">Getting to know your model</h2>
+
+<p>Open the <em>GestureIt</em> starter project in Xcode. If you’ve gone through the chapters leading up to this one, then you’ve already practiced adding Core ML models to your projects — find the <em>GestureClassifier.mlmodel</em> file you created when you saved your trained model in the previous section and drag it into Xcode. Or, if you’d like to use the model we trained on the provided dataset, add <em>notebooks/pre-trained/GestureClassifier.mlmodel</em> instead.
+</p>
+<div class="note">
+<p><em>Note</em>: Now that you have the model in Xcode, the rest of this section is all theory. You can safely skip it if you aren’t interested in this discussion right now.
+</p></div>
+
+<p>Select <em>GestureClassifier.mlmodel</em> in the Project Navigator and you’ll see the following, which is similar to — but also quite different from — models from <em>Section 1</em> of this book:
+</p><div class="image-90"><img src="graphics/img199.png"  alt="" title="Looking at the mlmodel file" /></div>
+<p>Here you can see <code>GestureClassifier</code> is an activity classifier from Turi Create. It’s under 1MB — that’s pretty good for a neural net that isn’t taking advantage of models pre-installed on iOS, as did some of the ones you made earlier. But then comes the Model Evaluation Parameters section, where things get a bit more complicated.
+</p>
+<p>First, the more recognizable items:
+</p>
+<ul>
+<li>
+<p><code>features</code>: <code>MLMultiArray</code> of <code>Double</code>s you’ll pass as input. If you haven’t seen <code>MLMultiArray</code> before, don’t worry, it’s nothing too new. It’s basically just a multidimensional array that Core ML uses to work efficiently with data. This one is sized to store a single prediction window’s worth of values for each of the features you used while training: rotation and acceleration due to the user around the X, Y and Z axes.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p><code>activityProbability</code>: Dictionary the model outputs that includes the probabilities assigned to predictions for each of the classes. In the case of this project, that means probabilities for the gesture types “rest_it,” “shake_it,” etc.
+</p></li>
+
+<li>
+<p><code>activity</code>: String the model outputs indicating the activity class predicted with the highest probability.
+</p></li>
+</ul>
+
+<p>But what about these other things: <code>hiddenIn</code>, <code>cellIn</code>, <code>hiddenOut</code> and <code>cellOut</code>? And what’s this mysterious new acronym “LSTM” mentioned in all their descriptions?
+</p>
+<h3 class="segment-chapter">Recurrent neural networks</h3>
+
+<p>So far in this book you’ve mostly dealt with convolutional neural networks — CNNs. They’re great for recognizing <i>spatial</i> relationships in data, such as how differences in value between nearby pixels in a two-dimensional grid can indicate the presence of an edge in an image, and nearby edges in certain configurations can indicate the ear of a dog, etc. Another kind of network, called a recurrent neural network — RNN — is designed to recognize <i>temporal</i> relationships. Remember, a sequence generally implies the passage of time, so this really just means they recognize relationships between items in a sequence.
+</p>
+<p>To do that, they look at sequences one item at a time, and produce an output for each item based on the <i>current</i> item <i>and</i> on the <i>output</i> they produced for the <i>previous</i> item. But what does that really mean?
+</p>
+<p>Consider how you read the following sentence: “The quick brown fox jumps over the lazy dog.” You don’t look at each word individually and ignore the rest, right? Instead, each element of the sentence adds to your understanding. What’s happening? Jumping. Who’s jumping? The fox. What’s it look like? It’s brown. And so forth.
+</p>
+<p>RNNs are designed to do something similar, interpreting each element in a sequence by considering the elements they’ve already seen.
+</p>
+<p>So what’s that look like as a network? You may come across RNN diagrams like this one:
+</p><div class="image-25"><img src="graphics/img200.png"  alt="" title="Looping nature of RNN layers" /></div>
+<p>In this image, the circle represents a single <i>layer</i> of an RNN, not a single node. Remember from what you learned earlier — a layer in a neural network can contain any number of nodes, with more nodes providing that layer with more representation power. Input elements in a sequence are referenced by timesteps, and layers process the element at time <em>T</em> by looking at both that input <i>and</i> the layer’s own output from the <i>previous</i> input at timestep <em>T-1</em>. That loop where the layer’s output feeds back into itself is known as a recurrent connection — i.e. it occurs repeatedly — giving RNNs their names.
+</p>
+<p>While diagrams like that might be useful to describe the theory behind an RNN, it can be easier to visualize if you think of the network as multiple layers. Looked at this way, each successive layer receives the next element in the input sequence along with the output from the previous layer. The following image shows what that would look like when processing the earlier example sentence:
+</p><div class="image-60"><img src="graphics/img201.png"  alt="" title="RNN layer’s recurrent behavior shown as separate layers" /></div>
+<p>Now it’s clearer how the layers process a sequence one element at a time, combining each element of the input with the output generated for the previous element. Notice that the RNN cannot process a given item until after it has processed the items that came before it in the sequence. It’s this serial nature of RNNs that makes them slower than other neural networks, such as CNNs. This is true of both training and inference.
+</p>
+<p>These recurrent connections allow RNN layers to adjust their output based on what they’ve seen so far in the sequence, much like you interpret the word “fish” in the following two sentences differently depending on the words before it: “I like to fish.” and “I like fish.” In the first sentence, the speaker likes to <i>catch</i> fish, or at least try to; in the second, the speaker probably likes to <i>eat</i> fish, but may also just enjoy fish as an animal in general. Either way, the definition of “fish” depends on its context.
+</p>
+<div class="note">
+<p><em>Note</em>: The previous diagram shows <i>two</i> outputs from each layer, one going to the next layer and one going off to...somewhere? That’s to indicate how the output for each timestep can be used within an RNN layer, through the recurrent connection, as well as passed along to the next, possibly also recurrent, layer of the network. The final output of an RNN layer can be either the output for the sequence’s last timestep, <i>or</i> the entire sequence of outputs the layer generated while processing the input sequence.
+</p></div>
+
+<p>Early implementations of this basic RNN design showed it was <i>possible</i> to learn relationships across timesteps in a sequence, but they don’t actually do it very well. Due to how the underlying math works, they take too long to train and can’t relate items separated by too many timesteps. For example, imagine an RNN processing our example sentence — it would likely remember the fox is brown, but it might have forgotten there is a fox at all by the time it gets to the dog at the end of the sentence.
+</p>
+<p>In reality a basic RNN could probably handle short sentences like that, but relationships span much greater distances in many sequences. To continue with our reading example, while words within a sentence are surely related to each other, they can also be related to words in sentences earlier in the same paragraph, many pages ago in the same chapter or even several chapters ago in a book. The distance between relationships can be arbitrarily long, and basic RNNs simply aren’t suited to handle that.
+</p>
+<p>But then along came LSTMs.
+</p>
+<h3 class="segment-chapter">Long short-term memory</h3>
+
+<p>The acronym LSTM stands for the odd-sounding phrase long short-term memory, and it refers to a different kind of recurrent unit capable of dealing with relationships separated by longer distances in the sequence. Conceptually, the following diagram shows the pertinent details of how an LSTM works.
+</p>
+<p>It uses our earlier sample sequence and shows the recurrent steps unrolled as separate layers to help clarify its behavior:
+</p><div class="image-60"><img src="graphics/img202.png"  alt="" title="LSTM layer’s recurrent behavior shown as separate layers" /></div>
+<p>As you can see, an LSTM is a recurrent unit enhanced with an internal memory. LSTMs are used just like regular recurrent layers, but instead of processing only their input and previous output, an LSTM also considers the contents of its memory. And instead of just producing an output, the LSTM can also update its memory to remember (or forget) information it thinks is important about the sequence so far.
+</p>
+<p>But terms like remembering, forgetting and thinking make it sound like LSTMs have more agency than they really do. Just like with other parts of a neural network, the LSTM’s “memory” is really just a bunch of numbers that get manipulated by various math functions. And it doesn’t really <i>choose</i> to remember or forget, it just learns weights that cause it to react differently to different sequences.
+</p>
+<div class="note">
+<p><em>Note</em>: LSTM units are more complex than they appear in the above diagram, with each cell made up of four layers combined by various math operations. If you’re interested in their inner workings, check out <a href="https://colah.github.io/posts/2015-08-Understanding-LSTMs/">this excellent blog post</a>. But the truth is, unless you’re working to invent new types of neural network layers, you probably won’t need to know those low-level details.
+</p></div>
+
+<p>The important thing to know about LSTMs is that they train much more easily than the basic RNNs that came before them, and they offer much better performance. Most RNNs in use today use some variation of the LSTM unit, as is the case with the activity classifier you trained in Turi Create.
+</p>
+<h3 class="segment-chapter">Turi Create’s activity classifier</h3>
+
+<p>So far we’ve been discussing RNNs — and more specifically, LSTMs — as deep learning’s solution to working with sequences. But it turns out that’s not the whole story. Many state of the art results have been achieved using other network types, especially our old friend the CNN.
+</p>
+<p>Current research trends seem to be moving away from RNNs because they don’t scale with hardware as well as other models do. But for now, recurrent models are still a popular choice in practice.
+</p>
+<p>What approach does Turi Create’s activity classifier take? It’s actually a combination of a CNN <i>and</i> an RNN. It uses convolutional layers to extract features from short sequences — the prediction windows mentioned earlier in the chapter — and it uses an LSTM layer to reason over sequences of predictions.
+</p>
+<p>That lets it recognize sporadic activities, such as the gestures you trained your model to classify, as well as activities spanning longer periods of time, perhaps made up of several smaller ones. For example, imagine the following sequence of activities: putting a teabag in a cup, pouring hot water in a cup, waiting patiently, and removing a teabag from a cup.
+</p>
+<p>Each of those individual activites might be recognizable from small sequences of data — like what you could provide in a single prediction window. But when that <i>series</i> of activities occurs over multiple prediction windows, then the model might be able to recognize the overarching activity — making a cup of tea.
+</p>
+<p>The following diagram shows a high level overview of Turi Create’s activity classifier:
+</p><div class="image-100"><img src="graphics/img203.png"  alt="" title="Turi Create’s activity classifier architecture" /></div>
+<p>You provide a sequence of sensor data as input — one prediction window’s worth — and the model’s first layer treats each input feature as a separate channel and performs a one-dimensional convolution over them. A 1D convolution is just like the 2D convolutions you’ve already used, except it uses kernels that are vectors instead of matrices.
+</p>
+<p>Each kernel is the length of the prediction window and gets applied to all the input features to produce a new output channel. The current version of the code applies 64 such kernels.
+</p>
+<p>The convolutional layer in this diagram may seem confusing because it <i>looks</i> like the waves are two-dimensional, but these are actually just vectors with numbers in them that we are <i>displaying</i> as a 2D image. To display a vector in two dimensions, we treat each item’s index in the vector as its value along the X axis. That is, each item in the vector represents a feature value at a specific point in <i>time</i>.
+</p>
+<p>Remember from the discussions on transfer learning earlier in the book, how the pre-trained CNN model extracts features from images and then the layers you train use those extracted features as inputs? This is basically what Turi Create’s model does, except the CNN isn’t pre-trained. The CNN layer learns to output a vector encapsulating any interesting temporal features found within the prediction window. For example, maybe it notices certain patterns of peaks and valleys that are helpful when identifying a shaking phone. These extracted features flow into the LSTM layer as if they were a single item in a sequence.
+</p>
+<div class="note">
+<p>To understand why CNNs might be well suited to this task, it can help to think of this as a vision problem instead: Imagine you <i>plotted</i> the sensor data for a prediction window, similar to what we show in the previous diagram, and then passed that <i>image</i> to a CNN. If CNNs can learn to recognize dogs in images, they should be capable of learning to recognize patterns in sequences just like the ones you saw in the previous chapter when exploring the dataset.
+</p></div>
+
+<p>After the LSTM layer receives the extracted features from the CNN layer, it produces an output based on those features <i>combined</i> with its own internal memory and its output from the <i>previous</i> prediction window. The LSTM’s output passes through fully connected layers with batch normalization and dropout, and finally a softmax layer that outputs probabilities for each of the classes the model knows about. You learned about all those layer types earlier in the book so they aren’t discussed here.
+</p>
+<p>This talk about internal memory and previous predictions brings up an important question: What about when a sequence <i>doesn’t</i> relate to those that came before it? Data doesn’t always arrive as one long, unbroken stream, so do you really want your model to always consider its past predictions as part of the current sequence?
+</p>
+<p>Well, that <i>finally</i> brings us back to those new items you saw in Xcode: <code>hiddenIn</code>, <code>cellIn</code>, <code>hiddenOut</code> and <code>cellOut</code>. The names may seem backwards, but <code>hiddenOut</code> is the output from the LSTM itself, while <code>cellOut</code> is the LSTM’s internal memory state after making the prediction. And <code>hiddenIn</code> and <code>cellIn</code> are the inputs you use to pass to the model those outputs from the previous prediction. Each of these is a vector of 200 <code>Double</code>s stored as an <code>MLMultiArray</code> — you don’t need to worry about that, it’s just how the model’s LSTM layer encodes its state information.
+</p>
+<p>So to indicate the start of a new sequence, you’ll pass <code>nil</code> to the model for both <code>hiddenIn</code> and <code>cellIn</code>. On the other hand, when the current prediction is picking up where the last one ended — as will often be the case with streaming motion data — you’ll take the <code>hiddenOut</code> and <code>cellOut</code> values from the previous prediction and pass those back to the model as <code>hiddenIn</code> and <code>cellIn</code>, respectively. Using the output and memory from the previous step like this allows the LSTM to recognize longer sequences.
+</p>
+<p>Continuing with our text example, it’s as if the first prediction window you pass is for the word “The,” the next window is for “quick,” then “brown” and so on.
+</p>
+<p>This whole chapter has been talking about classifying sequences of sensor data, but it turns out the model you made with Turi Create is looking at its inputs in two different ways — as sequences of sensor data, and as sequences of <i>sequences</i> of sensor data. The prediction window contains enough information to classify the first kind of sequence, but these extra inputs and outputs allow the LSTM portion of the network to reason over longer periods of time to classify the second kind of sequence.
+</p>
+<div class="note">
+<p>While models combining CNNs and LSTMs have achieved state-of-the-art results for tasks such as activity detection and speech recognition, there are also other techniques that deliver excellent performance when working with sequences. These include: Attention — a sort of memory added to other networks that helps guide their focus; Transformers — networks that use attention exclusively instead of recurrent or convolutional layers; and Temporal Convolutional Networks — CNNs designed for processing sequences. And new research seems to appear on a weekly basis, so there may be even more options by the time you’re reading this. You’ll read a bit more about some of these in later chapters.
+</p></div>
+
+<h2 class="segment-chapter">A note on sequence classification</h2>
+
+<p>In the previous section you learned about the model architecture of Turi Create’s activity classifier. Recall how the final layer had a node for each class the model recognizes, with a softmax activation to produce a probability distribution over them.
+</p>
+<p>We didn’t underscore it there, but it’s important to realize that using neural networks to classify sequences works the same way as it does for other types of data. You build a network with whatever layers make sense for the problem — convolutions , LSTMs, etc. — and then a final layer of nodes — one for each possible output — with a softmax activation function to produce probabilities over them.
+</p>
+<p>In fact, you can even use networks with this architecture to predict the <i>next</i> item in a sequence instead of the <i>class</i> of a sequence. The difference is that during training, instead of providing sequences as inputs and class labels as outputs, you give partial sequences as inputs and the next item in the sequence as the output. You’ll get to do this yourself in a later chapter about translating natural language.
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Turi Create’s activity classification API can help you easily make models capable of recognizing human activity from motion data. However, it can be used for more than just human activity detection — it’s basically a generic classifier for numeric sequences.
+</p></li>
+
+<li>
+<p>Try isolating data from a single source into one of the train, validation or test sets.
+</p></li>
+
+<li>
+<p>Prefer a balanced class representation. In cases where that’s not possible, evaluate your model with techniques other than accuracy, such as precision and recall.
+</p></li>
+
+<li>
+<p>Sample/shuffle sequential data as full sequences, not as individual rows.
+</p></li>
+
+<li>
+<p>First train on just a small portion of your training set and make sure you can get the model to overfit. That’s the best way to find problems with your model, because if it can’t overfit to a small dataset, then you likely need to make changes before it will be able to learn at all.
+</p></li>
+
+<li>
+<p>Train multiple models and run multiple experiments until you find what works best for your app.
+</p></li>
+
+<li>
+<p>RNNs process data serially, so they’re slower than CNNs, both when training and performing inference.
+</p></li>
+
+<li>
+<p>One-dimensional convolutions are commonly used to extract temporal features from sequences prior to passing them into RNNs.
+</p></li>
+
+<li>
+<p>RNNs are a good choice for sequential data, with LSTMs being the most commonly used variant because they train (relatively) easily and perform well. However, they are not the only models that work well for sequences.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here</h2>
+
+<p>You’ve collected some data and created a model. Now it’s time to actually <i>use</i> that model in an app — a game that recognizes player actions from device motion. When you’re ready, see you in the next chapter!
+</p></body></html>

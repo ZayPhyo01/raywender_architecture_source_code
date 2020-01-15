@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 13: Sequence Classification</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 13: Sequence Classification</h1>
+
+<p>If you’ve followed along with the last couple chapters, you’ve learned some things about how working with sequences differs from other types of data, and you got some practice collecting and cleaning datasets. You also trained a neural network to recognize user gestures from iPhone sensor data. Now you’ll use your trained model in a game where players have just a few seconds to perform an activity announced by the app. When you’ve finished, you’ll have learned how to feed data from your device into your model to classify user activity.
+</p>
+<p>This chapter picks up where the last one ended — just after you added your classification model to the <em>GestureIt</em> project. If you didn’t go through the previous chapter and train your own model, don’t fret! You can always use the <em>GestureIt</em> starter project found in the chapter resources. Either way, once you have the project open in Xcode, you’re ready to go!
+</p>
+<h2 class="segment-chapter">Classifying human activity in your app</h2>
+
+<p>You trained a model and added it to the <em>GestureIt</em> project in the last chapter, and you learned a bit about how that model works. Now take a quick look through the project to see what else is there. The project’s <em>Info.plist</em> file already includes the keys necessary to use Core Motion, explained earlier when you built the GestureDataRecorder project. GestureIt’s interface (not shown here) is even simpler than GestureDataRecorder’s — it’s just two buttons: Play and Instructions. Choosing Instructions shows videos of each gesture, and Play starts a game.
+</p>
+<p>While playing, the game speaks out gestures for the player to make, awarding one point for each correctly recognized gesture. The game ends when the app recognizes an incorrect gesture or if the player takes too long.
+</p>
+<p>The project already includes the necessary gameplay logic, but if you play it now you’ll always run out of time before scoring any points. If you want it to recognize what the player is doing, you’ll need to wire up its brain.
+</p>
+<p>All the code you write for the rest of this chapter goes in <em>GameViewController.swift</em>, so open that file in Xcode to get started.
+</p>
+<p>This file already imports the Core Motion framework and includes all the necessary code to use it. Its implementations of <code>enableMotionUpdates</code> and <code>disableMotionUpdates</code> are almost identical to what you wrote in the GestureDataRecorder project. The differences are minor and you should have no problem understanding them. As was the case with that project, this file contains a method named <code>processMotionData</code> that the app calls whenever it receives device motion data. At the moment it’s empty, but you’ll implement it later. For now, import the Core ML framework by adding the following line with the other imports near the top of the file:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> CoreML</pre>
+<p>In order to keep your code tidy and more easily maintainable, you’ll store numeric configuration values as constants in the <code>Config</code> struct at the top of the class, just like you did in the GestureDataRecorder project. To start, add the following three constants to that struct:
+</p><pre class="code-block"><span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> samplesPerSecond = <span class="hljs-number">25.0</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> numFeatures = <span class="hljs-number">6</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> windowSize = <span class="hljs-number">20</span></pre>
+<p>These values <em>must match</em> those of the model you trained. You’ll use <code>samplesPerSecond</code> to ensure the app processes motion data at the same rate your model saw it during training. The dataset provided in this chapter’s resources was collected at 25 samples per second, so that’s the value used here. However, change this value if you train your own model using data fed to it at a different rate.
+</p>
+<div class="note">
+<p><em>Note</em>: In case it’s not clear why the app’s <code>samplesPerSecond</code> must match that of the dataset used to train your model, consider this example: Imagine you trained your model using a prediction window of 200 samples, on data collected at 100 samples per second. That means the model would learn to recognize actions seen in highly detailed, two-second chunks. If you then ran this app with <code>samplesPerSecond</code> set to <code>10</code>, it would take <i>20 seconds</i> to gather the expected 200 samples! Your model would then look at 20 seconds of data but evaluate it as if it was <i>two</i> seconds worth, because that’s how it learned. This would almost certainly make the patterns in these sequences appear different from what the model saw during training. Remember, machine learning models only work well with data that is similar to what they saw during training, so getting the sampling rate wrong here could make a perfectly good model seem completely broken.
+</p></div>
+
+<p>Likewise, the model discussed in this chapter expects data in blocks of 20 samples at a time, with six features for each sample. The <code>windowSize</code> and <code>numFeatures</code> constants capture those expectations.
+</p>
+<div class="note">
+<p><em>Note</em>: If you’re ever working with a Turi Create activity classifier and aren’t sure about its expected number of features and window size, you can find them by looking at the <code>.mlmodel</code> file in Xcode’s Project Navigator. However, this does not include information about the rate at which motion data needs to be processed, so that you’ll just need to know.
+</p></div>
+
+<p>Now that you’ve added those constants, you can complete the starter code’s implementation of <code>enableMotionUpdates</code> by setting the <code>CMMotionManager</code>’s update interval. To do so, add the following line inside <code>enableMotionUpdates</code>, just before the call to <code>startDeviceMotionUpdates</code>:
+</p><pre class="code-block">motionManager.deviceMotionUpdateInterval = <span class="hljs-number">1.0</span> / <span class="hljs-type">Config</span>.samplesPerSecond</pre>
+<p>Just like you did in GestureDataRecorder, this tells <code>motionManager</code> to deliver motion updates to your app 25 times per second — once every 0.04 seconds.
+</p>
+<p>Core ML models, such as <code>GestureClassifier</code>, expect their input in the form of <code>MLMultiArray</code> objects. Unfortunately, working with these objects involves quite a bit of type casting. Swift’s type safety is great, and explicit type casting forces developers to be more thoughtful about their code — but I think we can all agree code gets pretty ugly when there’s <i>too</i> much casting going on. To keep that ugliness — and the extra typing it requires — to a minimum, you’ll be isolating any <code>MLMultiArray</code>-specific code within convenience methods. Add the first of these methods below the <code>MARK: - Core ML methods</code> comment in <code>GameViewController</code>:
+</p><pre class="code-block"><span class="hljs-keyword">static</span> <span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">makeMLMultiArray</span><span class="hljs-params">(numSamples: Int)</span></span> -&gt; <span class="hljs-type">MLMultiArray</span>? {
+  <span class="hljs-keyword">return</span> <span class="hljs-keyword">try</span>? <span class="hljs-type">MLMultiArray</span>(
+      shape: [<span class="hljs-number">1</span>, numSamples, <span class="hljs-type">Config</span>.numFeatures] <span class="hljs-keyword">as</span> [<span class="hljs-type">NSNumber</span>],
+      dataType: <span class="hljs-type">MLMultiArrayDataType</span>.double)
+}</pre>
+<p>This function takes as input the number of samples the array should contain. It then attempts to make an <code>MLMultiArray</code> with a shape and data type that will work with our model: <code>[1, numSamples, Config.numFeatures]</code> and <code>double</code>, respectively. Notice how the shape needs to be cast as an array of <code>NSNumber</code>s — you’ll see a lot of those types of casts when dealing with <code>MLMultiArray</code>s.
+</p>
+<p>Attempting to create an <code>MLMultiArray</code> can fail by throwing an exception. If that occurs here, the <code>try?</code> causes this function to return <code>nil</code>. This might occur in situations such as when there is insufficient memory to create the requested array. Hopefully it doesn’t ever happen, but you’ll add some code to deal with that possibility a bit later.
+</p>
+<p>Now that you have that handy function, you’ll use it to create space to store motion data to use as input to your model. Add the following property, this time to the area under the <code>// MARK: - Core ML properties</code> comment:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> modelInput: <span class="hljs-type">MLMultiArray</span>! =
+  <span class="hljs-type">GameViewController</span>.makeMLMultiArray(numSamples: <span class="hljs-type">Config</span>.windowSize)</pre>
+<p>This creates the <code>modelInput</code> array, appropriately sized for the model you trained. Later you’ll populate this array with motion data prior to passing it to your model for classification.
+</p>
+<div class="note">
+<p><em>Note</em>: You may have noticed that <code>modelInput</code> is declared as an implicitly unwrapped optional, but <code>makeMLMultiArray</code> can return <code>nil</code>. Doesn’t that mean you run the risk of crashing your app elsewhere if you try to unwrap <code>modelInput</code> when it’s <code>nil</code>? Normally, that would be a problem, but later you’ll add some code that ensures this can never happen.
+</p></div>
+
+<h3 class="segment-chapter">Overlapping prediction windows</h3>
+
+<p>Now, you <i>could</i> work with just a single <code>MLMultiArray</code> like <code>modelInput</code>, repeatedly filling it up over time and passing it to the model.
+</p>
+<p>The diagram below shows what it would look like making two predictions with a window size of 20:
+</p><div class="image-70"><img src="graphics/img204.png"  alt="" title="Reusing a single array to make predictions" /></div>
+<p>As the diagram above shows, the array would fill up between times <em>T1</em> and <em>T20</em>, then you’d pass it to your model to make your first prediction. After that you’d reuse the array between times <em>T21</em> and <em>T40</em>, before passing it to your model again to make your second prediction.
+</p>
+<p>This technique is the simplest to code and is fine for many apps. However, there are times when doing this would cause some problems. Consider the situation shown in the following diagram, where an activity you want to recognize spans across prediction boundaries:
+</p><div class="image-70"><img src="graphics/img205.png"  alt="" title="What if an activity spans across predictions?" /></div>
+<p>In this case, a few things might happen. If the amount of data in the first prediction window is sufficient for the model to recognize the activity, then no problem — it returns the correct classification. But if the model needs to see more activity data than is available in the first window, it won’t be able to classify it correctly until its <i>second</i> prediction. In that case it takes longer than necessary to report the result, which makes your app feel sluggish. Or worse yet, all the non-activity data in the second window might make the second prediction fail to recognize the activity, too.
+</p>
+<p>Delayed responses or inaccurate predictions — take your pick, but neither is a great option.
+</p>
+<p>Now consider another problematic scenario, shown in the following diagram:
+</p><div class="image-70"><img src="graphics/img206.png"  alt="" title="What if one prediction sees data for multiple activities?" /></div>
+<p>Here there’s one activity that spans across two predictions, just like before. But now a second activity occurs only within the second prediction window. In this case, assume the first prediction did not recognize anything, so now it’s up to the second window to handle everything. How will it classify the two activities?
+</p>
+<p>It can only make one prediction, so it will either correctly predict <i>one</i> of the activities, <i>or</i> it will become so confused that it fails to predict <i>either</i> of them. This isn’t necessarily incorrect — it really depends on the app — but it’s something you need to consider carefully.
+</p>
+<p>In many cases it would be better if you could make predictions more often. You might try smaller prediction windows, but that isn’t always an option because your model might need to see larger chunks of data to successfully recognize activities — that depends entirely on your specific data, model, and use case. But it turns out you <i>can</i> make predictions more often <i>without</i> changing the window size if you <i>overlap</i> your prediction windows, as shown in the following diagram:
+</p><div class="image-70"><img src="graphics/img207.png"  alt="" title="Overlapping predictions" /></div>
+<p>In this case, the first prediction sees data from times <em>T1</em> to <em>T20</em>, and the <i>third</i> prediction sees the data from times <em>T21</em> to <em>T40</em>. But now a <i>second</i> prediction window overlaps each of those, spanning the data from times <em>T11</em> through <em>T30</em>. Because this is like sliding the prediction window along the data (using offsets of 10 in this case), many people call these “sliding” windows.
+</p>
+<p>An app using this design responds more quickly because it makes more predictions, and it’s more accurate because it considers individual samples as part of multiple possible sequences. The first prediction window still might not recognize anything, but the second prediction would see the first activity — and predict it at <em>T30</em> instead of waiting until <em>T40</em>. And then the third prediction would recognize the second activity only 10 samples later. The app ends up feeling more responsive <i>and</i> it doesn’t miss either activity.
+</p>
+<p>Overlapping predictions <i>mostly</i> solves all of the problems mentioned earlier. But depending on how much data your model needs to see in order to make a prediction, and how much you overlap your windows, you still might run into missed or erroneous classifications. It’s a matter of finding the best amount of overlap for your app.
+</p>
+<p>You’ll be implementing overlapping predictions in Gesture It, because you’ll want fast response times to quickly evaluate the player’s gestures.
+</p>
+<p>But if you were making an app that tracks the amount of time you spend jogging, for example, you would probably be fine with non-overlapping predictions made over longer periods of time (maybe even once every several seconds).
+</p>
+<div class="note">
+<p><em>Note</em>: How much you overlap your predictions directly affects more than just accuracy and response time. More overlap means running inference with your model more often, and that extra processing could increase battery drain. And depending on how long it takes your model to make predictions, it might not even keep up with the pace of requests, causing your app to exhibit other performance problems. So test various options and settle on making predictions only as often as is necessary to achieve your goals.
+</p></div>
+
+<p>To help define your prediction windows, add the following constants to the <code>Config</code> struct at the top of the file:
+</p><pre class="code-block"><span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> windowOffset = <span class="hljs-number">5</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> numWindows = windowSize / windowOffset</pre>
+<p>Here you define <code>windowOffset</code> as five. This is not how much the window overlaps, but rather how far to offset the start of the window from the start of the previous window. With the <code>windowSize</code> of 20 you defined earlier, this makes <code>numWindows</code> equal four. That’s how many prediction windows you’ll have before you essentially wrap back around to the first one again.
+</p>
+<p>This should be clearer if you refer to the the following diagram, which shows how your predictions would overlap for the first 40 samples:
+</p><div class="image-70"><img src="graphics/img208.png"  alt="" title="Gesture It’s overlapping predictions — windowSize=20, windowOffset=5" /></div>
+<p>With the settings you’ve made so far, Gesture It will take 0.8 seconds to respond with its first prediction, but then each successive prediction will occur every 0.2 seconds after that. (That’s because <code>samplesPerSecond</code> is 25, so each sample takes 0.04 seconds to arrive. A <code>windowSize</code> of 20 looks at 20 x 0.04s = 0.8 seconds of data, and a <code>windowOffset</code> of 5 means each prediction occurs 5 x 0.04s = 0.2 seconds after the last one.)
+</p>
+<p>Notice how different prediction windows overlap with various different combinations of other predictions. For example, Prediction Two sees the last 15 samples in Prediction One, and the first five samples in Prediction Five, along with 15 and 10 samples seen by Predictions Three and Four, respectively. And starting from Prediction Five, each window will process varying numbers of samples from <i>six</i> other prediction windows! All this overlap should help your model classify gestures quickly and accurately.
+</p>
+<div class="note">
+<p><em>Note</em>: The integer division used to calculate <code>numWindows</code> means you’ll never have a partial window. For example, if <code>windowOffset</code> were 20 with a <code>windowSize</code> of 50, you’d have two windows, one from <em>T1</em> to <em>T50</em> and another from <em>T21</em> to <em>T70</em>. The code you write in this app will handle that situation fine, but keep in mind that the predictions will not occur at a steady rate unless <code>windowSize</code> is evenly divisible by <code>windowOffset</code>. In this example, an offset of 20 would result in 20 samples between predictions one and two but 30 samples between predictions two and three.
+</p></div>
+
+<p>The previous diagrams show what samples each prediction window should use, but how do you implement it? At the moment you’ve got a single <code>MLMultiArray</code> the size of <i>one</i> window, but now you need four. While you <i>could</i> create four different arrays to store this data, that would waste memory. Instead, you’ll make one slightly larger array that will act as a buffer area for the most recent motion data, and each prediction window will look at the appropriate subset of that larger buffer when necessary.
+</p>
+<p>Add the following constant to the <code>Config</code> struct, which defines the size of the buffer you’ll create:
+</p><pre class="code-block"><span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> bufferSize =
+  windowSize + windowOffset * (numWindows - <span class="hljs-number">1</span>)</pre>
+<p>You define a buffer size large enough to hold one full window plus the space taken up by the offsets for the other windows. So for the settings you’ve used so far, Gesture It’s buffer will hold 35 samples. Don’t worry if it’s not yet clear <i>why</i> this is the right size — you’ll see soon.
+</p>
+<p>Now add the following properties to manage the buffer. Put them with the other ML-related properties in <code>GameViewController</code>:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> dataBuffer: <span class="hljs-type">MLMultiArray</span>! =
+  <span class="hljs-type">GameViewController</span>.makeMLMultiArray(numSamples: <span class="hljs-type">Config</span>.bufferSize)
+<span class="hljs-keyword">var</span> bufferIndex = <span class="hljs-number">0</span>
+<span class="hljs-keyword">var</span> isDataAvailable = <span class="hljs-literal">false</span></pre>
+<p>You create <code>dataBuffer</code> using the convenience method you wrote earlier. As new motion data arrives from the device, you’ll use <code>bufferIndex</code> to determine where to store that data within the buffer. You’ll set the <code>isDataAvailable</code> flag to <code>true</code> once the buffer contains enough data to perform its first prediction.
+</p>
+<p>For the remainder of this discussion, please refer to the following diagram, which shows the buffer’s contents at each prediction over the first 40 time steps:
+</p><div class="image-100"><img src="graphics/img209.png"  alt="" title="Buffer contents over time" /></div>
+<p>Think of the buffer as having two halves, with a full prediction window on the left and auxiliary storage on the right. The second “half” isn’t a true half in this case, because it’s smaller than the first, but that won’t be a problem.
+</p>
+<p>You’ll increment <code>bufferIndex</code> as new data arrives, moving it across the first half of the buffer, and you’ll reset it to the beginning whenever it reaches the buffer’s midpoint. That is, <code>bufferIndex</code> will always point to the next location to fill <i>within the first prediction window</i>. But whenever you store an item in the left half of the buffer, you’ll also store it in the equivalent location in the right half. (You’ll skip updates on the right side that would be out of bounds due to the size mismatch. You <i>could</i> make both sides the same size and then always store values in both places, but the approach used here saves some memory — usually a good thing for mobile apps.)
+</p>
+<p>The top row of the diagram shows what the buffer looks like after 20 timesteps. The left side contains data from times <em>T1</em> to <em>T20</em>, and the right side contains copies of times <em>T1</em> to <em>T15</em>. It’s at this point that you’ll reset <code>bufferIndex</code> to zero, set <code>isDataAvailable</code> to <code>true</code> and perform the first prediction using times <em>T1</em> to <em>T20</em>.
+</p>
+<p>As data continues to arrive, you’ll keep filling the left and right sides of the buffer simultaneously. After five more timesteps, you’ll be ready to make the second prediction. As you can see in the second row of the diagram, the first five items of the buffer contain data from times <em>T21</em> to <em>T25</em>, but the next 15 items still contain data from times <em>T6</em> to <em>T20</em>. And because you’ve been updating both sides of the buffer, the first five items on the <i>right</i> contain data from times <em>T21</em> to <em>T25</em>, too.
+</p>
+<p>So you can now make your second prediction using times <em>T6</em> to <em>T25</em> by looking at a window that crosses into the second half of the buffer.
+</p>
+<p>This process continues indefinitely, but the diagram shows the contents of the buffer when making each of the first five predictions. The key point to realize is that after the first time <code>bufferIndex</code> reaches the midpoint of the buffer and resets to the start, it is always the case that the the <i>next</i> 20 items starting at <code>bufferIndex</code> contain data from the <i>previous</i> 20 time steps.
+</p>
+<p>Phew. That was a lot of discussion about such a small bit of code, so hopefully you’re still here. Now back to the app!
+</p>
+<h3 class="segment-chapter">Buffering motion data</h3>
+
+<p>Now you’re going to add code to handle <code>MLMultiArray</code>s that end up as <code>nil</code>. Since both <code>modelInput</code> and <code>dataBuffer</code> are required for the game to function properly, you’re going to notify the player if either is missing and force them back to the main menu. However, you may want to make your own apps more robust. For example, if the app successfully creates the smaller <code>modelInput</code> array but then fails on <code>dataBuffer</code>, you might consider falling back to a non-overlapping approach and notifying the user that they may experience degraded performance.
+</p>
+<p>Add the following code inside <code>viewDidLoad</code>, immediately <i>above</i> the call to <code>enableMotionUpdates</code>:
+</p><pre class="code-block"><span class="hljs-keyword">guard</span> modelInput != <span class="hljs-literal">nil</span>, dataBuffer != <span class="hljs-literal">nil</span> <span class="hljs-keyword">else</span> {
+  displayFatalError(error: <span class="hljs-string">"Failed to create required memory storage"</span>)
+  <span class="hljs-keyword">return</span>
+}</pre>
+<p>Here you check to ensure that the app was able to create each of its required <code>MLMultiArray</code> properties. If not, you call <code>displayFatalError</code>, a method in the starter code that alerts the player with the given error message and then dismisses the <code>GameViewController</code>.
+</p>
+<div class="note">
+<p><em>Note</em>: The starter code enables motion updates when it loads the game view and stops them when the game is over. However, your production apps should be more robust than that. Be sure your apps are good iOS citizens and have them properly handle situations such as getting paused for incoming phone calls, etc.
+</p></div>
+
+<p>The app will receive motion updates <code>Config.samplesPerSecond</code> times each second. For each update, you’ll need to store the appropriate features in <code>dataBuffer</code>, the <code>MLMultiArray</code> you created earlier. You’ll wrap this logic in helper methods to keep things easier to read, so add the following code to <code>GameViewController</code>:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+@inline(__always) <span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">addToBuffer</span><span class="hljs-params">(
+  <span class="hljs-number">_</span> sample: Int, <span class="hljs-number">_</span> feature: Int, <span class="hljs-number">_</span> value: Double)</span></span> {
+  <span class="hljs-comment">// 2</span>
+  dataBuffer[[<span class="hljs-number">0</span>, sample, feature] <span class="hljs-keyword">as</span> [<span class="hljs-type">NSNumber</span>]] =
+    value <span class="hljs-keyword">as</span> <span class="hljs-type">NSNumber</span>
+}
+<span class="hljs-comment">// 3</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">bufferMotionData</span><span class="hljs-params">(<span class="hljs-number">_</span> motionData: CMDeviceMotion)</span></span> {
+  <span class="hljs-comment">// 4</span>
+  <span class="hljs-keyword">for</span> offset <span class="hljs-keyword">in</span> [<span class="hljs-number">0</span>, <span class="hljs-type">Config</span>.windowSize] {
+    <span class="hljs-keyword">let</span> index = bufferIndex + offset
+    <span class="hljs-keyword">if</span> index &gt;= <span class="hljs-type">Config</span>.bufferSize {
+      <span class="hljs-keyword">continue</span>
+    }
+    <span class="hljs-comment">// 5</span>
+    addToBuffer(index, <span class="hljs-number">0</span>, motionData.rotationRate.x)
+    addToBuffer(index, <span class="hljs-number">1</span>, motionData.rotationRate.y)
+    addToBuffer(index, <span class="hljs-number">2</span>, motionData.rotationRate.z)
+    addToBuffer(index, <span class="hljs-number">3</span>, motionData.userAcceleration.x)
+    addToBuffer(index, <span class="hljs-number">4</span>, motionData.userAcceleration.y)
+    addToBuffer(index, <span class="hljs-number">5</span>, motionData.userAcceleration.z)
+  }
+}</pre>
+<p>While these methods are essentially just updating an array, there are some important things to note:
+</p>
+<ol>
+<li>
+<p>The <code>addToBuffer</code> function isolates the <code>NSNumber</code> casts to one line, which keeps the code at <code>// 5</code> easier to read. Declaring it with <code>@inline(__always)</code> tells the Swift compiler to replace any calls to this function with the contents of the function itself, ensuring your code executes as quickly as possible. Swift is good about inlining these one-line functions on its own, but including this tag makes your intention clear.
+</p></li>
+
+<li>
+<p>This line sets a single value inside <code>dataBuffer</code>. That <code>MLMultiArray</code> is arranged as a 3-dimensional tensor, indexed as [batch, sample, feature]. The model’s batch size is always one, so the first index value here is always <code>0</code>. The <code>sample</code> and <code>feature</code> indices are passed as arguments to this method.
+</p></li>
+
+<li>
+<p>You’ll call <code>bufferMotionData</code> from within <code>processMotionData</code>, which you’ll write next. It copies motion data into the correct locations in the large buffer backing the overlapping prediction windows described earlier.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>This <code>for</code> loop ensures each value is stored at the position indexed by <code>bufferIndex</code>, as well as a position that is one window-span <i>later</i> in the buffer. The <code>continue</code> statement ensures that second write attempt is not outside the buffer’s bounds, which would crash the app. For more details about how the overlapping windows work, refer to the discussion earlier in this chapter.
+</p></li>
+
+<li>
+<p>Here you call <code>addToBuffer</code> repeatedly to save the relevant data from the <code>CMDeviceMotion</code> object passed to this method. It’s <em>extremely important</em> to store only the features your model expects, and in exactly the order it expects them. This was all determined when you trained the model, but you can verify the information by inspecting the <code>.mlmodel</code> in Xcode’s Project Navigator. Be sure to double check this step, because mistakes here will make your model function incorrectly — sometimes failing with a crash, sometimes by underperforming, and even sometimes by <i>appearing</i> to work! That last one might sound ok, but it just means you’ve got some lucky input and it’s unlikely to work well for long.
+</p></li>
+</ol>
+
+<p>Your code so far only adds data to <code>dataBuffer</code>, but you’ll eventually need to pass <code>modelInput</code> to your ML model. That’s because your model expects to see an <code>MLMultiArray</code> with <code>modelInput</code>’s specific shape, not the larger buffer you created to implement overlapping windows. So you’ll need to copy data between these structures.
+</p>
+<p>To make those copies as fast as possible, you’ll be using low level pointers to copy chunks of memory directly. To do that, you need to know the exact number of bytes you want to access, so add the following constants to the <code>Config</code> struct:
+</p><pre class="code-block"><span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> windowSizeAsBytes = doubleSize * numFeatures * windowSize
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> windowOffsetAsBytes = doubleSize * numFeatures * windowOffset</pre>
+<p>Here you calculate the number of bytes it takes to represent a prediction window within an <code>MLMultiArray</code>, as well as the number of bytes necessary to represent the offset between prediction windows. The constant <code>doubleSize</code> referenced in these calculations already exists in the starter code — it stores how many bytes are used by one <code>double</code>. You’ll use these constants soon.
+</p>
+<p>You’re now all set to fill in the placeholder <code>processMotionData</code> method. Insert the following code into that method:
+</p><pre class="code-block"><span class="hljs-comment">// 1</span>
+<span class="hljs-keyword">guard</span> expectedGesture != <span class="hljs-literal">nil</span> <span class="hljs-keyword">else</span> {
+  <span class="hljs-keyword">return</span>
+}
+<span class="hljs-comment">// 2</span>
+bufferMotionData(motionData)
+<span class="hljs-comment">// 3</span>
+bufferIndex = (bufferIndex + <span class="hljs-number">1</span>) % <span class="hljs-type">Config</span>.windowSize
+<span class="hljs-comment">// 4</span>
+<span class="hljs-keyword">if</span> bufferIndex == <span class="hljs-number">0</span> {
+  isDataAvailable = <span class="hljs-literal">true</span>
+}
+<span class="hljs-comment">// 5</span>
+<span class="hljs-keyword">if</span> isDataAvailable &amp;&amp;
+   bufferIndex % <span class="hljs-type">Config</span>.windowOffset == <span class="hljs-number">0</span> &amp;&amp;
+   bufferIndex + <span class="hljs-type">Config</span>.windowOffset &lt;= <span class="hljs-type">Config</span>.windowSize {
+  <span class="hljs-comment">// 6</span>
+  <span class="hljs-keyword">let</span> window = bufferIndex / <span class="hljs-type">Config</span>.windowOffset
+  <span class="hljs-comment">// 7</span>
+  memcpy(modelInput.dataPointer,
+         dataBuffer.dataPointer.advanced(
+           by: window * <span class="hljs-type">Config</span>.windowOffsetAsBytes),
+         <span class="hljs-type">Config</span>.windowSizeAsBytes)
+  <span class="hljs-comment">// 8</span>
+  <span class="hljs-comment">// <span class="hljs-doctag">TODO:</span> predict the gesture</span>
+}</pre>
+<p>This is the meat of your data pipeline, so look carefully at what’s going on here:
+</p>
+<ol>
+<li>
+<p>The starter project uses <code>expectedGesture</code> to keep track of what gesture the player should be making. This value will be <code>nil</code> whenever the game is not expecting a gesture, and this <code>guard</code> statement ensures this method doesn’t process motion data in those cases.
+</p></li>
+
+<li>
+<p>Here’s where you call the method you recently added, <code>bufferMotionData</code>. You pass it the <code>CMDeviceMotion</code> object given to this method, and it stores the motion data in the appropriate locations within <code>dataBuffer</code>.
+</p></li>
+
+<li>
+<p>Next you update <code>bufferIndex</code> to keep track of the next available space in the buffer. You’re incrementing it by one, and looping it back around to zero when it reaches the end of the first window.
+</p></li>
+
+<li>
+<p>Here you check to see if <code>bufferIndex</code> is zero. Because <code>bufferIndex</code> is updated <i>before</i> this line, it can only ever be zero <i>after</i> it has exceeded <code>Config.windowSize</code> and wrapped back around at least once. At that point, you update <code>isDataAvailable</code> to indicate you have at least one full window’s worth of data.
+</p></li>
+
+<li>
+<p>This <code>if</code>-statement ensures you make predictions at the correct times. It first checks <code>isDataAvailable</code> to make sure at least one window is full. Then it checks to see if <code>bufferIndex</code> is at the boundary of a window. Because <code>bufferIndex</code> resets when it reaches the end of the first window, you can only reliably check when it’s at the <i>start</i> of most windows, not the end. This line determines that by checking to see if <code>bufferIndex</code> is some multiple of the window offset. It also verifies that there is a full <code>windowOffset</code> worth of space after this position in the window. That final check is just a precaution in case you ever use a window size that is not evenly divisible by the offset size. Without that check, the code at // 7 would crash your app when it tried to access invalid memory. If all these checks pass, then the function knows it’s OK to make a prediction.
+</p></li>
+
+<li>
+<p>Here you determine which prediction window you’re working with so you’ll know which data to access from the buffer.
+</p></li>
+
+<li>
+<p>Now you need to copy the samples for <code>window</code> from <code>dataBuffer</code> into <code>modelInput</code>. Conveniently, <code>MLMultiArray</code> objects expose a pointer for low level access to their backing memory via their <code>dataPointer</code> property, so here you take advantage of that fact and use <code>memcpy</code> to copy a window-sized chunk of memory directly from <code>dataBuffer</code> into <code>modelInput</code>. To locate the start of the window, you use the pointer’s <code>advanced(by:)</code> method and some math to move it the appropriate number of bytes from the start of the buffer. Be extremely careful with <code>memcpy</code>: Getting anything wrong here will at best give you the wrong results, and at worst will crash your app.
+</p></li>
+
+<li>
+<p>Here is where you will eventually attempt to make your prediction. But you’ll need to write just a bit more code before you do.
+</p></li>
+</ol>
+
+<h3 class="segment-chapter">Making predictions with your model</h3>
+
+<p>At long last, your project is ready to start recognizing gestures. Almost. So far the app contains a lot of data processing and business logic — it still needs the machine learning bit!
+</p>
+<p>Add your gesture recognition model into the app by initializing the following property with the other ML-related properties in <code>GameViewController</code>:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> gestureClassifier = <span class="hljs-type">GestureClassifier</span>()</pre>
+<p>Xcode autogenerated the <code>GestureClassifier</code> class when you first dragged the <code>.mlmodel</code> file into the project, so all you have to do is instantiate it like this and then later call its <code>prediction</code> method with the appropriate inputs. It’s almost <i>too</i> easy, right?
+</p>
+<p>Well, it <i>would</i> be if that’s all it took. Recall from the previous chapter’s discussion about the model’s inputs and outputs, the LSTM portion of the network requires you to provide it with the internal memory and output from its previous prediction. That means you’ll need to store that information each time you make a prediction and then pass it back to the model when making the next one. To help with that, Xcode generated the <code>GestureClassifierOutput</code> class at the same time it made <code>GestureClassifier</code>. This class conveniently encapsulates all four of the model’s outputs so you can save them for later use.
+</p>
+<p>However, you’ve implemented your predictions using four overlapping windows, which means consecutive predictions aren’t actually continuations of each other. That is, the first sensor reading in a prediction window is <i>not</i> the reading immediately after the last one in the previous window. Instead, it’s a value <i>within</i> the previous window, offset from its start by <code>Config.windowOffset</code> samples. Because of that fact, it wouldn’t make sense for the LSTM’s internal state to carry over from the <i>previous</i> prediction — it needs to use the state from <i>four</i> predictions ago instead. To keep track of all these outputs, you’ll maintain an array of <code>GestureClassifierOutput</code>s, so add the following property for that:
+</p><pre class="code-block"><span class="hljs-keyword">var</span> modelOutputs =
+  [<span class="hljs-type">GestureClassifierOutput</span>?](repeating: <span class="hljs-literal">nil</span>, <span class="hljs-built_in">count</span>: <span class="hljs-type">Config</span>.numWindows)</pre>
+<p>This array will hold one <code>GestureClassifierOutput</code> for each prediction window. The values are optional and will be <code>nil</code> for any window before you’ve used it. You can see the code for <code>GestureClassifierOutput</code> by selecting <em>GestureClassifier.mlmodel</em> in the Project Navigator, and then clicking the small arrow icon next to <em>GestureClassifier</em> in the <em>Model Class</em> section. It basically just provides properties to access the model’s various outputs.
+</p>
+<p>One last thing before you actually use your model. Earlier in the book, you read about how Core ML predictions come with probabilities which are essentially the model’s confidence in the prediction. And you saw how the model will always produce <i>some</i> prediction, but not necessarily with much confidence.
+</p>
+<p>To avoid reacting to low probability predictions, you’ll define a threshold that the probability must exceed to be considered sure enough to act upon. Add the following constant to <code>Config</code> at the top of the file:
+</p><pre class="code-block"><span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> predictionThreshold = <span class="hljs-number">0.9</span></pre>
+<p>This basically means the model needs to be over 90% sure of a prediction before the app responds. This threshold was chosen after some playtesting, but it’s mostly personal preference beyond a certain threshold. Values too low will make the app hallucinate gestures where there are none, so definitely avoid that, but other than that it’s a matter of how touchy or picky you want the app to feel. Later, when you’re done writing the app, try out different values here to see how they affect the gameplay.
+</p>
+<p>With those small additions in place, it’s now time to write the method that uses your trained model to recognize gestures. Add the following code to the end of <code>GameViewController</code>:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">predictGesture</span><span class="hljs-params">(window: Int)</span></span> {
+  <span class="hljs-comment">// 1</span>
+  <span class="hljs-keyword">let</span> previousOutput = modelOutputs[window]
+  <span class="hljs-keyword">let</span> modelOutput = <span class="hljs-keyword">try</span>?
+    gestureClassifier.prediction(
+      features: modelInput,
+      hiddenIn: previousOutput?.hiddenOut,
+      cellIn: previousOutput?.cellOut)
+  <span class="hljs-comment">// 2</span>
+  modelOutputs[window] = modelOutput
+  <span class="hljs-comment">// 3</span>
+  <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> prediction = modelOutput?.activity,
+     <span class="hljs-keyword">let</span> probability =
+       modelOutput?.activityProbability[prediction] {
+    <span class="hljs-comment">// 4</span>
+    <span class="hljs-keyword">if</span> prediction == <span class="hljs-type">Config</span>.restItValue {
+      <span class="hljs-keyword">return</span>
+    }
+    <span class="hljs-comment">// 5</span>
+    <span class="hljs-keyword">if</span> probability &gt; <span class="hljs-type">Config</span>.predictionThreshold {
+      <span class="hljs-comment">// 6</span>
+      <span class="hljs-keyword">if</span> prediction == expectedGesture {
+        updateScore()
+      } <span class="hljs-keyword">else</span> {
+        gameOver(incorrectPrediction: prediction)
+      }
+      <span class="hljs-comment">// 7</span>
+      expectedGesture = <span class="hljs-literal">nil</span>
+    }
+  }
+}</pre>
+<p>You’ve written quite a bit of code already, but this method is really the only part of the app that actually uses machine learning. Here’s what it does:
+</p>
+<ol>
+<li>
+<p>First it calls <code>gestureClassifier.prediction</code> to try to classify the motion data, and stores the result as <code>modelOutput</code>. Notice that you provide both <code>modelInput</code>, which you populated in <code>processMotionData</code>, as well as the LSTM’s ouput and internal cell state from the previous prediction <i>for this window</i>. These values will be <code>nil</code> for each window’s first prediction, and that’s fine — this tells the classifier there is no history and it should initialize itself accordingly.
+</p></li>
+
+<li>
+<p>Then it stores the model’s response in <code>modelOutputs</code> so you can access it next time you make a prediction for this window.
+</p></li>
+
+<li>
+<p>Next it grabs the predicted activity, along with the probability assigned to that prediction, from the model’s output.
+</p></li>
+
+<li>
+<p>It checks for predictions of non-gestures — i.e. resting — and just ignores them.
+</p></li>
+
+<li>
+<p>For non-rest predictions, it checks to see if the probability exceeds the threshold you previously defined. If so, it considers it a real prediction; otherwise it does nothing and the app will continue processing motion events.
+</p></li>
+
+<li>
+<p>The next bit of code is game logic, but any app you write with a classification model will have something similar — a spot where you actually <i>use</i> the predicted value. If the model thinks the player made the correct gesture (i.e. the predicted gesture matches <code>expectedGesture</code>), then it calls <code>updateScore</code> to add a point; otherwise, the app thinks the player messed up and it calls <code>gameOver</code>.
+</p></li>
+
+<li>
+<p>Regardless of the prediction, the method resets <code>expectedGesture</code> to <code>nil</code> so that the app stops processing motion data for a while. The starter project’s existing game logic will set this to a new gesture when appropriate.
+</p></li>
+</ol>
+
+<div class="note">
+<p><em>Note</em>: The model class Xcode generates includes three different <code>prediction</code> methods, as well as a <code>predictions</code> (with an “s”) method that batches multiple predictions in one call. This code uses the version that takes <code>MLMultiArray</code>s directly, but you might find situations where you’d prefer to use one of the other versions in your own apps, so be sure to check the generated code for options.
+</p></div>
+
+<p>Now go back to that comment you added earlier — <code>// TODO predict the gesture</code> — and replace it with a call to the method you just wrote:
+</p><pre class="code-block">predictGesture(window: window)</pre>
+<p>You already calculated the correct prediction window inside <code>processMotionData</code>, and here you pass that to <code>predictGesture</code> to perform inference.
+</p>
+<p>Now build the app and run it on your iPhone. (Sorry, no motion data in the simulator!) You might succeed with the first gesture, but it won’t take long before the app calls out a gesture and then immediately complains that you got it wrong. What gives?
+</p>
+<p>Remember those fancy overlapping prediction windows? Well, that backing storage buffer you made still contains data from the previous sequences you were processing. So when the app asks for a new gesture, there’s already a prediction window’s worth of data just sitting there ready to be recognized — collected while you were making the <i>previous</i> gesture. And don’t forget, recurrent models use state from previous predictions to help them make new predictions, because they assume the data is related. But when this app asks for a new gesture, it no longer wants the model to consider the prior data. Each new gesture needs a clean slate.
+</p>
+<p>To correct this, you need to reset the buffer <i>and</i> the model’s previous output states. Add the following method to <code>GameViewController</code>:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">resetPredictionWindows</span><span class="hljs-params">()</span></span> {
+  <span class="hljs-comment">// 1</span>
+  bufferIndex = <span class="hljs-number">0</span>
+  <span class="hljs-comment">// 2</span>
+  isDataAvailable = <span class="hljs-literal">false</span>
+  <span class="hljs-comment">// 3</span>
+  <span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-number">0</span>..&lt;modelOutputs.<span class="hljs-built_in">count</span> {
+    modelOutputs[i] = <span class="hljs-literal">nil</span>
+  }
+}</pre>
+<p>It’s not much code, but it’s vital in order for your app to function properly. Here’s what it does:
+</p>
+<ol>
+<li>
+<p>Reset <code>bufferIndex</code> to zero to start filling the buffer from the beginning again. This ensures new predictions are based on relevant sequence data, rather than data in the buffer left over from prior sequences.
+</p></li>
+
+<li>
+<p>Reset <code>isDataAvailable</code> to <code>false</code> to keep the app from trying to perform another prediction before it has at least one full window.
+</p></li>
+
+<li>
+<p>Set everything in <code>modelOutputs</code> to <code>nil</code> to clear out any internal model state built up from previous predictions. This ensures the underlying LSTM cells in your <code>GestureClassifier</code> model don’t remember anything from sequences related to earlier gestures and then try to use that information when making new predictions.
+</p></li>
+</ol>
+
+<p>Now that you’ve defined that method, call it at the top of <code>startTimerForGesture</code>:
+</p><pre class="code-block">resetPredictionWindows()</pre>
+<p>The existing game logic already calls <code>startTimerForGesture</code> whenever it notifies the player to perform a new gesture. With this addition, you ensure the predictions made for new gestures are not using any data that arrived while the app was processing earlier gestures.
+</p>
+<p>That’s it! Build and run again, and have fun Gesturing It! If the game times out too quickly for you to respond, increase the value of <code>Config.gestureTimeout</code>. Or, if you want to increase the challenge, see how low you can decrease it. How many correctly recognized gestures can you get in a row?
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Use overlapping prediction windows to provide faster, more accurate responses.
+</p></li>
+
+<li>
+<p>Call your model’s <code>prediction</code> method to classify data.
+</p></li>
+
+<li>
+<p>Pass multi-feature inputs to your models via <code>MLMultiArray</code> objects.
+</p></li>
+
+<li>
+<p>Arrange input feature values in the same order you used during training. The model will produce invalid results if you arrange them in any other order.
+</p></li>
+
+<li>
+<p>When processing sequences over multiple calls to <code>prediction</code>, pass the hidden and cell state outputs from one timestep as additional inputs to the next timestep.
+</p></li>
+
+<li>
+<p>Ignore predictions made with probabilities lower than some reasonable threshold. But keep in mind, models occasionally make incorrect predictions with very high probabilitity, so this trick won’t completely eliminate bad predictions.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Challenges</h2>
+
+<p>Expanding Gesture It would be a good way to get some practice with activity recognition. Adding new gesture types to the GestureDataRecorder project is a straightforward process, so start there, and then collect some data. Next, add your new data to the provided dataset and train a new model. Replace the model in the GestureIt project with your newly trained model, and make the few modifications necessary to add your new gesture to the game.
+</p>
+<p>After that, you could try recognizing activities other than gestures. For example, you could make an app that automatically tracks the time a user spends doing different types of exercises. Building a dataset for something like that will be more difficult, because you have less control over the position of the device and more variation in what each activity looks like. In those cases, you’ll need to collect a more varied dataset from many different people to train a model that will generalize well.
+</p>
+<p>And keep in mind, these models work on other devices, too. The Apple Watch is a particularly fitting choice — a device containing multiple useful sensors, that remains in a known position on the user and is worn for all or most of the day. If you have access to one, give it a try!
+</p></body></html>

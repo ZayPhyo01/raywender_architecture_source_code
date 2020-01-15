@@ -1,0 +1,739 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 2: Getting Started with Image Classification</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 2: Getting Started with Image Classification</h1>
+
+<p>Let’s begin your journey into the world of machine learning by creating a binary image classifier.
+</p>
+<p>A <em>classifier</em> is a machine learning model that takes an input of some kind, in this case an image, and determines what sort of “thing” that input represents. An image classifier tells you which category, or class, the image belongs to.
+</p>
+<p><em>Binary</em> means that the classifier is able to distinguish between two classes of objects. For example, you can have a classifier that will answer either “cat” or “dog” for a given input image, just in case you have trouble telling the two apart.
+</p><div class="image-75"><img src="graphics/img18.png"  alt="" title="A binary classifier for cats and dogs" /></div>
+<p>Being able to tell the difference between only two things may not seem very impressive, but binary classification is used a lot in practice.
+</p>
+<p>In medical testing, it determines whether a patient has a disease, where the “positive” class means the disease is present and the “negative” class means it’s not. Another common example is filtering email into spam/not spam.
+</p>
+<p>There are plenty of questions that have a definite “yes/no” answer, and the machine learning model to use for such questions is a binary classifier. The cats-vs.-dogs classifier can be framed as answering the question: “Is this a picture of a cat?” If the answer is no, it’s a dog.
+</p>
+<p>Image classification is one of the most fundamental computer vision tasks. Advanced applications of computer vision — such as object detection, style transfer, and image generation — all build on the same ideas from image classification, making this a great place to start.
+</p>
+<p>There are many ways to create an image classifier, but by far the best results come from using deep learning. The success of deep learning in image classification is what started the current hype around AI and ML. We wouldn’t want you to miss out on all this exciting stuff, and so the classifier you’ll be building in this chapter uses deep learning under the hood.
+</p>
+<h2 class="segment-chapter">Is that snack healthy?</h2>
+
+<p>In this chapter you’ll learn how to build an image classifier that can tell the difference between healthy and unhealthy snacks.
+</p><div class="image-75"><img src="graphics/img19.png"  alt="" title="" /></div>
+<p>To get started, make sure you’ve downloaded the supplementary materials for this chapter and open the <em>HealthySnacks</em> starter project in Xcode.
+</p>
+<p>This is a very basic iPhone app with two buttons, an image view, and a text label at the top:
+</p><div class="image-35"><img src="graphics/img20.png"  alt="" title="The design of the app" /></div>
+<p>The “picture frame” button on the left lets you choose a photo from the library using <code>UIImagePickerController</code>. The “camera” button on the right lets you take a picture with the camera (this button is disabled in the simulator).
+</p>
+<p>Once you’ve selected a picture, the app calls <code>classify(image:)</code> in <em>ViewController.swift</em> to decide whether the image is of a healthy snack or not. Currently this method is empty. In this chapter you’ll be adding code to this method to run the classifier.
+</p>
+<p>At this point, it’s a good idea to take a brief look at <em>ViewController.swift</em> to familiarize yourself with the code. It’s pretty standard fare for an iOS app.
+</p>
+<p>In order to do machine learning on the device, you need to have a trained model. For the HealthySnacks app, you’ll need a model that has learned how to tell apart healthy snacks from unhealthy snacks. In this chapter you’ll be using a ready-made model that has already been trained for you, and in the next chapter you’ll learn to how train this model yourself.
+</p>
+<p>The model is trained to recognize the following snacks:
+</p><div class="image-70"><img src="graphics/img21.png"  alt="" title="The categories of snacks" /></div>
+<p>For example, if you point the camera at an apple and snap a picture, the app should say “healthy”. If you point the camera at a hotdog, it should say “unhealthy”.
+</p>
+<p>What the model actually predicts is not just a label (“healthy” or “unhealthy”) but <em>probability distribution</em>, where each classification is given a probability value:
+</p><div class="image-70"><img src="graphics/img22.png"  alt="" title="An example probability distribution" /></div>
+<p>If your math and statistics are a little rusty, then don’t let terms such as “probability distribution” scare you. A probability distribution is simply a list of positive numbers that add up to 1.0. In this case it is a list of two numbers because this model has two classes:
+</p><pre class="code-block">[<span class="hljs-number">0.15</span>, <span class="hljs-number">0.85</span>]</pre>
+<p>The above prediction is for an image of a waffle with strawberries on top. The model is 85% sure that the object in this picture is unhealthy. Because the predicted probabilities always need to add up to 100% (or <code>1.0</code>), this outcome also means the classifier is 15% sure this snack is healthy — thanks to the strawberries.
+</p>
+<p>You can interpret these probabilities to be the <em>confidence</em> that the model has in its predictions. A waffle without strawberries would likely score higher for unhealthy, perhaps as much as 98%, leaving only 2% for class healthy. The more confident the model is about its prediction, the more one of the probabilities goes to 100% and the other goes to 0%. When the difference between them is large, as in this example, it means that the model is sure about its prediction.
+</p>
+<p>Ideally, you would have a model that is always confident and never wrong. However, sometimes it’s very hard for the model to draw a solid conclusion about the image. Can <i>you</i> tell whether the food in the following image is mostly healthy or unhealthy?
+</p><div class="image-75"><img src="graphics/img23.png"  alt="" title="What is this?" /></div>
+<p>The less confident the model is, the more both probabilities go towards the middle, or 50%.
+</p>
+<p>When the probability distribution looks like the following, the model just isn’t very sure, and you cannot really trust the prediction — it could be either class.
+</p><div class="image-70"><img src="graphics/img24.png"  alt="" title="An unconfident prediction" /></div>
+<p>This happens when the image has elements of both classes — salad and greasy stuff — so it’s hard for the model to choose between the two classes. It also happens when the image is not about food at all, and the model does not know what to make of it.
+</p>
+<p>To recap, the input to the image classifier is an image and the output is a probability distribution, a list of numbers between 0 and 1.
+</p>
+<p>Since you’re going to be building a binary classifier, the probability distribution is made up of just two numbers. The easiest way to decide which class is the winner is to choose the one with the highest predicted probability.
+</p>
+<div class="note">
+<p><em>Note</em>: To keep things manageable for this book, we only trained the model on twenty types of snacks (ten healthy, ten unhealthy). If you take a picture of something that isn’t in the list of twenty snacks, such as broccoli or pizza, the prediction could be either healthy or unhealthy. The model wasn’t trained to recognize such things and, therefore, what it predicts is anyone’s guess. That said, the model might still guess right on broccoli (it’s green, which is similar to other healthy snacks) and pizza (it’s greasy and therefore unhealthy).
+</p></div>
+
+<h2 class="segment-chapter">Core ML</h2>
+
+<p>For many of the projects in this book, you’ll be using Core ML, Apple’s machine learning framework that was introduced with iOS 11. Core ML makes it really easy to add machine learning models to your app — it’s mostly a matter of dropping a trained model into your app and calling a few API functions. Xcode even automatically writes most of the code for you.
+</p>
+<p>Of course, Core ML is only easy if you already have a trained model. You can find the model for this chapter, <em>HealthySnacks.mlmodel</em>, in the downloaded resources.
+</p>
+<p>Core ML models are packaged up in a <em>.</em><em>mlmodel</em> file. This file contains both the structural definition of the model as well as the things it has learned, known as the learned parameters (or the “weights”).
+</p>
+<p>With the HealthySnacks project open in Xcode, drag the <em>HealthySnacks.mlmodel</em> file into the project to add it to the app (or use File ▸ Add Files).
+</p>
+<p>Select <em>HealthySnacks.mlmodel</em> in the Project Navigator and Xcode will show the following:
+</p><div class="image-100"><img src="graphics/img25.png"  alt="" title="Looking at the mlmodel file" /></div>
+<p>This is a summary of the Core ML model file. It shows what of type model it is, the size of the model in megabytes and a description.
+</p>
+<p>The HealthySnacks model type is Neural Network Classifier, which means it is an image classifier that uses deep learning techniques. The terms “deep learning” and “neural network” mean pretty much the same thing. According to the description, this model was made using a tool called Turi Create and it uses SqueezeNet v1.1, a popular deep learning architecture for mobile apps.
+</p>
+<p>The main benefit of SqueezeNet is that it’s small. As you can see in Xcode, the size of this model is “only” 5 MB. That is tiny compared to many other deep learning model architectures, which can take up hundreds of MBs. Such large models are usually not a good choice for use in a mobile app. Not only do they make the app download bigger but larger models are also slower and use more battery power.
+</p>
+<p>The Model Evaluation Parameters section lists the inputs that the model expects and the outputs that it produces. Since this is an image classifier there is only one input, a color image that must be 227 pixels wide and 227 pixels tall.
+</p>
+<p>You cannot use images with other dimensions. The reason for this restriction is that the SqueezeNet architecture expects an image of exactly this size. If it’s any smaller or any larger, the math used by SqueezeNet doesn’t work out. This means that any image you pick from the photo library or take with the camera must be resized to 227×227 before you can use it with this Core ML model.
+</p>
+<div class="note">
+<p><em>Note</em>: If you’re thinking that 227×227 pixels isn’t very big, then you’re right. A typical 12-megapixel photo is 4032×3024 — that is more than 200 times as many pixels! But there is a trade-off between image size and processing time. These deep learning models need to do <i>a lot</i> of calculations: For a single 227×227 image, SqueezeNet performs 390 million calculations. Make the image twice as large and the number of calculations also doubles. At some point, that just gets out of hand and the model will be too slow to be useable!
+</p>
+<p>Making the image smaller will make the model faster, and it can even help the models learn better since scaling down the image helps to remove unnecessary details that would otherwise just confuse the model. But there’s a limit here too: At some point, the image loses too much detail, and the model won’t be able to do a good job anymore. For image classification, 227×227 is a good compromise. Other typical image sizes used are 224×224 and 299×299.
+</p></div>
+
+<p>The HealthySnacks model has two outputs. It puts the probability distribution into a dictionary named <code>labelProbability</code> that will look something like this:
+</p><pre class="code-block">labelProbability = [ <span class="hljs-string">"healthy"</span>: <span class="hljs-number">0.15</span>, <span class="hljs-string">"unhealthy"</span>: <span class="hljs-number">0.85</span> ]</pre>
+<p>For convenience, the second output it provides is the class label of the top prediction: <code>&quot;healthy&quot;</code> if the probability of the snack being healthy is greater than 50%, <code>&quot;unhealthy&quot;</code> if it’s less than 50%.
+</p>
+<p>The final section of this model summary to look at is Model Class. When you add an .mlmodel file to a project, Xcode does something smart behind the scenes: It creates a Swift class with all the source code needed to use the model in your app. That means you don’t have to write any code to load the .mlmodel — Xcode has already done the heavy lifting for you.
+</p>
+<p>To see the code that Xcode generated, click the little arrow next to the model name:
+</p><div class="image-100"><img src="graphics/img26.png"  alt="" title="Click the arrow to view the generated code" /></div>
+<p>It’s not important, at this point, that you understand exactly what this code does. Just notice that the automatically generated Swift file contains a class <code>HealthySnacks</code> that has an <code>MLModel</code> object property (the main object from the Core ML framework). It also has <code>prediction()</code> methods for making the classifications. There also are <code>HealthySnacksInput</code> and <code>HealthySnacksOutput</code> classes that represent the inputs (an image) and outputs (the probabilities dictionary and the top prediction label) of the model.
+</p>
+<p>At this point, you might reasonably expect that you’re going to use these automatically generated classes to make the predictions. Surprise… you’re not! We’re saving that for the end of the chapter.
+</p>
+<p>There are a few reasons for this, most importantly that the images need to be scaled to 227×227 pixels and placed into a <code>CVPixelBuffer</code> object before you can call the <code>prediction()</code> method, and we’d rather not deal with that if we can avoid it. So instead, you’re going to be using yet another framework: Vision.
+</p>
+<div class="note">
+<p><em>Note</em>: Core ML models can also have other types of inputs besides images, such as numbers and text. In this first section of the book, you’ll primarily work with images. In later sections, you’ll also do machine learning on other types of data.
+</p></div>
+
+<h2 class="segment-chapter">Vision</h2>
+
+<p>Along with Core ML, Apple also introduced the Vision framework in iOS 11. As you can guess from its name, Vision helps with computer vision tasks. For example, it can detect rectangular shapes and text in images, detect faces and even track moving objects.
+</p>
+<p>Most importantly for you, Vision makes it easy to run Core ML models that take images as input. You can even combine this with other Vision tasks into an efficient image-processing pipeline. For example, in an app that detects people’s emotions, you can build a Vision pipeline that first detects a face in the image and then runs a Core ML-based classifier on just that face to see whether the person is smiling or frowning.
+</p>
+<p>It’s highly recommended that you use Vision to drive Core ML if you’re working with images. Recall that the HealthySnacks model needs a 227×227 image as input, but images from the photo library or the camera will be much larger and are typically not square. Vision will automatically resize and crop the image.
+</p>
+<p>In the automatically generated Swift file for the .mlmodel, you may have noticed that the input image (see <code>HealthySnacksInput</code>) has to be a <code>CVPixelBuffer</code> object, while <code>UIImagePickerController</code> gives you a <code>UIImage</code> instead. Vision can do this conversion for you, so you don’t have to worry about <code>CVPixelBuffer</code> objects.
+</p>
+<p>Finally, Vision also performs a few other tricks, such as rotating the image so that it’s always right-size up, and matching the image’s color to the device’s color space. Without the Vision framework, you’d have to write additional code by hand! Surely, you’ll agree that it’s much more convenient to let Vision handle all these things.
+</p>
+<div class="note">
+<p><em>Note</em>: Of course, if you’re using a model that does not take images as input, you can’t use Vision. In that case, you’ll have to use the Core ML API directly.
+</p></div>
+
+<p>The way Vision works is that you create a <code>VNRequest</code> object, which describes the task you want to perform, and then you use a <code>VNImageRequestHandler</code> to execute the request. Since you’ll use Vision to run a Core ML model, the request is a subclass named <code>VNCoreMLRequest</code>. Let’s write some code!
+</p>
+<h2 class="segment-chapter">Creating the VNCoreML request</h2>
+
+<p>To add image classification to the app, you’re going to implement <code>classify(image:)</code> in <em>ViewController.swift</em>. This method is currently empty.
+</p>
+<p>Here, you’ll use Vision to run the Core ML model and interpret its results. First, add the required imports to the top of the file:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> CoreML
+<span class="hljs-keyword">import</span> Vision</pre>
+<p>Next, you need to create the <code>VNCoreMLRequest</code> object. You typically create this request object once and re-use it for every image that you want to classify. Don’t create a new request object every time you want to classify an image — that’s wasteful.
+</p>
+<p>In <em>ViewController.swift</em>, add the following code inside the <code>ViewController</code> class below the <code>@IBOutlet</code>s:
+</p><pre class="code-block"><span class="hljs-built_in">lazy</span> <span class="hljs-keyword">var</span> classificationRequest: <span class="hljs-type">VNCoreMLRequest</span> = {
+  <span class="hljs-keyword">do</span> {
+    <span class="hljs-comment">// 1</span>
+    <span class="hljs-keyword">let</span> healthySnacks = <span class="hljs-type">HealthySnacks</span>()
+    <span class="hljs-comment">// 2</span>
+    <span class="hljs-keyword">let</span> visionModel = <span class="hljs-keyword">try</span> <span class="hljs-type">VNCoreMLModel</span>(<span class="hljs-keyword">for</span>: healthySnacks.model)
+    <span class="hljs-comment">// 3</span>
+    <span class="hljs-keyword">let</span> request = <span class="hljs-type">VNCoreMLRequest</span>(model: visionModel,
+                                  completionHandler: {
+      [<span class="hljs-keyword">weak</span> <span class="hljs-keyword">self</span>] request, error <span class="hljs-keyword">in</span>
+      <span class="hljs-built_in">print</span>(<span class="hljs-string">"Request is finished!"</span>, request.results)
+    })
+    <span class="hljs-comment">// 4</span>
+    request.imageCropAndScaleOption = .centerCrop
+    <span class="hljs-keyword">return</span> request
+  } <span class="hljs-keyword">catch</span> {
+    <span class="hljs-built_in">fatalError</span>(<span class="hljs-string">"Failed to create VNCoreMLModel: <span class="hljs-subst">\(error)</span>"</span>)
+  }
+}()</pre>
+<p>Here’s what this code does:
+</p>
+<ol>
+<li>
+<p>Create an instance of <code>HealthySnacks</code>. This is the class from the .mlmodel file’s automatically generated code. You won’t use this class directly, only so you can pass its <code>MLModel</code> object to Vision.
+</p></li>
+
+<li>
+<p>Create a <code>VNCoreMLModel</code> object. This is a wrapper object that connects the <code>MLModel</code> instance from the Core ML framework with Vision.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Create the <code>VNCoreMLRequest</code> object. This object will perform the actual actions of converting the input image to a <code>CVPixelBuffer</code>, scaling it to 227×227, running the Core ML model, interpreting the results, and so on.
+</p></li>
+</ol>
+
+<p>Since Vision requests run asynchronously, you can supply a completion handler that will receive the results. For now, the completion handler just prints something to the Xcode debug output pane. You will flesh this out later.
+</p>
+<ol>
+<li>
+<p>The <code>imageCropAndScaleOption</code> tells Vision how it should resize the photo down to the 227×227 pixels that the model expects.
+</p></li>
+</ol>
+
+<p>The code is wrapped up in a <code>do catch</code> because loading the <code>VNCoreMLModel</code> object can fail if the .mlmodel file is invalid somehow. That should never happen in this example project, and so you handle this kind of error by crashing the app. It is possible for apps to download an .mlmodel file and, if the download fails, the .mlmodel can get corrupted. In that case, you’ll want to handle this error in a more graceful way.
+</p>
+<div class="note">
+<p><em>Note</em>: The <code>classificationRequest</code> variable is a <code>lazy</code> property. In case you’re unfamiliar with lazy properties, this just means that the <code>VNCoreMLRequest</code> object is not created until the very first time you use <code>classificationRequest</code> in the app.
+</p></div>
+
+<h3 class="segment-chapter">Crop and scale options</h3>
+
+<p>It has been mentioned a few times now that the model you’re using, which is based on SqueezeNet, requires input images that are 227×227 pixels. Since you’re using Vision, you don’t really need to worry about this — Vision will automatically scale the image to the correct size. However, there is more than one way to resize an image, and you need to choose the correct method for the model, otherwise it might not work as well as you’d hoped.
+</p>
+<p>What the correct method is for your model depends on how it was trained. When a model is trained, it’s shown many different example images to learn from. Those images have all kinds of different dimensions and aspect ratios, and they also need to be resized to 227×227 pixels. There are different ways to do this and not everyone uses the same method when training their models.
+</p>
+<p>For the best results you should set the request’s <code>imageCropAndScaleOption</code> property so that it uses the same method that was used during training.
+</p>
+<p>Vision offers three possible choices:
+</p>
+<ul>
+<li>
+<p><code>centerCrop</code>
+</p></li>
+
+<li>
+<p><code>scaleFill</code>
+</p></li>
+
+<li>
+<p><code>scaleFit</code>
+</p></li>
+</ul>
+
+<p>The <code>.centerCrop</code> option first resizes the image so that the smallest side is 227 pixels, and then it crops out the center square:
+</p><div class="image-80"><img src="graphics/img27.png"  alt="" title="The centerCrop option" /></div>
+<p>Note that this removes pixels from the left and right edges of the image (or from the top/bottom if the image is in portrait). If the object of interest happens to be in that part of the image, then this will throw away useful information and the classifier may only see a portion of the object. When using <code>.centerCrop</code> it’s essential that the user points the camera so that the object is in the center of the picture.
+</p>
+<p>With <code>.scaleFill</code>, the image gets resized to 227×227 without removing anything from the sides, so it keeps all the information from the original image — but if the original wasn’t square then the image gets squashed. Finally, <code>.scaleFit</code> keeps the aspect ratio intact but compensates by filling in the rest with black pixels.
+</p><div class="image-55"><img src="graphics/img28.png"  alt="" title="The scaleFill and scaleFit options" /></div>
+<p>For the Healthy Snacks app, you’ll use <code>.centerCrop</code> as that’s also the resizing strategy that was used to train the model. Just make sure that the object you’re pointing the camera at is near the center of the picture for the best results. Feel free to try out the other scaling options to see what kind of difference they make to the predictions, if any.
+</p>
+<h2 class="segment-chapter">Performing the request</h2>
+
+<p>Now that you have the request object, you can implement the <code>classify(image:)</code> method. Add the following code to that method:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">classify</span><span class="hljs-params">(image: UIImage)</span></span> {
+  <span class="hljs-comment">// 1</span>
+  <span class="hljs-keyword">guard</span> <span class="hljs-keyword">let</span> ciImage = <span class="hljs-type">CIImage</span>(image: image) <span class="hljs-keyword">else</span> {
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">"Unable to create CIImage"</span>)
+    <span class="hljs-keyword">return</span>
+  }
+  <span class="hljs-comment">// 2</span>
+  <span class="hljs-keyword">let</span> orientation = <span class="hljs-type">CGImagePropertyOrientation</span>(image.imageOrientation)
+  <span class="hljs-comment">// 3</span>
+  <span class="hljs-type">DispatchQueue</span>.global(qos: .userInitiated).async {
+    <span class="hljs-comment">// 4</span>
+    <span class="hljs-keyword">let</span> handler = <span class="hljs-type">VNImageRequestHandler</span>(ciImage: ciImage,
+                                        orientation: orientation)
+    <span class="hljs-keyword">do</span> {
+      <span class="hljs-keyword">try</span> handler.perform([<span class="hljs-keyword">self</span>.classificationRequest])
+    } <span class="hljs-keyword">catch</span> {
+      <span class="hljs-built_in">print</span>(<span class="hljs-string">"Failed to perform classification: <span class="hljs-subst">\(error)</span>"</span>)
+    }
+  }
+}</pre>
+<p>The image that you get from <code>UIImagePickerController</code> is a <code>UIImage</code> object but Vision prefers to work with <code>CGImage</code> or <code>CIImage</code> objects. Either will work fine, and they’re both easy to obtain from the original <code>UIImage</code>. The advantage of using a <code>CIImage</code> is that this lets you apply additional Core Image transformations to the image, for more advanced image processing.
+</p>
+<p>Here is what the method does, step-by-step:
+</p>
+<ol>
+<li>
+<p>Converts the <code>UIImage</code> to a <code>CIImage</code> object.
+</p></li>
+
+<li>
+<p>The <code>UIImage</code> has an <code>imageOrientation</code> property that describes which way is up when the image is to be drawn. For example, if the orientation is “down,” then the image should be rotated 180 degrees. You need to tell Vision about the image’s orientation so that it can rotate the image if necessary, since Core ML expects images to be upright.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Because it may take Core ML a moment or two to do all the calculations involved in the classification (recall that SqueezeNet does 390 million calculations for a single image), it is best to perform the request on a background queue, so as not to block the main thread.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Create a new <code>VNImageRequestHandler</code> for this image and its orientation information, then call <code>perform()</code> to actually do execute the request. Note that <code>perform()</code> takes an array of <code>VNRequest</code> objects, so that you can perform multiple Vision requests on the same image if you want to. Here, you just use the <code>VNCoreMLRequest</code> object from the <code>classificationRequest</code> property you made earlier.
+</p></li>
+</ol>
+
+<p>The above steps are pretty much the same for any Vision Core ML app.
+</p>
+<p>Because you made the <code>classificationRequest</code> a <code>lazy</code> property, the very first time <code>classify(image:)</code> gets called it will load the Core ML model and set up the Vision request. But it only does this once and then re-uses the same request object for every image. On the other hand, you do need to create a new <code>VNImageRequestHandler</code> every time, because this handler object is specific to the image you’re trying to classify.
+</p>
+<h3 class="segment-chapter">Image orientation</h3>
+
+<p>When you take a photo with the iPhone’s camera, regardless of how you’re holding the phone, the image data is stored as landscape because that’s the native orientation of the camera sensor. iOS keeps track of the true orientation of the image with the <code>imageOrientation</code> property. For an image in your photo album, the orientation information is stored in the image file’s EXIF data.
+</p>
+<p>If you’re holding the phone in portrait mode and snap a picture, its <code>imageOrientation</code> will be <code>.right</code> to indicate the camera has been rotated 90 degrees clockwise. 0 degrees means that the phone was in landscape with the Home button on the right.
+</p>
+<p>An <code>imageOrientation</code> of <code>.up</code> means that the image already has the correct side up. This is true for pictures taken in landscape but also for portrait pictures from other sources, such as an image you create in Photoshop.
+</p>
+<p>Most image classification models expect to see the input image with the correct side up. Notice that the Core ML model does not take “image orientation” as an input, so it will see only the “raw” pixels in the image buffer without knowing which side is up.
+</p>
+<p>Image classifiers are typically trained to account for images being horizontally flipped so that they can recognize objects facing left as well as facing right, but they’re usually not trained to deal with images that rotated by 90, 180 or 270 degrees.
+</p>
+<p>If you pass in an image that is not oriented properly, the model may not give accurate predictions because it has not learned to look at images that way.
+</p><div class="image-75"><img src="graphics/img29.png"  alt="" title="This cat is not right-side up" /></div>
+<p>This is why you need to tell Vision about the image’s orientation so that it can properly rotate the image’s pixels before they get passed to Core ML. Since Vision uses <code>CGImage</code> or <code>CIImage</code> instead of <code>UIImage</code>, you need to convert the <code>UIImage.Orientation</code> value to a <code>CGImagePropertyOrientation</code> value.
+</p>
+<h3 class="segment-chapter">Trying it out</h3>
+
+<p>At this point, you can build and run the app and choose a photo.
+</p>
+<p>It’s possible to run this app in the Simulator but only the photo library button is active. The photo library on the Simulator doesn’t contain pictures of snacks by default, but you can add your own by Googling for images and then dragging those JPEGs or PNGs into the Photos app.
+</p>
+<p>Run the app on a device to use the camera, as the Simulator does not support taking pictures.
+</p>
+<p>Take or choose a picture, and the Xcode debug pane will output something like this:
+</p><pre class="code-block">Request is finished! Optional([&lt;VNClassificationObservation: 0x60c00022b940&gt; B09B3F7D-89CF-405A-ABE3-6F4AF67683BB 0.81705 &quot;healthy&quot; (0.917060), &lt;VNClassificationObservation: 0x60c000223580&gt; BC9198C6-8264-4B3A-AB3A-5AAE84F638A4 0.18295 &quot;unhealthy&quot; (0.082940)])</pre>
+<p>This is the output from the <code>print</code> statement in the completion handler of the <code>VNCoreMLRequest</code>. It prints out the <code>request.results</code> array. As you can see, this array contains two <code>VNClassificationObservation</code> objects, one with the probability for the healthy class (0.917060 or 91.7%) and the other with the probability for the unhealthy class (0.082940 or 8.29%).
+</p>
+<p>Of course, printing stuff to the output pane isn’t very exciting, so let’s properly show these results in the app.
+</p>
+<h2 class="segment-chapter">Showing the results</h2>
+
+<p>Inside the declaration of <code>lazy var classificationRequest</code>, change the completion handler for the <code>VNCoreMLRequest</code> object to the following:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> request = <span class="hljs-type">VNCoreMLRequest</span>(model: visionModel, completionHandler: {
+  [<span class="hljs-keyword">weak</span> <span class="hljs-keyword">self</span>] request, error <span class="hljs-keyword">in</span>
+  <span class="hljs-keyword">self</span>?.processObservations(<span class="hljs-keyword">for</span>: request, error: error)  <span class="hljs-comment">// add this</span>
+})</pre>
+<p>Instead of the <code>print</code> statement that was there previously, you’re now calling a new method, <code>processObservations(for:error:)</code>. It’s perfectly possible to put the code that handles the results directly inside the completion handler, but it tends to make the code harder to read.
+</p>
+<p>Add the new method to <em>ViewController.swift</em>:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">processObservations</span><span class="hljs-params">(<span class="hljs-keyword">for</span> request: VNRequest, error: Error?)</span></span> {
+  <span class="hljs-comment">// 1</span>
+  <span class="hljs-type">DispatchQueue</span>.main.async {
+    <span class="hljs-comment">// 2</span>
+    <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> results = request.results <span class="hljs-keyword">as</span>? [<span class="hljs-type">VNClassificationObservation</span>] {
+      <span class="hljs-comment">// 3</span>
+      <span class="hljs-keyword">if</span> results.isEmpty {
+        <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-string">"nothing found"</span>
+      } <span class="hljs-keyword">else</span> {
+        <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-type">String</span>(format: <span class="hljs-string">"%@ %.1f%%"</span>,
+                                        results[<span class="hljs-number">0</span>].identifier,
+                                        results[<span class="hljs-number">0</span>].confidence * <span class="hljs-number">100</span>)
+      }
+    <span class="hljs-comment">// 4</span>
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> error = error {
+      <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-string">"error: <span class="hljs-subst">\(error.localizedDescription)</span>"</span>
+    } <span class="hljs-keyword">else</span> {
+      <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-string">"???"</span>
+    }
+    <span class="hljs-comment">// 5</span>
+    <span class="hljs-keyword">self</span>.showResultsView()
+  }
+}</pre>
+<p>Here’s what this method does, step-by-step:
+</p>
+<ol>
+<li>
+<p>The request’s completion handler is called on the same background queue from which you launched the request. Because you’re only allowed to call UIKit methods from the main queue, the rest of the code in this method runs on the main queue.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>The <code>request</code> parameter is of type <code>VNRequest</code>, the base class of <code>VNCoreMLRequest</code>. If everything went well, the request’s <code>results</code> array contains one or more <code>VNClassificationObservation</code> objects. If the cast fails, it’s either because there was an error performing the request and <code>results</code> is nil, or the array contains a different type of observation object, which happens if the model isn’t actually a classifier or the Vision request object wasn’t for a Core ML model.
+</p></li>
+
+<li>
+<p>Put the class name in the results label. Assuming the array is not empty, it contains a <code>VNClassificationObservation</code> object for each possible class. Each of these has an <code>identifier</code> (the name of the class: “healthy” or “unhealthy”) and a <code>confidence</code> score. This score is how likely the model thinks the object is of this class; in other words, it’s the probability for that class.
+</p>
+<p>Vision automatically sorts the results by confidence, so <code>results[0]</code> contains the class with the highest confidence — the winning class. The app will show both the name and confidence in the results label, where the confidence is shown as a percentage, e.g., <code>&quot;healthy 95%&quot;</code>.
+</p>
+<p>By the way, it should never happen that the array is empty but, in the unlikely case that it is, you show a “nothing found” message in the label.
+</p></li>
+
+<li>
+<p>Just in case something went wrong with the request, show an error message. This normally shouldn’t happen, but it’s good to cover all your bases.
+</p></li>
+
+<li>
+<p>Finally, show the <code>resultsLabel</code> on the screen. The <code>showResultsView()</code> method performs a nice little animation, which makes it clear to the user that their image has been classified.
+</p></li>
+</ol>
+
+<p>And that’s all you need to do. Build and run the app and classify some images!
+</p><div class="image-100"><img src="graphics/img30.png"  alt="" title="Predictions on a few test images" /></div>
+<p>Pretty cool. With just a few lines of code you’ve added a state-of-the-art image classifier to your app!
+</p>
+<div class="note">
+<p><em>Note</em>: When you viewed the Core ML model in Xcode (by selecting the .mlmodel file in the Project navigator), it said that the model had two outputs: a dictionary containing the probabilities and the label for the top prediction. However, the Vision request gives you an array of <code>VNClassificationObservation</code> objects instead. Vision takes that dictionary from Core ML and turns it into its own kind of “observation” objects. Later on, you’ll see how to use Core ML directly, without using Vision, and, in that case, you do get access directly to the model’s outputs.
+</p></div>
+
+<h3 class="segment-chapter">What if the image doesn’t have a snack?</h3>
+
+<p>The app shows the winning class and the confidence it has in this prediction. In the above image on the left, the class is “healthy” and the confidence is 94.8%.
+</p>
+<p>If the output is something like “healthy 95%,” the model feels pretty sure about itself. You’ll see this kind of prediction on pictures of oranges, apples, bananas and so on. Likewise, if the output is “unhealthy 95%,” the model is pretty sure that it’s correct about the snack being unhealthy, and you’ll see this on pictures of pretzels and waffles. That’s good, we like to see confident predictions.
+</p>
+<p>The model used in this app was trained on 20 different types of snacks. But what happens when you show it a kind of snack that it has never seen before, or maybe even a totally different kind of object — maybe something that isn’t even edible?
+</p>
+<p>Since a binary classifier only understands two classes, it puts any picture that you give it into the “healthy” category or into the “unhealthy” category, even if the picture isn’t really of a kind of snack that it knows about.
+</p>
+<p>This particular classifier is trained to tell the difference between healthy and unhealthy snacks, and it should therefore be used only with photos of such snacks. For all other images — let’s say of cute cats — the classifier will give a non-sensical prediction. After all, it only has “healthy” or “unhealthy” to choose from. (And no, we do not endorse having cats as a snack.)
+</p>
+<p>What you <i>want</i> to happen for such an “unsupported” input image is that the model gives a very uncertain prediction, something that is more like a 51%–49% split. In that case, Vision might return two <code>VNClassificationObservation</code> objects like this:
+</p><pre class="code-block">element 0: healthy 51%
+element 1: unhealthy 49%</pre>
+<p>If the model isn’t sure, that’s actually a very acceptable answer: It could be either class. However, since Vision automatically sorts this array by confidence score, the app will show the prediction “healthy” as the winning label. But is it really? Since the model is so uncertain now, changing these percentages only slightly can completely change the outcome:
+</p><pre class="code-block">element 0: unhealthy 52%
+element 1: healthy 48%</pre>
+<p>If you get such a prediction for one of your photos, try taking the same photo again but from a slightly different angle. The small variation between the photos can easily flip the uncertain prediction from one class to the other.
+</p>
+<p>The moral of the story is that when the probabilities get close to 50%–50%, the model doesn’t really know what to make of the image. It’s a good idea to make the app deal with such situations. After all, there is nothing that prevents the user from taking a photo of something that is not a snack.
+</p>
+<p>In <code>processObservations(for:error:)</code>, add the following clause to the if statement:
+</p><pre class="code-block"><span class="hljs-keyword">if</span> results.isEmpty {
+  . . .
+} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> results[<span class="hljs-number">0</span>].confidence &lt; <span class="hljs-number">0.8</span> {
+  <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-string">"not sure"</span>
+} <span class="hljs-keyword">else</span> {
+  . . .</pre>
+<p>Here, we’ve chosen a threshold value of 0.8 (or 80% confidence). If the model was less confident about its winning prediction than this threshold, you decide that you can’t trust the prediction it made, and the app will say “not sure.”
+</p>
+<p>The threshold value of 0.8 was picked arbitrarily. This is something you would test in practice by pointing the phone at many real-world objects to get a feel for what confidence level is trustworthy and below which level the model starts to make too many mistakes. This is actually different for every model, and so you need to test it in practice. There are also mathematical ways to find a suitable threshold, such as using a Precision-Recall curve or the Receiver Operator Characteristic (ROC) curve.
+</p>
+<div class="note">
+<p><em>Note</em>: Remember that it doesn’t make sense to test for a confidence below 0.5, as the winning prediction will always have a confidence score of greater than 50%. There are only two classes in a binary classifier and their total confidence score needs to add up to 100%.
+</p></div>
+
+<p>However, it can still happen that you run into a situation like this:
+</p><div class="image-45"><img src="graphics/img31.png"  alt="" title="Yeah, I wouldn’t eat this either" /></div>
+<p>The model was quite confident about this prediction even though the object is far from edible! Sometimes the classifier will give a very confident answer that is totally wrong. This is a limitation of all classifiers.
+</p>
+<p>It’s important to understand that machine learning models will only work reliably when you use them with data that is very similar to the data they’ve been trained on. A model can only make trustworthy predictions on the types of things it has learned about — it will fail spectacularly on anything else. Machine learning often seems like magic… but it does have its limitations.
+</p>
+<p>The only way to fix this kind of problem is to make your model more robust by training it on more images, or by adding a third category so that the model can learn the difference between “healthy snack,” “unhealthy snack,” and “not a snack.” But even then your model will still make errors. Using machine learning for computer vision tasks works really well, but it’s never perfect.
+</p>
+<p>In the chapter on training, you’ll see how you can estimate the quality of the model to get an idea of how well it will work in practice.
+</p>
+<h3 class="segment-chapter">What if there’s more than one object in the image?</h3>
+
+<p>Image classification always looks at the entire image and tries to find out what the most prominent object in the image is. But nothing stops you from running an image classifier on a picture containing objects from more than one class:
+</p><div class="image-100"><img src="graphics/img32.png"  alt="" title="Make up your mind!" /></div>
+<p>In this example, the classifier has found both an apple and a hotdog, but it seems to think that the hot dog is slightly more important. Perhaps it’s because the hot dog takes up more room in the image, or maybe the model just had a harder time recognizing the apples. In any case, it had to make an impossible choice between two classes that are really supposed to be mutually exclusive and this is what it came up with.
+</p>
+<p>However, based on these percentages, you can’t just say, “This image contains an unhealthy snack.” It does, but it also contains a healthy snack. With the new rule that we just added, the model would say “not sure” for this particular photo, since neither class has over 80% confidence.
+</p>
+<p>But it’s also possible that the model predicts something like 90% healthy or unhealthy for an image such as this. All bets are off, since this is not a problem the HealthySnacks model was really trained for. With an image classifier like this, the input image is really supposed to contain one “main” object, not multiple objects — or at most multiple objects that are all from the same class. The model can’t really handle images with more than one object if they are from different classes.
+</p>
+<p>In any case, image classification works best when there is just a single object in the image. The computer vision task that’s about finding all the objects in an image, and also where they are located in the image, is called <i>object detection</i> and we’ll talk about that in the chapter “Beyond Image Classification.”
+</p>
+<h2 class="segment-chapter">How does it work?</h2>
+
+<p>At this point, you may be wondering exactly how this Core ML model is able to tell apart healthy snacks from unhealthy snacks. The model takes an image as input and produces a probability distribution as output, but what is the magic that makes this happen? Let’s peek under the hood a little.
+</p>
+<p>The <em>HealthySnacks.mlmodel</em> is a so-called neural network classifier. You’ve already seen classification, but you may not know exactly what a neural network is.
+</p>
+<p>Artificial neural networks are inspired by the human brain. The particular neural network used by HealthySnacks is a so-called “convolutional” neural network, which in many ways is similar to how the human visual cortex processes information.
+</p>
+<p>Despite how they’re often depicted in the popular press, it’s really not that useful to think of these artificial neural networks as a computerized version of human brains. Artificial neural networks are only a very crude model of how the human brain works — and not nearly as complicated.
+</p>
+<p>It’s much more constructive to think of a neural network as a pipeline that transforms data in several different stages. A machine learning model is like a Swift function:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> outputs = myModel(inputs)</pre>
+<p>In the case of an image classifier, the function signature looks like the following, where the input is an image of some kind and the output an array of numbers, the probability distribution over the classes:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">myModel</span><span class="hljs-params">(input: Image)</span></span> -&gt; [<span class="hljs-type">Double</span>] {
+  <span class="hljs-comment">// a lot of fancy math</span>
+}</pre>
+<p>Core ML treats the model as a black box, where input goes into one end and the output comes out the other. Inside this black box it actually looks like a pipeline with multiple stages:
+</p><div class="image-100"><img src="graphics/img33.png"  alt="" title="The model is a pipeline" /></div>
+<p>Each of these stages, or <em>layers</em> as we call them, transforms the data in some way. In code, you can think of it as a sequence of <code>map</code>, <code>filter</code>, and <code>reduce</code> operations:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">myModel</span><span class="hljs-params">(input: Image)</span></span> -&gt; [<span class="hljs-type">Double</span>] {
+  <span class="hljs-keyword">return</span> input.<span class="hljs-built_in">map</span>({...}).<span class="hljs-built_in">filter</span>({...}).<span class="hljs-built_in">map</span>({...}).<span class="hljs-built_in">reduce</span>({...})
+}</pre>
+<p>That’s really all there is to it. Despite its sci-fi name, a neural network is a very straightforward thing, just a series of successive stages that each transforms the data in its own way, until the data comes out in the form you want. The layers inside an image classifier transform the data from an image into a probability distribution.
+</p>
+<p>In modern neural networks, pipelines are not just a straight series of transformations but they can branch and the results of branches can be combined again in a later stage. For example, the SqueezeNet neural network architecture that the HealthySnacks model is based on looks something like this:
+</p><div class="image-100"><img src="graphics/img34.png"  alt="" title="Part of the SqueezeNet pipeline" /></div>
+<p>All the magic happens inside the layers that perform the transformations. So surely that must involve lots of complicated math? Well, no. Each individual transformation is a relatively simple mathematical operation. The power of the neural network comes from combining these transformations. By putting many simple transformations together, you end up with a pipeline that can compute the answers to some pretty complex problems.
+</p>
+<p>Early neural networks only used two or three layers (transformations), as training with more layers was fraught with problems. But those problems have been solved in recent years and now we routinely use neural networks with dozens or even hundreds of layers, which is why using these neural nets is called “deep learning.” SqueezeNet has 67 layers although in practice certain types of layers are fused together for better speed.
+</p>
+<h3 class="segment-chapter">Into the next dimension</h3>
+
+<p>Let’s dive a little deeper into the math, just so you get a better conceptual idea of what these transformations do. Neural networks, like most machine learning models, can only work with numerical data. Fortunately for us, the data we care about in this chapter — the input image and the output probabilities — are all represented as numbers already. Models that work on data such as text would first need to convert that data into numbers.
+</p>
+<p>The input image is 227×227 pixels and is a color image, so you need 227 × 227 × 3 = 154,587 numbers to describe an input image. For the sake of explanation, let’s round this down to 150,000 numbers.
+</p>
+<div class="note">
+<p><em>Note</em>: Each pixel needs three numbers because color is stored as RGB: a red, green and blue intensity value. Some images also have a fourth channel, the alpha channel, that stores transparency information, but this is typically not used by image classifiers. It’s OK to use an RGBA image as input, but the classifier will simply ignore the alpha value.
+</p></div>
+
+<p>Here’s the big idea: Each of the 227×227 input images can be represented by a unique point in a 150,000-dimensional space.
+</p>
+<p>Whoop, try to wrap your head around that… It’s pretty easy for us humans to think in 3D space but not so much in higher-dimensional spaces, especially not ones with hundreds of thousands of dimensions. But the principle is the same: given 3 numbers <i>(x, y, z)</i> you can describe any point in 3-dimensional space, right? Well, given 150,000 numbers with the RGB values of all the pixels in the image, you end up at a point in 150,000-dimensional space.
+</p><div class="image-65"><img src="graphics/img35.png"  alt="" title="Pretend this is 150,000 dimensions" /></div>
+<p>By the way, don’t try to think in 150,000 dimensions. Just imagine a 3D space and pretend it’s more than three dimensions. That’s what everyone else does too, since humans simply aren’t capable of visualizing more than three dimensions.
+</p>
+<p>To classify the images, you want to be able to draw a line through this high-dimensional space and say, “All the images containing healthy snacks are on this side of the line, and all the images with unhealthy snacks are on the other side.” If that would be possible, then classifying an image is easy: You just have to look at which side of the line the image’s point falls.
+</p><div class="image-85"><img src="graphics/img36.png"  alt="" title="The decision boundary divides up the space into two classes" /></div>
+<p>This line is called the <em>decision boundary</em>. It’s the job of the classifier model to learn where that decision boundary lies. Math alert: It’s not really a line but a hyperplane, which is a subspace that splits the high-dimensional space into two halves. One of the benefits of being a machine learning practitioner is that you get to use cool words such as hyperplane.
+</p>
+<p>The problem is that you cannot draw a nice line through the 150,000-dimensional pixel space because ordering the images by their pixel values means that the healthy and unhealthy images are all over the place.
+</p>
+<p>Since pixels capture light intensity, images that have the same color and brightness are grouped together, while images that have different colors are farther apart. Apples can be red or green but, in pixel space, such images are not close together. Candy can also be red or green, so you’ll find pictures of apples mixed up with pictures of candy.
+</p>
+<p>You cannot just look at how red or green something is to decide whether this image contains something healthy or unhealthy.
+</p>
+<p>All the information you need to make a classification is obviously contained in the images, but the way the images are spread out over this 150,000-dimensional pixel space is not very useful. What you want instead is a space where all the healthy snacks are grouped together and all the unhealthy snacks are grouped together, too.
+</p>
+<p>This is where the neural network comes in: The transformations that it performs in each stage of the pipeline will twist, turn, pull and stretch this coordinate space, until all the points that represent healthy snacks will be over on one side and all the points for unhealthy snacks will be on the other, and you can finally draw that line between them.
+</p>
+<h3 class="segment-chapter">A concrete example</h3>
+
+<p>Here is a famous example that should illustrate the idea. In this example the data is two-dimensional, so each input consists of only two numbers <i>(x, y)</i>. This is also a binary classification problem, but in the original coordinate space it’s impossible to draw a straight line between the two classes:
+</p><div class="image-55"><img src="graphics/img37.png"  alt="" title="An impossible classification problem…" /></div>
+<p>In theory, you could classify this dataset by learning to separate this space using an ellipse instead of a straight line, but that’s rather complicated. It’s much easier to perform a smart transformation that turns the 2D space into a 3D space by giving all points a <i>z</i>-coordinate too. The points from class A (the triangles) get a small <i>z</i> value, the points from class B (the circles) get a larger <i>z</i> value.
+</p>
+<p>Now the picture looks like this:
+</p><div class="image-60"><img src="graphics/img38.png"  alt="" title="…but easy after transforming the data" /></div>
+<p>After applying this transformation, both classes get cleanly separated. You can easily draw a line between them at <i>z = 0.5</i>. Any point with z-coordinate less than 0.5 belongs to class A, and any point with z greater than 0.5 belongs to class B.
+</p>
+<p>The closer a point’s z-coordinate is to the line, the less confident the model is about the class for that point. This also explains why probabilities get closer to 50% when the HealthySnacks model can’t decide whether the snack in the image is healthy or unhealthy. In that case, the image gets transformed to a point that is near the decision boundary. Usually, the decision boundary is a little fuzzy and points with <i>z</i> close to 0.5 could belong to either class A (triangles) or class B (circles).
+</p>
+<p>The cool thing about neural networks is that they can automatically learn to make these kinds of transformations, to convert the input data from a coordinate space where it’s hard to tell the points apart, into a coordinate space where it’s easy. That is exactly what happens when you train the model. It learns the transformations and how to find the best decision boundary.
+</p>
+<p>To classify a new image, the neural network will apply all the transformations it has learned during training, and then it looks at which side of the line the transformed image falls. And that’s the secret sauce of neural network classification!
+</p>
+<p>The only difference between this simple example and our image classifier is that you’re dealing with 150,000 dimensions instead of two. But the idea – and the underlying mathematics — is exactly the same for 150,000 dimensions as it is for two.
+</p>
+<div class="note">
+<p><em>Note</em>: In general, the more complex the data, the deeper the neural network has to be. For the 2D example above, a neural net with just two layers will suffice. For images, which are clearly much more complex, the neural net needs to be deeper because it needs to perform more transformations to get a nice, clean decision boundary.
+</p></div>
+
+<p>Over the course of the next chapters, we’ll go into more details about exactly what sort of transformations are performed by the neural network. In a typical deep learning model, these are convolutions (look for patterns made by small groups of pixels, thereby mapping the points from one coordinate space to another), pooling (reduce the size of the image to make the coordinate space smaller), and logistic regression (find where to draw the line / decision boundary).
+</p>
+<h2 class="segment-chapter">Multi-class classification</h2>
+
+<p>So far, we’ve covered binary classification in which there are only two classes, but it’s also really easy to use a model that can handle multiple classes. This is called… wait for it… a multi-class classifier — or, sometimes, a multinomial classifier.
+</p>
+<p>In this section, you’ll swap out the binary classifier for <em>MultiSnacks.mlmodel</em>, a multi-class classifier that was trained on the exact same data as the binary healthy/unhealthy classifier but that can detect the individual snacks.
+</p><div class="image-35"><img src="graphics/img39.png"  alt="" title="Recognizing multiple classes" /></div>
+<p>Integrating this new model into the app couldn’t be simpler. You can either do this in a copy of your existing app or use the MultiSnacks starter app.
+</p>
+<p>Now, drag the <em>MultiSnacks.mlmodel</em> from this chapter’s downloaded resources into the Xcode project.
+</p>
+<p>If you look at this new .mlmodel file in Xcode, or at the automatically generated code, you’ll notice that it looks exactly the same as before, except that the names of the Swift classes are different (<code>MultiSnacks</code> instead of <code>HealthySnacks</code>) because the name of the .mlmodel file is different, too.
+</p>
+<p>To use this new model, make the following change on the <code>classificationRequest</code> property:
+</p><pre class="code-block"><span class="hljs-built_in">lazy</span> <span class="hljs-keyword">var</span> classificationRequest: <span class="hljs-type">VNCoreMLRequest</span> = {
+  <span class="hljs-keyword">do</span> {
+    <span class="hljs-keyword">let</span> multiSnacks = <span class="hljs-type">MultiSnacks</span>()
+    <span class="hljs-keyword">let</span> visionModel = <span class="hljs-keyword">try</span> <span class="hljs-type">VNCoreMLModel</span>(<span class="hljs-keyword">for</span>: multiSnacks.model)
+    . . .</pre>
+<p>Instead of creating an instance of <code>HealthySnacks</code>, all you need to do is make an instance of <code>MultiSnacks</code>. This is the name of the class that Xcode generated automatically when you added MultiSnacks.mlmodel to the project.
+</p>
+<p>Also change the innermost if statement in <code>processObservations(for:error:)</code> to:
+</p><pre class="code-block"><span class="hljs-keyword">if</span> results.isEmpty {
+  <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-string">"nothing found"</span>
+} <span class="hljs-keyword">else</span> {
+  <span class="hljs-keyword">let</span> top3 = results.<span class="hljs-keyword">prefix</span>(<span class="hljs-number">3</span>).<span class="hljs-built_in">map</span> { observation <span class="hljs-keyword">in</span>
+    <span class="hljs-type">String</span>(format: <span class="hljs-string">"%@ %.1f%%"</span>, observation.identifier,
+           observation.confidence * <span class="hljs-number">100</span>)
+  }
+  <span class="hljs-keyword">self</span>.resultsLabel.text = top3.joined(separator: <span class="hljs-string">"\n"</span>)
+}</pre>
+<p>Instead of showing only the best result — the class with the highest confidence score — this now displays the names of the three best classes.
+</p>
+<p>Since the model was trained on 20 different object types, it outputs a probability distribution that looks something like this:
+</p><div class="image-100"><img src="graphics/img40.png"  alt="" title="The new probability distribution" /></div>
+<p>Where previously there were only two values (healthy/unhealthy), there are now 20 possible outcomes, and the 100 total percentage points are distributed over these twenty possible classes — which is why it’s called a probability distribution.
+</p>
+<p>The app displays the three predicted classes with the highest probability values. Since there are now 20 classes, the <code>results</code> array contains 20 <code>VNClassificationObservation</code> objects, sorted from a high to low confidence score. The <code>prefix(3)</code> method grabs elements 0, 1, and 2 from this array (the ones with the highest probabilities), and you use <code>map</code> to turn them into strings.
+</p>
+<p>For the above probability distribution, this gives:
+</p><pre class="code-block">element 0: carrot 72%
+element 1: orange 15%
+element 2: ice cream 8%</pre>
+<p>The model is fairly confident about this prediction. The first result has a pretty high score, and so you can probably believe that the image really is of a carrot.
+</p>
+<p>The second result is often fairly reasonable — if you squint, an orange could look like a carrot — but the third result and anything below it can be way off the mark.
+</p>
+<p>Given these confidence scores, that’s OK; the model really didn’t think ice cream was a reasonable guess here at only 8% confidence.
+</p>
+<div class="note">
+<p><em>Note</em>: The percentages of these top three choices don’t have to add up to 100%, since there are another 17 classes that will make up the remainder.
+</p></div>
+
+<p>Notice that, when you made these changes to the code, you removed the <code>if</code> statement that checked whether the confidence was less than 80%.
+</p>
+<p>That check made sense for a binary classifier but, when you have multiple classes, the best confidence will often be around the 60% mark. That’s still a pretty confident score.
+</p>
+<p>With a binary classifier and two classes, a random guess is correct 50% of the time. But with 20 classes, a random guess would be correct only 1/20th, or 5%, of the time.
+</p>
+<p>When the multi-class model is very unsure about what is in the image, the probability distribution would look more like this:
+</p><div class="image-100"><img src="graphics/img41.png"  alt="" title="When the multi-class model is unsure" /></div>
+<p>You could still add a kind of “not sure” threshold, but a more reasonable value would be 0.4, or 40%, instead of the 80% that you used with the binary classifier.
+</p>
+<p>Still, just like a binary classifier, the predictions from a multi-class model only make sense if you show it the types of objects that it has been trained to recognize.
+</p>
+<p>If you give the new classifier an image of something that is not one of the 20 kinds of snacks it knows about, such as a dachshund, the model may return a very unsure prediction (“it could be anything”) or a very confident but totally wrong prediction (“it’s a hot dog”).
+</p>
+<p>Again, you can ask what happens when an image contains objects of more than one class?
+</p>
+<p>Well, unlike with the binary classifier in which predictions became very uncertain (50–50), a similar thing happens but now the probabilities get divided over more classes:
+</p><div class="image-40"><img src="graphics/img42.png"  alt="" title="Image with multiple types of fruit" /></div>
+<p>In this example, the classifier correctly recognizes apples and carrots as the top choices, and it tries to split the probabilities between them.
+</p>
+<p>This is why you’re looking at the top three results instead of just the single best score. In image classification competitions, classifiers are usually scored on how well they do on their five best guesses since, that way, you can deal with one image containing more than one object or with objects that are a little ambiguous. As long as the correct answer is among the best five (or three) guesses, we’re happy.
+</p>
+<p>The top-one accuracy says, “Did the classifier get the most important object right?” while the top-three or top-five accuracy says, “Did it find all of the important objects?” For example, if an image that scored orange 70%, watermelon 21%, and muffin 3% really contained a watermelon and not an orange, it would still be counted as a correct classification.
+</p>
+<div class="note">
+<p><em>Note</em>: Don’t confuse multi-class with “multi-label.” A multi-class classifier’s job is to choose a single category for an object from multiple categories. A multi-label classifier’s job is to choose as many categories as applicable for the same object. For example, a multi-label snacks classifier could classify an apple as “healthy”, “fruit”, and “red”.
+</p></div>
+
+<h2 class="segment-chapter">Key points</h2>
+
+<p>To recap, doing image classification with Core ML and Vision in your app involves the following steps:
+</p>
+<ol>
+<li>
+<p>Obtain a trained .mlmodel file from somewhere. You can sometimes find pre-trained models on the web (Apple has a few on its website) but usually you’ll have to build your own. You’ll learn how to do this in the next chapter.
+</p></li>
+
+<li>
+<p>Add the .mlmodel file to your Xcode project.
+</p></li>
+
+<li>
+<p>Create the <code>VNCoreMLRequest</code> object (just once) and give it a completion handler that looks at the <code>VNClassificationObservation</code> objects describing the results.
+</p></li>
+
+<li>
+<p>For every image that you want to classify, create a new <code>VNImageRequestHandler</code> object and tell it to perform the <code>VNCoreMLRequest</code>.
+</p></li>
+</ol>
+
+<p>These steps will work for any kind of image classification model. In fact, you can copy the code from this chapter and use it with any Core ML image classifier.
+</p>
+<h2 class="segment-chapter">Bonus: Using Core ML without Vision</h2>
+
+<p>You’ve seen how easy it is to use Core ML through the Vision framework. Given the amount of work Vision does for you already, it’s recommended to always use Vision when you’re working with image models. However, it is also possible to use Core ML without Vision, and in this section you’ll see how to do so.
+</p>
+<p>For this section, use the starter project again and add the <em>HealthySnacks.mlmodel</em> to the project.
+</p>
+<p>First, take a detailed look at the auto-generated code, since you’ll use this shortly. To see this source file, first click on <em>HealthySnacks.mlmodel</em> in the Project navigator and then click on the little arrow next to the model name in the “Model Class” section.
+</p>
+<p>This opens <em>HealthySnacks.swift</em>, a special source code file that doesn’t actually exist anywhere in the project.
+</p><div class="image-90"><img src="graphics/img43.png"  alt="" title="Viewing the generated code" /></div>
+<p>The main class in this source file is <code>HealthySnacks</code> (located near the bottom of the file). It has a single property named <code>model</code>, which is an instance of <code>MLModel</code>, the main class in the Core ML framework. The <code>init()</code> method loads the .mlmodel from the main bundle.
+</p>
+<p>There are two <code>prediction()</code> methods. The first of these takes an object of type <code>HealthySnacksInput</code> and returns a <code>HealthySnacksOutput</code>. The second one is a convenience method that takes a <code>CVPixelBuffer</code> object as input instead. Notice that there are no methods that accept a <code>CGImage</code> or a <code>CIImage</code> like with Vision.
+</p>
+<p>Both <code>HealthySnacksInput</code> and <code>HealthySnacksOutput</code> are classes that implement the <code>MLFeatureProvider</code> protocol. Remember from the previous chapter that “feature” is the term we use for any value that we use for learning. An <code>MLFeatureProvider</code> is an object that describes such features to Core ML.
+</p>
+<p>In the case of the <code>HealthySnacksInput</code>, there is just one feature: an image in the form of a <code>CVPixelBuffer</code> object that is 227 pixels width and 227 pixels high. Actually the model will treat each R/G/B value in this image as a separate feature, so, technically speaking, the model has 227 × 227 × 3 input features.
+</p>
+<p>The <code>HealthySnacksOutput</code> class provides two features containing the outputs of the model: a dictionary called <code>labelProbability</code> and a string called simply <code>label</code>. The dictionary contains the names of the classes and the confidence score for each, so it’s the same as the probability distribution but in the form of a dictionary instead of an array.
+</p>
+<p>The difference with Vision’s array of <code>VNClassificationObservation</code> objects is that the dictionary is not sorted. The <code>label</code> is simply the name of the class with the highest probability and is provided for convenience.
+</p>
+<div class="note">
+<p><em>Note</em>: The names that Xcode generates for these properties depend on the names of the inputs and outputs in the .mlmodel file. For this particular model, the input is called “image” and so the method becomes <code>prediction(image:)</code>. If the input were called something else in the .mlmodel file, such as “data,” then the method would be <code>prediction(data:)</code>. This is also true for the names of the outputs in the <code>HealthySnacksOutput</code> class. This is something to be aware of when you’re importing a Core ML model: Different models will have different names for the inputs and outputs — another thing you don’t have to worry about when using Vision.
+</p></div>
+
+<p>In order to use the <code>HealthySnacks</code> class without Vision, you have to call its <code>prediction(image:)</code> method and give it a <code>CVPixelBuffer</code> containing the image to classify. When the prediction method is done it returns the classification result as a <code>HealthySnacksOutput</code> object.
+</p>
+<p>Next, you’ll write this code. Switch to <em>ViewController.swift</em> and add the following property to <code>ViewController</code> to create an instance of the model:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> healthySnacks = <span class="hljs-type">HealthySnacks</span>()</pre>
+<p>Now, you need a way to convert the <code>UIImage</code> from <code>UIImagePickerController</code> into a <code>CVPixelBuffer</code>. This object is a low-level description of image data, used by Core Video and AVFoundation. You’re probably used to working with images as <code>UIImage</code> or <code>CGImage</code> objects, and so you need to convert these to <code>CVPixelBuffers</code>, first.
+</p>
+<p>There is no handy API for converting a <code>UIImage</code> to a <code>CVPixelBuffer</code>. However, in the downloads for this chapter, we’ve provided a <code>UIImage</code> extension that does this. Add the file <em>UIImage+CVPixelBuffer.swift</em> to the project.
+</p>
+<p>Change the <code>classify(image:)</code> method to the following:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">classify</span><span class="hljs-params">(image: UIImage)</span></span> {
+  <span class="hljs-type">DispatchQueue</span>.global(qos: .userInitiated).async {
+    <span class="hljs-comment">// 1</span>
+    <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> pixelBuffer = image.pixelBuffer(width: <span class="hljs-number">227</span>, height: <span class="hljs-number">227</span>) {
+      <span class="hljs-comment">// 2</span>
+      <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> prediction = <span class="hljs-keyword">try</span>? <span class="hljs-keyword">self</span>.healthySnacks.prediction(
+                                             image: pixelBuffer) {
+        <span class="hljs-comment">// 3</span>
+        <span class="hljs-keyword">let</span> results = <span class="hljs-keyword">self</span>.top(<span class="hljs-number">1</span>, prediction.labelProbability)
+        <span class="hljs-keyword">self</span>.processObservations(results: results)
+      } <span class="hljs-keyword">else</span> {
+        <span class="hljs-keyword">self</span>.processObservations(results: [])
+      }
+    }
+  }
+}</pre>
+<p>Here’s how this works:
+</p>
+<ol>
+<li>
+<p>Convert the <code>UIImage</code> to a <code>CVPixelBuffer</code> using the helper method. This scales the image to the given size (227×227) and also fixes the orientation if it’s not correct side up yet.
+</p></li>
+
+<li>
+<p>Call the <code>prediction(image:)</code> method. This can potentially fail — if the image buffer is not 227×227 pixels, for example — which is why you need to use <code>try?</code> and put it inside the <code>if let</code>.
+</p></li>
+
+<li>
+<p>The <code>prediction</code> object is an instance of <code>HealthySnacksOutput</code>. You can look at its <code>label</code> property to find the name of the best class, but you want to look at the names of the best scoring classes as well as their probabilities. That’s what the <code>self.top()</code> function does.
+</p></li>
+</ol>
+
+<p>Because <code>MLModel</code>’s prediction method is synchronous, it blocks the current thread until it’s done. For this simple image classifier, that may not be a big deal as it’s fairly fast, but it’s good practice to do the prediction on a background queue anyway.
+</p>
+<p>Xcode now gives errors because the code calls two methods you still need to add. First, add the <code>top()</code> method:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">top</span><span class="hljs-params">(<span class="hljs-number">_</span> k: Int, <span class="hljs-number">_</span> prob: [String: Double])</span></span> -&gt; [(<span class="hljs-type">String</span>, <span class="hljs-type">Double</span>)] {
+  <span class="hljs-keyword">return</span> <span class="hljs-type">Array</span>(prob.<span class="hljs-built_in">map</span> { x <span class="hljs-keyword">in</span> (x.key, x.value) }
+                   .sorted(by: { a, b -&gt; <span class="hljs-type">Bool</span> <span class="hljs-keyword">in</span> a.<span class="hljs-number">1</span> &gt; b.<span class="hljs-number">1</span> })
+                   .<span class="hljs-keyword">prefix</span>(<span class="hljs-built_in">min</span>(k, prob.<span class="hljs-built_in">count</span>)))
+}</pre>
+<p>This looks at the dictionary from <code>prediction.labelProbability</code> and returns the <code>k</code> best predictions as an array of <code>(String, Double)</code> pairs where the string is the label (name of the class) and the <code>Double</code> is the probability / confidence score for that class.
+</p>
+<p>Currently you’re calling <code>top(1, …)</code> because, for the HealthySnacks model, you only care about the highest-scoring class but, for the MultiSnacks model, you might call <code>top(3, …)</code> to get the three best results.
+</p>
+<p>Finally, you can put these <code>(String, Double)</code> pairs into a string to show in the results label:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">processObservations</span><span class="hljs-params">(
+        results: [<span class="hljs-params">(identifier: String, confidence: Double)</span></span></span>]) {
+  <span class="hljs-type">DispatchQueue</span>.main.async {
+    <span class="hljs-keyword">if</span> results.isEmpty {
+      <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-string">"nothing found"</span>
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> results[<span class="hljs-number">0</span>].confidence &lt; <span class="hljs-number">0.8</span> {
+      <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-string">"not sure"</span>
+    } <span class="hljs-keyword">else</span> {
+      <span class="hljs-keyword">self</span>.resultsLabel.text = <span class="hljs-type">String</span>(format: <span class="hljs-string">"%@ %.1f%%"</span>,
+                                      results[<span class="hljs-number">0</span>].identifier,
+                                      results[<span class="hljs-number">0</span>].confidence * <span class="hljs-number">100</span>)
+    }
+    <span class="hljs-keyword">self</span>.showResultsView()
+  }
+}</pre>
+<p>This is very similar to what you did in the Vision version of the app but the results are packaged slightly differently.
+</p>
+<p>So this actually wasn’t too bad, was it? It may even seem like a bit less work than what you had to do for Vision. But this is a little misleading.
+</p>
+<p>Don’t forget that you had to add the <em>UIImage+CVPixelBuffer.swift</em> extension to make the conversion. In addition, there are a few important things the pure Core ML version does not do yet, such as color space matching; this translates from the photo’s color space, which is often sRGB or P3 or even YUV, to the generic RGB space used by the model.
+</p>
+<h2 class="segment-chapter">Challenges</h2>
+
+<p>Apple provides a number of Core ML models that you can download for free, from <a href="https://developer.apple.com/machine-learning/">https://developer.apple.com/machine-learning/</a>.
+</p>
+<p>Your challenge for this chapter is to download the SqueezeNet model and add it to the app. This model is very similar to the classifier you implemented in this chapter, which is also based on SqueezeNet. The main difference is that HealthySnacks is trained to classify 20 different snacks into two groups: healthy or unhealthy. The SqueezeNet model from Apple is trained to understand 1,000 classes of different objects (it’s a multi-class classifier).
+</p>
+<p>Try to add this new model to the app. It should only take the modification of a single line to make this work — that’s how easy it is to integrate Core ML models into your app because they pretty much work all the same.
+</p></body></html>

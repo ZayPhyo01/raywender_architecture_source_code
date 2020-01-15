@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 7: Going Convolutional</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 7: Going Convolutional</h1>
+
+<p>It’s finally time to bring out the big guns and discover what deep learning is all about. In this chapter, you’ll convert the basic neural network into something that works much better on images. The secret ingredient is the <em>convolutional layer</em>.
+</p>
+<h2 class="segment-chapter">Got GPU?</h2>
+
+<p>Having a GPU is no longer a luxury. Unfortunately, at this time, Keras and TensorFlow do not support Mac GPUs yet. Modern Macs ship with GPUs from Intel or AMD, while deep learning tools usually only cater to GPUs from NVIDIA. Older Macs may still have an NVIDIA on board, but these are often too old. Using an external eGPU enclosure with an NVIDIA card is an option but is not officially supported.
+</p>
+<p>Most machine-learning practitioners train their models on a PC running Linux that has one or more NVIDIA GPUs, or in the cloud. The author has built a PC with a GTX 1080 Ti, especially for this purpose. If you’re serious about deep learning, this is an expense worth making.
+</p>
+<p>If all you have is a Mac, you’ll need a lot of patience to train the models in this chapter. Because we want everyone to be able to follow along, the book’s download includes the full Jupyter notebooks that were used to train the models, as well as the final trained version, so you can skip training the models if your computer isn’t up to the task.
+</p>
+<div class="note">
+<p><em>Note</em>: Even though they have serious limitations, the big benefit of Create ML and Turi Create is that they support most Mac GPUs through Metal. No big surprise there, as both are provided by Apple. Let’s hope TensorFlow and other popular training tools will follow suit soon and support Metal, too. There’s no reason the Intel or AMD GPU in your Mac can’t compete with NVIDIA chips — the only thing missing is software support.
+</p></div>
+
+<p>If you have a spare PC with a reasonably recent NVIDIA GPU, and you don’t mind installing Linux on it, then, by all means, give that a go. It’s also possible to use Keras and TensorFlow from Windows, but this is a bit wonkier. We suggest using Ubuntu from <a href="https://www.ubuntu.com">ubuntu.com</a>, the most popular Linux for machine learning.
+</p>
+<p>You will also need to install the NVIDIA drivers, as well as the CUDA and cuDNN libraries. See <a href="https://developer.nvidia.com/">developer.nvidia.com</a> for more details. To install the Python machine learning packages, we suggest using Conda as explained in Chapter 4, “Getting Started with Python &amp; Turi Create.” The process is very similar on Linux and Windows.
+</p>
+<div class="note">
+<p><em>Tip</em>: If you’re installing TensorFlow by hand, make sure to install the <code>tensorflow-gpu</code> package instead of plain <code>tensorflow</code>. Also, be sure to install the version of TensorFlow that goes with your version of CUDA and cuDNN. If these versions don’t match up, TensorFlow won’t work. Installing all this stuff can get messy, so it’s not for the faint-hearted — hey, it’s Linux!
+</p></div>
+
+<h3 class="segment-chapter">Your head in the clouds?</h3>
+
+<p>If you’re just getting your feet wet and you’re not quite ready to build your own deep-learning rig, then the quickest way to get started with GPU training is to use the cloud. You can even use some of these cloud services for free!
+</p>
+<p>Often, there is a starter tier where you get a certain amount of compute hours for free. Some machine-learning-in-the-cloud services make it really easy to run Jupyter notebooks but pay attention: Make sure to shut down your Jupyter notebook when you’re done with it. Usually, you only pay for what you use, but, as long as you keep the Jupyter server running — even if it just sits there doing nothing — it uses up compute time. And when your free limit runs out, this can get costly quite quickly.
+</p>
+<p>Figuring out how to get your training data over to the cloud service is of key importance. Different providers have different solutions for this. Storing your data in the cloud usually isn’t free, but the snacks dataset is small enough — about 120MB — that it won’t break the bank. Usually, you only pay a few cents per gigabyte per month.
+</p>
+<p>Here are some suggestions for machine learning in the cloud:
+</p>
+<ul>
+<li>
+<p><em>Google Colaboratory</em> at <a href="https://colab.research.google.com">colab.research.google.com</a> is a free Jupyter notebook environment. You can use Colab to run your notebooks on a cloud GPU and even a TPU — Google’s own high-performance Tensor Processing Unit hardware — for free. That’s a pretty good deal. Your notebooks are stored in Google Drive. The easiest way to upload the dataset is through Google Cloud Storage, although they offer a few different options. It is best used from Chrome.
+</p></li>
+
+<li>
+<p><em>Paperspace</em> at <a href="https://www.paperspace.com">www.paperspace.com</a>
+</p></li>
+
+<li>
+<p><em>Crestle</em> at <a href="https://www.crestle.com">www.crestle.com</a>
+</p></li>
+
+<li>
+<p><em>FloydHub</em> at <a href="https://www.floydhub.com">www.floydhub.com</a>
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p><em>LeaderGPU</em> at <a href="https://www.leadergpu.com">www.leadergpu.com</a>
+</p></li>
+
+<li>
+<p><em>Amazon AWS EC2</em> at <a href="https://aws.amazon.com">aws.amazon.com</a>. AWS is the world’s most popular provider of general-purpose cloud computing. This is just like having your own deep-learning box, except that you’re renting it from Amazon. You can start out by using the free tier but they also have GPU instances. Not the easiest or cheapest solution, but definitely the most flexible.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Convolution layers</h2>
+
+<p>The models you’ve built in Keras have, so far, consisted of <code>Dense</code> layers, which take a one-dimensional vector as input. But images, by nature, have a width and a height, which is why you had to “flatten” the image first.
+</p>
+<p>Unfortunately, flattening destroys the spatial nature of the input data. What’s more, it also removes depth information from the image. Recall that the depth dimension stores the three color components for each pixel: red, green and blue. These three values are closely related, so you don’t really want to treat them as three separate numbers, but as one indivisible unit: the pixel’s color.
+</p>
+<p>The spatial relationships between the pixels — which pixels are above, below and next to any other pixel — as well as the relationship between the pixel’s color intensities, are obviously important if you want to understand what the image represents. But a lot of this information is lost when flattening into a vector. That’s why the models that used only <code>Dense</code> layers didn’t work so well.
+</p>
+<p>For better results on images, it makes sense to use a kind of layer that directly works on the original three-dimensional structure of the image. That’s what a convolutional layer is for. Not only does it keep the spatial structure of the image intact, it actually learns the relationships between the pixels, which helps it to understand the different patterns that appear in the image.
+</p>
+<p>A neural network made up of such layers is called a convolutional neural network, <em>convnet</em>, or just <em>CNN</em> for short.
+</p>
+<p>Convolutional layers are responsible for the deep learning “Big Bang” in 2012 when a convnet beat the pants off of all the other contestants in the ImageNet Large Scale Visual Recognition Challenge (ILSVRC). Since then, convnets have quickly taken over the world of computer vision and other machine learning domains. And now, you’re going to build your own!
+</p>
+<div class="note">
+<p><em>Note</em>: If you’ve worked with image processing or digital signal processing (DSP) before, you may already be familiar with convolution or cross-correlation. This is the exact same thing but as a neural network layer.
+</p></div>
+
+<h3 class="segment-chapter">Convolution, say what now?</h3>
+
+<p>In case you have no idea what convolution is, rest assured that it sounds a lot more intimidating than it really is. Again, what it comes down to are <em>dot products</em>.
+</p>
+<p>A convolution is a little “window” that slides over the image. At every position, it takes the value of the center pixel and of the surrounding pixels, multiplies these values by a fixed set of numbers — the convolution <em>weights</em> — and writes the result to an output image. The output of a convolution layer is another image of the same width and height as the input image.
+</p><div class="image-45"><img src="graphics/img132.png"  alt="" title="The convolution window slides over the image, left to right, top to bottom" /></div>
+<p>Usually, the convolution window is 3×3 pixels in size, but you’ll also see larger windows such as 5×5 and 7×7. Keeping with the trend of using multiple names for the same thing, the window is also known as the convolution <em>kernel</em> or <em>filter</em>.
+</p>
+<p>For every pixel at coordinate <code>i,j</code> in the input image, this is the math that happens for a 3×3 convolution window:
+</p><pre class="code-block">y[i,j] = w[<span class="hljs-number">0</span>,<span class="hljs-number">0</span>] * x[i-<span class="hljs-number">1</span>,j-<span class="hljs-number">1</span>] + w[<span class="hljs-number">0</span>,<span class="hljs-number">1</span>] * x[i-<span class="hljs-number">1</span>,j] + w[<span class="hljs-number">0</span>,<span class="hljs-number">2</span>] * x[i-<span class="hljs-number">1</span>,j+<span class="hljs-number">1</span>]
+       + w[<span class="hljs-number">1</span>,<span class="hljs-number">0</span>] * x[i,  j-<span class="hljs-number">1</span>] + w[<span class="hljs-number">1</span>,<span class="hljs-number">1</span>] * x[i,  j] + w[<span class="hljs-number">1</span>,<span class="hljs-number">2</span>] * x[i,  j+<span class="hljs-number">1</span>]
+       + w[<span class="hljs-number">2</span>,<span class="hljs-number">0</span>] * x[i+<span class="hljs-number">1</span>,j-<span class="hljs-number">1</span>] + w[<span class="hljs-number">2</span>,<span class="hljs-number">1</span>] * x[i+<span class="hljs-number">1</span>,j] + w[<span class="hljs-number">2</span>,<span class="hljs-number">2</span>] * x[i+<span class="hljs-number">1</span>,j+<span class="hljs-number">1</span>]
+       + bias</pre>
+<p>As you might recognize by now, this is nothing more than a dot product between the weight values <code>w</code> and the pixel we’re looking at, <code>x[i,j]</code>, as well as the eight pixels that surround it. As usual, you also add a bias value.
+</p>
+<p>Therefore, the output value for coordinate <code>i,j</code> is a weighted sum of the input pixel at that same coordinate and the pixels that surround it. The larger the window, the more surrounding pixels this dot product includes. But 3×3 windows are the most common, and so the output value is the weighted sum of nine pixels.
+</p>
+<p>This formula is repeated for every pixel in the input image. We vary <code>i</code> between 0 and the image height, and <code>j</code> between 0 and the image width, and compute the dot product at each pixel coordinate <code>i,j</code>. That’s why we say a convolution “slides” over the image.
+</p><div class="image-100"><img src="graphics/img133.png"  alt="" title="Each step computes a single output value from the 3×3 window at the center pixel" /></div>
+<p>While the pixel values inside the window will be different as it slides over the image, the same 3×3 weight values are used in every image position. This is what allows the convolution layer to learn patterns in the image, regardless of where these patterns appear. In math-speak, convolution is <em>translation invariant</em>, because the weights are the same no matter where you look.
+</p>
+<p>Think of it this way: The convolution operation tries to match a small template — the weights — to every group of 3×3 pixels under the sliding window in the input image. If this group of pixels is a good match for the template, then the dot product’s output value will be high.
+</p>
+<p>If the pixels don’t match the template very well, then the output value will be small, often close to zero. And if the pixels are the complete opposite of the template, the output will be high but negative.
+</p>
+<div class="note">
+<p><em>Note</em>: You may know this principle from statistics as <em>correlation</em>, and it’s why convolution is also known as cross-correlation. The “cross” comes from the fact that you slide the window over the image. Technically speaking, convolution and cross-correlation is not exactly the same thing, as convolution is really cross-correlation done backwards, but <code>¯\_(ツ)_/¯</code>.
+</p></div>
+
+<p>During training, the convolution layer learns values for its weights, which means that it will learn a certain pattern of 3×3 pixels. At inference time, it will go through the input image to find out how well each group of 3×3 input pixels matches with the template it learned.
+</p>
+<p>The output of the convolution layer is, therefore, a new image, with large values for those pixels that match the template well and low values for the pixels that don’t. In other words, the convolution output measures how much the input pixels “respond” to the learned template. Since a dot product always returns a scalar, a single number, the convolution’s output image only has one channel instead of the usual three.
+</p>
+<p>It might seem that learning to detect a 3×3 pattern isn’t really that impressive since such patterns are very small, only nine pixels in total. How useful could that be? By itself not much. The trick behind deep learning is that we put many of these convolution layers in a row so that they can detect patterns that cover successively larger areas in the input image. It turns out this works better than using very large window sizes.
+</p>
+<p>That wasn’t so bad, was it? Convolution is just another bunch of dot products. The main difference with the fully connected or <code>Dense</code> layers that you’ve seen before, is that this only looks at a small portion of the image at a time — through a 3×3 lens — and that it keeps the spatial structure of the image intact. The convolution window has a width and height, just like the image. Therefore the convolution layer is more suitable for learning from images.
+</p>
+<p>As with <code>Dense</code> layers, a convolution layer is usually followed by an activation function, to turn the result from the dot product into something that is non-linear and therefore more interesting. ReLU is the most common activation function used with conv layers.
+</p>
+<div class="note">
+<p><em>Note</em>: For pixels at the edges of the image, there are not always neighbors on all sides of the pixel. There are two common ways of dealing with this: 1) adding zero padding; 2) don’t use these edge pixels. With zero padding, you add an imaginary border of empty pixels around the image so that you never read outside the image. This is also known as <em>same</em> padding because the output image remains the same size as the input image. With the second option, also known as <em>valid</em> padding, the output image will become slightly smaller than the input image since you’re not computing convolutions for the pixels at the edge. Zero-padding is the most common but you’ll also sometimes see valid padding used in practice.
+</p></div>
+
+<h3 class="segment-chapter">Multiple filters</h3>
+
+<p>To keep the explanation simple, we claimed that the convolution uses a 3×3 window. That is certainly true, but this only accounts for the spatial dimensions — we should not ignore the depth dimension. Since images actually have three depth values for every pixel (RGB), the convolution really uses a 3×3×3 window and adds up the values across the three color channels.
+</p><div class="image-25"><img src="graphics/img134.png"  alt="" title="The convolution kernel is really three-dimensional" /></div>
+<p>The input to this convolution filter is a tensor of size <code>(height, width, 3)</code>. The output is a new “image” that has the same width and height as the input image, but a depth of 1. In other words, the output is a <code>(height, width, 1)</code> tensor.
+</p>
+<div class="note">
+<p><em>Note:</em> This assumes we’re using “same” or zero-padding; with “valid” padding, the height and width of the output tensor would be slightly smaller.
+</p></div>
+
+<p>In image processing applications that use convolutions, the three color channels are often processed independently. The output of such a convolution has the same number of color channels as the input. But the convolutions we’re talking about, here, always work across all the color channels and reduce them to a single output channel.
+</p>
+<p>You could think of this new <code>(height, width, 1)</code> tensor as a grayscale image since it now only has one color component instead of three. The “color” of this output image represents how much the input image responds to the template or pattern that this convolution has learned.
+</p>
+<p>We interchangeably use the terms <em>image, tensor, feature map, or activations</em> for these convolution layer outputs.
+</p>
+<p>In practice, a convolution layer will have more than one of these filters. It’s common to see layers with 32, 64, 128, 256, 512 or even 1,024 or more of these convolutions. Each filter learns its own set of weights and bias values.
+</p><div class="image-100"><img src="graphics/img135.png"  alt="" title="The number of filters in the convolution layer determines the depth of its output image" /></div>
+<p>The neural network in the illustration above has several convolutional layers, all with a 3×3 window size. The first layer works on the 227×227×3 input image. Because the input has three channels (RGB), each convolution filter from this first layer learns 3×3×3 weights.
+</p>
+<p>The layer has 32 of those convolution filters, and so it can detect 32 different patterns. Because it has 32 filters that all produce one channel’s worth of data, the output of this layer is a new image of dimensions 227×227×32. Notice that the convolution layer kept the width and height of the image the same but expanded the number of channels from 3 to 32.
+</p>
+<p>If you count them all up, this first layer has learned 3×3×3×32 weights. Read this as <code>kernelHeight × kernelWidth × inputChannels × outputChannels</code>. The layer also has learned 32 bias values, one for each output channel.
+</p>
+<div class="note">
+<p><em>Note</em>: The first convolution layer outputs a tensor of size <code>(227, 227, 32)</code>. Even though we often still call this an “image” — of size 227×227×32 — you can’t really display such images. Your computer’s display panel only has one red, green and blue LED for each pixel — what should it do with the other 29 color channels?! Think of this output tensor as consisting of 32 individual grayscale images, each describing how well the input image matched the template or pattern learned by the corresponding convolution filter.
+</p></div>
+
+<p>The second convolution layer also has a 3×3 window, but now the input tensor has 32 channels, and so each of its convolution filters calculates the dot products over a 3×3×32 window. This layer has 64 of those filters, so its output image/tensor is of size 227×227×64. In total, this second layer will learn 3×3×32×64 weights plus 64 biases.
+</p>
+<p>The filters in the third convolution layer will then each learn 3×3×64 weights, and so on. This structure is typical for convnets: Convolution layers have increasingly larger numbers of filters as you go deeper into the network. The number of filters is usually a power of two. It’s not uncommon for the last layer in a convnet to have 1,024, 2,048 or even 4,096 filters.
+</p>
+<p>Remember, each filter learns to detect a unique pattern in the input data. When you use a convnet as the feature extractor in a classification model, the features given to the logistic regression are the responses of the input image to these pattern detectors. A good feature extractor will learn patterns that tell you something meaningful about the images. The better the patterns it has learned, the more useful features it will produce, and the more accurate predictions the logistic regression can make.
+</p>
+<h2 class="segment-chapter">Your first convnet in Keras</h2>
+
+<p>In a new Jupyter notebook, create the following cells. You can also follow along with <em>ConvNet.ipynb</em>.
+</p>
+<p>First, import the needed packages:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+<span class="hljs-keyword">from</span> keras.models <span class="hljs-keyword">import</span> Sequential
+<span class="hljs-keyword">from</span> keras.layers <span class="hljs-keyword">import</span> *
+<span class="hljs-keyword">from</span> keras <span class="hljs-keyword">import</span> optimizers
+
+%matplotlib inline
+<span class="hljs-keyword">import</span> matplotlib.pyplot <span class="hljs-keyword">as</span> plt</pre>
+<p>Then, define the size of the input images, as well as the size of the output vector:
+</p><pre class="code-block">image_width = <span class="hljs-number">224</span>
+image_height = <span class="hljs-number">224</span>
+num_classes = <span class="hljs-number">20</span></pre>
+<p>In the last chapter, you used 32×32-pixel images to keep the number of learnable parameters down. For a convnet, the number of learnable parameters does not depend on the size of the input image, only on the size of the convolution kernels. So for convnets you can get away with larger images, which is why you’re using 224×224 pixels. That’s a typical input size for convnets.
+</p>
+<div class="note">
+<p><em>Note</em>: You can also keep the input width and height undefined, or <code>None</code>, in which case the convnet will accept input images of any size. You might think that larger images would give more accurate results, but this is not always the case. If a model has been trained on 224×224 images, then the patterns it has learned may not appear in a 1,000×1,000 image. Of course, you could train on 1,000×1,000 images, but large images may take up more RAM than is in your GPU, making it harder to train these models. For classification models, 224×224 is a good compromise between memory usage and accuracy. Vision FeaturePrint uses 299×299, while SqueezeNet uses 227×227. Feel free to experiment with different image sizes in this chapter.
+</p></div>
+
+<p>Next, create the model and add the layers:
+</p><pre class="code-block">model = Sequential()
+model.add(Conv2D(<span class="hljs-number">32</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>,
+                 input_shape=(image_height, image_width, <span class="hljs-number">3</span>)))
+model.add(Conv2D(<span class="hljs-number">32</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>))
+model.add(MaxPooling2D(<span class="hljs-number">2</span>))
+model.add(Conv2D(<span class="hljs-number">64</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>))
+model.add(Conv2D(<span class="hljs-number">64</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>))
+model.add(MaxPooling2D(<span class="hljs-number">2</span>))
+model.add(Conv2D(<span class="hljs-number">128</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>))
+model.add(Conv2D(<span class="hljs-number">128</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>))
+model.add(MaxPooling2D(<span class="hljs-number">2</span>))
+model.add(Conv2D(<span class="hljs-number">256</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>))
+model.add(Conv2D(<span class="hljs-number">256</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>, activation=<span class="hljs-string">"relu"</span>))
+model.add(GlobalAveragePooling2D())
+model.add(Dense(num_classes))
+model.add(Activation(<span class="hljs-string">"softmax"</span>))</pre>
+<p>You’ve seen the <code>Dense</code> and <code>Activation(&quot;softmax&quot;)</code> layers before. The <code>Flatten</code> layer is gone. This model also has a few new layer types. Take a look at <code>Conv2D</code> first. As you probably guessed from the name, these are the convolution layers.
+</p>
+<p>A <code>Conv2D</code> layer takes the following arguments:
+</p>
+<ul>
+<li>
+<p><em>The number of filters</em>. In the first <code>Conv2D</code> layer this is 32. As in most convnet designs, convolutional layers get more filters (or output channels) as you go deeper into the network. The last <code>Conv2D</code> layer in this model has 256 filters. Recall that each filter learns to detect a unique pattern, and so the more filters you have the more patterns the model can detect. The number of filters is often a power of two, but this is not a hard-and-fast rule — feel free to break it.
+</p></li>
+
+<li>
+<p><em>The size of the kernel window</em>. For all <code>Conv2D</code> layers in this model, the kernel is 3×3 pixels. You can write this as a tuple <code>(3, 3)</code> but because square kernel windows are so common, you can also specify the kernel size as just <code>3</code> and Keras will understand that you mean a 3×3 window.
+</p></li>
+
+<li>
+<p><em>The padding</em>. By default, padding in Keras is <code>&quot;valid&quot;</code>, which means the pixels at the edges of the image are ignored and so the output image shrinks a little. Most of the time you want <code>&quot;same&quot;</code> padding instead, which adds an imaginary border of empty pixels around the edges so that the output image keeps the same width and height as the input image.
+</p></li>
+
+<li>
+<p><em>A non-linear activation function</em>. The activation that’s most typically used with convolution layers is ReLU.
+</p></li>
+</ul>
+
+<p>The very first layer in a Keras model must also specify an <code>input_shape</code>. This tells Keras the size of the images to expect. Height goes before width in these tensors!
+</p>
+<p>In between the convolution layers are <code>MaxPooling2D</code> layers. <em>Pooling</em> is a technique that makes the data smaller as it flows through the network, also known as subsampling. Most convnets are built from a combination of convolution layers and pooling layers. You’ll learn more about pooling later in this chapter.
+</p>
+<h3 class="segment-chapter">The flow of the tensors</h3>
+
+<p>You can see what happens to the shape of the data in the <code>model.summary()</code>. The number of channels gradually goes up from 32 to 256 due to the increasing number of filters in the convolution layers, but the spatial dimensions shrink from 224×224 to 28×28 pixels because of the pooling layers:
+</p><pre class="code-block">_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+conv2d_1 (Conv2D)            (None, 224, 224, 32)      896       
+_________________________________________________________________
+conv2d_2 (Conv2D)            (None, 224, 224, 32)      9248      
+_________________________________________________________________
+max_pooling2d_1 (MaxPooling2 (None, 112, 112, 32)      0         
+_________________________________________________________________
+conv2d_3 (Conv2D)            (None, 112, 112, 64)      18496     
+_________________________________________________________________
+conv2d_4 (Conv2D)            (None, 112, 112, 64)      36928     
+_________________________________________________________________
+max_pooling2d_2 (MaxPooling2 (None, 56, 56, 64)        0         
+_________________________________________________________________
+conv2d_5 (Conv2D)            (None, 56, 56, 128)       73856     
+_________________________________________________________________
+conv2d_6 (Conv2D)            (None, 56, 56, 128)       147584    
+_________________________________________________________________
+max_pooling2d_3 (MaxPooling2 (None, 28, 28, 128)       0         
+_________________________________________________________________
+conv2d_7 (Conv2D)            (None, 28, 28, 256)       295168    
+_________________________________________________________________
+conv2d_8 (Conv2D)            (None, 28, 28, 256)       590080    
+_________________________________________________________________
+global_average_pooling2d_1 ( (None, 256)               0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 20)                5140      
+_________________________________________________________________
+activation_1 (Activation)    (None, 20)                0         
+=================================================================
+Total params: 1,177,396
+Trainable params: 1,177,396
+Non-trainable params: 0
+_________________________________________________________________</pre>
+<p>This model has over 1 million learnable parameters, which sounds like a lot but is not really that many for deep-learning image-classification models. There are models with over 100 million parameters!
+</p>
+<p>Because you set <code>input_shape=(image_height, image_width, 3)</code> on the first layer, the input to this model is expected to be a tensor of size <code>(None, 224, 224, 3)</code>, or an image of size 224×224 pixels and 3 channels (RGB). Recall that Keras adds a dimension for the batch size at the front of the tensor. Usually, you keep this batch size unspecified when defining the model, which is why it shows up as <code>None</code> in the summary.
+</p>
+<p>The output of the first conv layer, named <code>conv2d_1</code> by Keras, is a tensor of size <code>(None, 224, 224, 32)</code>. Instead of 3 channels, this layer’s output “image” now has 32 channels. That’s because this convolution layer has 32 filters, and there is one channel in the output image for each filter.
+</p>
+<div class="note">
+<p><em>Note</em>: We put “image” in quotes because the output from this layer is no longer something we can properly display on the screen. From now on, we’ll call these data blobs by their more appropriate name: <em>tensors</em>.
+</p></div>
+
+<p>The second conv layer, <code>conv2d_2</code>, takes this <code>(None, 224, 224, 32)</code> tensor as input and produces a new tensor of the same size. Because the second layer also has 32 filters, it also outputs 32 channels.
+</p>
+<p>It’s important to note that, even though the input tensor and the output tensor for this layer both have 32 channels, these are totally unrelated numbers. The number of filters in the layer is independent of the number of channels in the input tensor. It just so happens that these two numbers are the same for this particular layer.
+</p>
+<p>Each filter will reduce all of the 32 channels from the input tensor to a single channel in the output tensor. This is repeated 32 times because this layer has 32 filters, but each filter has its own set of weights and therefore learns to detect its own pattern. To detect the pattern, each filter always looks at all of the input channels.
+</p><div class="image-100"><img src="graphics/img136.png"  alt="" title="Each filter reads all input channels and produces one output channel" /></div>
+<h3 class="segment-chapter">More about pooling</h3>
+
+<p>After the first two convolution layers there is a pooling layer, <code>max_pooling2d_1</code>. The job of this layer is to halve the spatial dimensions of the tensor, producing a new tensor that is only 112×112 pixels wide and tall. The number of channels stays the same, 32.
+</p>
+<p>The pooling layer simply takes the maximum value of each 2×2 group of pixels and writes it to the output tensor. It does this for each channel independently, which is why the number of output channels doesn’t change.
+</p>
+<p>A pooling layer does not have any learned parameters, it just performs this very simple max operation on a 2×2-pixel window:
+</p><div class="image-70"><img src="graphics/img137.png"  alt="" title="Max pooling reduces each 2×2 pixels to a single number" /></div>
+<p>Because it takes the maximum value, this operation is called <em>max</em> pooling. There is also a type called <em>average</em> pooling that takes the average or mean of the pixels in that 2×2 window instead — you’re actually using one of these average pooling layers at the end of the network. More about this in the next section.
+</p>
+<p>It is standard for pooling layers to use a 2×2 window size. Just like with convolution, this window slides over the input image, but with a step size of 2. This step size, or <em>stride</em>, is what determines the spatial dimensions of the output tensor. A stride of 2 means the width and height both get chopped in half. Usually, the stride is the same as the window size, but sometimes you’ll see other combinations, such as a window size of 3 with a stride of 2, in which case successive windows overlap each other a little.
+</p>
+<p>Why use these pooling layers? The main reason is to reduce the size of the data you’re working with — by keeping only the most interesting parts of the image. As you’ve seen, convolution measures how well certain parts of the image respond to a learned pattern. Because max pooling only keeps the largest and therefore most important values, it helps to make the predictions less sensitive to small variations in the data. Resizing the input also increases the receptive field, or the portion of the input image that is covered by the convolution layers that follow the pooling layer.
+</p>
+<p>Reducing the size of the data is helpful for making computations faster, and limiting the amount of GPU RAM that’s needed. Because the number of channels increases with each new convolution layer, the tensors become larger and larger. Pooling helps to keep this under control.
+</p>
+<p>More importantly, pooling also helps to fight the phenomenon known as <em>the curse of dimensionality</em> that says that very high dimensional spaces are a lot harder to work with than lower dimensional spaces. A (224, 224, 32) tensor means that each possible tensor value can be represented as a point in a 224×224×32 = 1.605.632-dimensional space. Try wrapping your head around that! Pooling with a window size of 2 will reduce the number of dimensions by a factor of 4, limiting the effects of this wicked curse.
+</p>
+<h3 class="segment-chapter">The detected features</h3>
+
+<p>Following the max pooling layer are two more conv layers, this time with 64 output channels, and then there is another pooling layer, followed by two more conv layers. The model repeats this pattern a few times. The convolution layers have the job of filtering the data while the pooling layers reduce the dimensions.
+</p>
+<p>After the last convolution layer, you end up with a tensor that is 28×28×256. But what exactly is in that tensor?
+</p>
+<p>The very first convolution layer measures the responses of the pixels from the input image to the different patterns that it has learned, 32 patterns in total. The patterns learned by the first layer will look something like this:
+</p><div class="image-75"><img src="graphics/img138.png"  alt="" title="The learned weights for the first conv layer" /></div>
+<p>This is literally a plot of the weights learned by the first convolution layer. Each pattern is 3×3 pixels because that’s the kernel size for this layer. These patterns work in the RGB color space, because that’s what the input image is in, which is why we can display them as RGB images too (they have 3 color channels).
+</p>
+<p>As you can see, these patterns detect color blobs, simple line shapes, and edges — all very low-level image features.
+</p>
+<div class="note">
+<p><em>Note</em>: Each time you train this model from scratch, you’ll end up with slightly different patterns. The weights for the convolution layers are initialized with random numbers, and so the outcome depends on this random initialization. However, you’ll often end up with very similar patterns anyway. Somehow the training process manages to figure out exactly what the layer needs to know.
+</p></div>
+
+<p>The second convolution layer doesn’t directly look at patterns in the original RGB image but it looks for patterns in the output of the first layer. It takes the first layer’s responses and measures how they respond to its own patterns. In other words, the second layer combines the first layer’s patterns to detect new and larger patterns.
+</p>
+<p>Now what’s happening becomes a lot less intuitive because the second layer’s patterns are not in RGB space but in some 32-dimensional “color” space. We can’t display these patterns because they make no sense to the human eye.
+</p>
+<p>However, with a bit of trickery, it is possible to measure what parts of the original RGB input image respond the most to the patterns from the second layer. That gives us an idea of what sort of patterns this second layer looks for. It turns out that, where the first layer detects mostly simple colors and lines, the second layer will look for somewhat higher level patterns, such as circles and corners.
+</p>
+<p>These patterns are also larger: the second layer still looks at a 3×3 block of pixels in <i>its own</i> input tensor, but each of those pixels was made from a 3×3 window in the original RGB image, so the second layer actually sees a larger region from the original image. This is called the <em>receptive field</em> of the layer. The receptive field of the second layer, i.e., how much it sees from the original RGB image, is 5×5 pixels. The pooling layers also increase the receptive field.
+</p>
+<p>Each convolution layer learns to see ever higher-level, more abstract patterns. And because the receptive field grows bigger, convolution layers deeper in the network see more of the input image than early layers. This allows the later layers to learn to recognize real-world concepts like “this is a dog-like shape”, “this is a human face”, “this object is pointed to the left” and so on.
+</p>
+<p>Even though each layer only learns a relatively small pattern of 3×3 pixels (across many channels), because we stack many of these layers together, the layers at the end of the network will have learned to detect patterns that can cover the entire input image. This is actually very similar to how the human visual cortex works, which explains why convnets give such great results.
+</p>
+<h3 class="segment-chapter">Feeling hot hot hot</h3>
+
+<p>Back to that very last convolution layer that outputs a 28×28×256 tensor. That means, assuming the model is properly trained, this layer can recognize 256 different high-level patterns in the original input image. Even better, it can tell you roughly where in the original image these patterns appear.
+</p>
+<p>For example, let’s say the first filter from this final convolution layer has learned to detect the high-level pattern for “round shape with a hole in it” and the original RGB input image has a donut in the top-right corner, then the 28×28 feature map for channel 0 might look like this:
+</p><div class="image-40"><img src="graphics/img139.png"  alt="" title="A channel from the final tensor represented as a heatmap" /></div>
+<p>You’re looking at just one of the 256 output channels, or feature maps, contained in this tensor. Displayed like this, it’s also often called a <em>heatmap</em> because it’s “hot” (yellow) where the pixels responded a lot to the pattern but “cold” elsewhere (dark blue). In this example, the pixels in the top-right corner are hot, meaning that the pattern from this filter was detected in that position in the original RGB input image.
+</p>
+<p>Each of the 256 channels from this tensor will have a similar 28×28-pixel feature map that indicates where that filter’s pattern was detected in the original image. Of course, the location is only an approximation because the image was scaled down by a factor of 8 (three max pooling layers). If a pattern was not found in the input image, then its heatmap will contain only very small values.
+</p>
+<p>Unfortunately for us, the patterns that the final convolution layer actually learns will not be as easy to understand as “round shape with a hole in it.” Exactly what the convnet learns can be hard for humans to interpret. A donut may actually be matched by a combination of different patterns, perhaps a “round shape” pattern and a “has a hole in it” pattern.
+</p>
+<p>For any given image, many of the 256 channels in this tensor will light up to a certain extent, and it’s really hard to interpret what this means. You need to do a bit more work to convert this result into something meaningful, such as adding a logistic regression that maps these patterns to the classes you’re interested in.
+</p>
+<h3 class="segment-chapter">Honey, I shrunk the tensors!</h3>
+
+<p>It’s possible to <code>Flatten</code> the 28×28×256 tensor and train a logistic regression on top of it. That would turn the tensor into a 200,704-element vector. Recall from the last chapter that the logistic regression already had a hard enough time with just 3,072 features, let alone two-hundred thousand...
+</p>
+<p>Fortunately, for a classification model, you don’t really care so much <i>where</i> exactly the pattern was matched, only whether it was matched at all. So you can use a clever trick, which will actually make life a little easier for the logistic regression. That trick is called <em>global pooling</em> or <em>adaptive pooling</em>.
+</p>
+<p>The <code>GlobalAveragePooling2D</code> layer calculates the average value of each 28×28 feature map, which is just a scalar number. It puts these numbers into a vector of 256 elements, one for each channel in the tensor. Then the logistic regression will use this vector as the feature vector. 256 features are much more palatable than 200,704!
+</p>
+<p>Global average pooling is a pooling layer just like the max-pooling you’ve seen before, except now the window is the size of the image, i.e., 28×28 pixels, and it takes the mean value of all these pixels instead of the maximum. In every channel, we take the average of the 28×28 pixels and reduce it to a single number:
+</p><div class="image-80"><img src="graphics/img140.png"  alt="" title="Global average pooling" /></div>
+<p>Because we only care about whether a certain pattern was detected, but not where, taking the average of its 28×28 heatmap is good enough. If nothing was detected, then this average is a small number close to zero. If something was detected, the average will be a high number. The stronger the detection, the higher the average.
+</p>
+<p>After this global average pooling layer, you now have a 256-element vector that says which of the 256 patterns were detected in the original input image, and how strong these detections are. But because you still don’t really know what these 256 patterns represent, you can’t use them to directly draw conclusions from. But you <i>can</i> use them as features for the logistic regression.
+</p>
+<p>That’s why the final two layers in the model are a <code>Dense</code> layer followed by a softmax activation. These serve the same purpose as before: to perform logistic regression on top of the extracted features. The convolutional layers and pooling layers now act as a feature extractor that converts the original pixels into features that are more suitable for use with logistic regression.
+</p>
+<div class="note">
+<p><em>Note</em>: The global pooling layer flattens the four-dimensional image tensor into a two-dimensional feature vector (remember that the first dimension is the batch size). Unlike a <code>Flatten</code> layer, which always expects a fixed number of input features, a global pooling layer can work on images of any arbitrary input size. Models with a <code>Flatten</code> layer are therefore much less flexible and are not considered to be “fully” convolutional. Most modern convnets use a global pooling layer so that they can accept images of any size. But remember: for the best results, images used for inference shouldn’t be too much larger or smaller than the images the model was trained on.
+</p></div>
+
+<h3 class="segment-chapter">Training the model</h3>
+
+<p>The model you’ve built in the previous sections is a typical convnet design, and — although not necessarily the most optimal — it’s a good start. Let’s see how well this model learns.
+</p>
+<p>As usual, compile the model before use:
+</p><pre class="code-block">model.compile(loss=<span class="hljs-string">"categorical_crossentropy"</span>,
+              optimizer=optimizers.Adam(lr=<span class="hljs-number">1e-3</span>),
+              metrics=[<span class="hljs-string">"accuracy"</span>])</pre>
+<p>You also need the train, val and test generators from the last chapter, so copy over those cells from your old Jupyter notebook.
+</p>
+<p>Training is exactly the same as before: You can simply call <code>model.fit_generator()</code>. However, let’s add some useful code that lets you keep track of the training progress.
+</p>
+<p>Keras returns a <code>History</code> object from <code>fit_generator()</code> that has the loss and any other metrics you asked for. Since it’s common to run <code>fit_generator()</code> a few times in a row, you’ll combine those <code>History</code> objects into an overall history and then plot some curves.
+</p>
+<p>First, in a new cell, create an array:
+</p><pre class="code-block">histories = []</pre>
+<p>Then, in a cell of its own, call <code>fit_generator()</code>. You’ll append the <code>History</code> object that this returns to the array:
+</p><pre class="code-block">histories.append(model.fit_generator(train_generator,
+                                     validation_data=val_generator,
+                                     epochs=<span class="hljs-number">5</span>,
+                                     workers=<span class="hljs-number">8</span>))</pre>
+<p>Now, you can run this cell multiple times and the history won’t get lost.
+</p>
+<p>You may wonder why you’d want to run <code>fit_generator()</code> more than once, but it’s useful to train for a few epochs to see how the model is doing before you commit to training for many epochs. Also, you may want to change some hyperparameters after a while, such as the learning rate. You’ll see an example of that soon.
+</p>
+<div class="note">
+<p><em>Note</em>: Training this kind of model takes up a lot of processing power. On a GTX 1080 Ti GPU, it takes about 15 seconds to train a single epoch. On less powerful GPUs or on the CPU it will take much longer. On the author’s beefy iMac, it takes 15 <i>minutes</i> per epoch with all cores — and all fans! — blazing. We suggest that you don’t try training this model yourself unless you have a Linux machine with a GPU or if you don’t mind using cloud services.
+</p></div>
+
+<h3 class="segment-chapter">Going dooooown?</h3>
+
+<p>To make a plot of the loss over time, do the following:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">combine_histories</span><span class="hljs-params">()</span>:</span>
+    history = { <span class="hljs-string">"loss"</span>: [], <span class="hljs-string">"val_loss"</span>: [], <span class="hljs-string">"acc"</span>: [], <span class="hljs-string">"val_acc"</span>: [] }
+    <span class="hljs-keyword">for</span> h <span class="hljs-keyword">in</span> histories:
+        <span class="hljs-keyword">for</span> k <span class="hljs-keyword">in</span> history.keys():
+            history[k] += h.history[k]
+    <span class="hljs-keyword">return</span> history</pre>
+<p>And then call this new function:
+</p><pre class="code-block">history = combine_histories()</pre>
+<p>This combines the histories that you’ve recorded. To make the plot:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">plot_loss</span><span class="hljs-params">(history)</span>:</span>
+    fig = plt.figure(figsize=(<span class="hljs-number">10</span>, <span class="hljs-number">6</span>))
+    plt.plot(history[<span class="hljs-string">"loss"</span>])
+    plt.plot(history[<span class="hljs-string">"val_loss"</span>])
+    plt.xlabel(<span class="hljs-string">"Epoch"</span>)
+    plt.ylabel(<span class="hljs-string">"Loss"</span>)
+    plt.legend([<span class="hljs-string">"Train"</span>, <span class="hljs-string">"Validation"</span>])
+    plt.show()
+
+plot_loss(history)</pre>
+<p>This again uses the Matplotlib library. It puts the graph for the training loss (called just <code>&quot;loss&quot;</code> here) and the validation loss (<code>&quot;val_loss&quot;</code>) into a single plot. After training for 30 epochs, about 10 minutes on a fast machine, the curves look something like this:
+</p><div class="image-90"><img src="graphics/img141.png"  alt="" title="The training and validation loss curves" /></div>
+<p>This is the sort of shape you want to see: the loss goes down over time. At some point, the loss starts to go down slower, which is especially noticeable for the validation loss. This happens when the model has already learned a lot of stuff and it can only fill in more of the details.
+</p>
+<p>Note that the plot isn’t a smooth line, especially the one for validation bounces up and down a bit. This is because the validation set is quite small, and so variations from one epoch to the next can cause the loss to briefly go up. This kind of “noise” is normal and expected. As long as the overall trend is going down, you’re good.
+</p>
+<p>Unfortunately, after about 25 epochs, you can see that the validation loss keeps going up. This is a sign that the model is overfitting. The training loss is still going down, but the one that you care about is the validation loss.
+</p>
+<p>The <code>History</code> objects also track accuracy. That’s a more interpretable metric than the loss, so plot this, too.
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">plot_accuracy</span><span class="hljs-params">(history)</span>:</span>
+    fig = plt.figure(figsize=(<span class="hljs-number">10</span>, <span class="hljs-number">6</span>))
+    plt.plot(history[<span class="hljs-string">"acc"</span>])
+    plt.plot(history[<span class="hljs-string">"val_acc"</span>])
+    plt.xlabel(<span class="hljs-string">"Epoch"</span>)
+    plt.ylabel(<span class="hljs-string">"Accuracy"</span>)
+    plt.legend([<span class="hljs-string">"Train"</span>, <span class="hljs-string">"Validation"</span>])
+    plt.show()
+
+plot_accuracy(history)</pre>
+<p>The plot will look something like this:
+</p><div class="image-90"><img src="graphics/img142.png"  alt="" title="The training and validation accuracy over time" /></div>
+<p>This is roughly the opposite of the loss: The accuracy goes up over time but eventually starts slowing down. After training for 25 epochs, this model gets a validation accuracy of about 38%.
+</p>
+<p>You could train for longer but this model doesn’t really seem to be improving much anymore. In fact, it will get worse over time as you now start overfitting. The training accuracy keeps increasing, as the model starts to remember literal training examples, but that is not what you want. The validation accuracy starts to level off after 25 epochs and will eventually become worse.
+</p>
+<h3 class="segment-chapter">Learning rate annealing</h3>
+
+<p>One trick you can use to give the accuracy a little boost is to change the learning rate. It is currently 1e-3 or 0.001 (set when you compiled the model), and you can change it by doing the following:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> keras.backend <span class="hljs-keyword">as</span> K
+K.set_value(model.optimizer.lr, K.get_value(model.optimizer.lr) / <span class="hljs-number">10</span>)</pre>
+<p><code>K</code> refers to the Keras <code>backend</code> package, which is a wrapper around TensorFlow. You cannot set the optimizer’s learning rate directly and must do it in this special way.
+</p>
+<p>Now train for several more epochs. If you call <code>combine_histories()</code> again and plot the loss you’ll see a bump where the learning rate was changed, at epoch 30:
+</p><div class="image-90"><img src="graphics/img143.png"  alt="" title="The loss after lowering the learning rate" /></div>
+<p>Unfortunately, the bump only happened in the training loss, the validation loss just keeps getting worse. If you also plot the accuracy curves, you’ll see that the validation score actually stabilizes at around 41% correct at this point.
+</p>
+<p>In general, you want to start with as high a learning rate as you can get away with, then lower it over time. If the learning rate is too high, the loss will “explode.”
+</p>
+<p>For a classifier, the initial loss should roughly be <code>np.log(num_classes)</code>. If the loss at any point becomes much larger than that, and only keeps increasing over time, you need to lower the learning rate.
+</p>
+<p>Changing the learning rate by hand is called <em>manual learning rate annealing</em>. Keras can also do this automatically for you using a callback (more about that later).
+</p>
+<p>Usually, you want to lower the learning rate when you see that the validation loss is no longer decreasing. That’s often a good indication that the optimizer has gotten “stuck.” The way to get it unstuck is by lowering the learning rate, which lets you squeeze a few extra percentage points of accuracy out of the model.
+</p>
+<h3 class="segment-chapter">It’s better... but not good enough yet</h3>
+
+<p>It’s clear that you were able to create a much better model using these convolutional layers than with only <code>Dense</code> layers. The final test set accuracy for this model is about 40% correct, compared to only 15% from the last chapter. That’s a big improvement!
+</p>
+<p>All thanks to the convolutional layers, because they know how to take advantage of the natural structure of the images.
+</p>
+<p>But note that this particular model also overfits a lot — again! That’s bad news. With over one million parameters and only about 4,800 training images, there is too much freedom for the model to memorize the images. And adding more layers or more filters is only going to make this problem worse, so you’ll also look at how to fix that problem once and for all.
+</p>
+<div class="note">
+<p><em>Note</em>: Even though the model you trained isn’t optimal, this very straightforward architecture of conv layers and pooling layers can work quite well in practice; it’s very similar to the famous VGG network that is used by many in the deep-learning community. One way to get better results is to first train the model on a much larger dataset such as ImageNet — which has over 1 million images — and then adapt it to your own images. But that takes a long long time... It’s often easier to build on top of an existing pre-trained model that you can simply download for free, without having to do the laborious ImageNet training yourself. Yep, we’ll be talking about transfer learning again!
+</p></div>
+
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>You need access to a powerful GPU in order to train these deep learning models. Unfortunately, Mac GPUs are not well supported by popular training tools. The cloud to the rescue!
+</p></li>
+
+<li>
+<p>Convolution layers are key to making good image classifiers. Just like <code>Dense</code> layers they compute dot products, but only over small regions of the image. Speaking mathematically, convolution is actually the same as a <code>Dense</code> layer in which most of the connections are zero, and the other connections all share the same weights.
+</p></li>
+
+<li>
+<p>Convnets are made up of a series of convolution layers and pooling layers. Layers deeper in the network have more filters and learn to detect higher level patterns that represent more abstract concepts.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Choosing the right values for the hyperparameters such as the learning rate is essential for getting an optimal result. It’s also a good idea to plot the loss and accuracy curves, to see if your model is overfitting or whether it is done learning. You can use Keras callbacks to automate some of this work for you.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>An accuracy of 40% means that four out of 10 predictions are correct, which is much better than what your own models did before — but it still means that the other six predictions are wrong. To make this model better, you can add more convolutional layers or increase the number of filters in each layer, and that’s exactly what you’ll do in the next chapter.
+</p></body></html>

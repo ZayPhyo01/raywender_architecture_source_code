@@ -1,0 +1,654 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 9: Beyond Classification</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 9: Beyond Classification</h1>
+
+<p>The previous chapters have taught you all about image classification with neural nets. But neural networks can be used for many other computer vision tasks. In this chapter and the next, you’ll look at two advanced examples:
+</p>
+<ul>
+<li>
+<p><em>Object detection</em>: find multiple objects in an image.
+</p></li>
+
+<li>
+<p><em>Semantic segmentation</em>: make a class prediction for every pixel in the image.
+</p></li>
+</ul>
+
+<p>Even though these new models are much more sophisticated than what you’ve worked with so far, they’re based on the same ideas. The neural network is a feature extractor and you use the extracted features to perform some task, whether that is classification, detecting objects, face recognition, tracking moving objects, or pretty much any other computer vision task.
+</p>
+<p>That’s why you spent so much time on image classification: to get a solid grasp of the fundamentals. But now it’s time to take things a few steps further...
+</p>
+<h2 class="segment-chapter">Where is it?</h2>
+
+<p>Classification tells you <i>what</i> is in the image, but always only considers the image as a whole. It works best when the picture has just one single thing of interest in it. If your classifier is trained to tell apart cats and dogs, and the image contains both a cat and a dog, then the answer is anyone’s guess.
+</p>
+<p>An <em>object detection</em> model has no problem dealing with such images. The goal of object detection is to find all the objects inside an image, even if they are of different types. You can think of it as a classifier for specific image regions.
+</p><div class="image-100"><img src="graphics/img155.png"  alt="" title="An object detector can find all your furry friends" /></div>
+<p>The object detector not only finds what the objects are but also <i>where</i> they are located in the image. It does this by predicting one or more <em>bounding boxes</em>, which are simply rectangular regions in the image.
+</p>
+<p>A bounding box is described by four numbers, representing either the corner points of the rectangle or the center point plus a width and height:
+</p><div class="image-90"><img src="graphics/img156.png"  alt="" title="The two types of bounding boxes" /></div>
+<p>Both types are used in practice, but this chapter uses the one with the corner points.
+</p>
+<p>Each bounding box also has a class — the type of the object inside the box — and a probability that tells you how confident the model is in its prediction of both the bounding box coordinates and the class.
+</p>
+<p>This may seem like a much more complicated task than image classification, but the building blocks are the same. You take a feature extractor — a <em>convolutional neural network</em> — and add a few extra layers on top that convert the extracted features into predictions. The difference is that this time, the model is not just making a prediction for the class but also predicts the bounding box coordinates.
+</p>
+<p>Before we dive into building a complete object detector, let’s start with a simpler task. You will first extend last chapter’s MobileNet-based classification model so that, in addition to the regular class prediction, it also outputs a single bounding box that tries to <em>localize</em> where the most important object is positioned in the image.
+</p>
+<p>Just predict one bounding box, how hard could it be? (Answer: It’s actually easier than you might think.)
+</p>
+<h3 class="segment-chapter">The ground-truth will set you free</h3>
+
+<p>First, we should revisit the dataset.
+</p>
+<p>Even though this new neural network will now make a different kind of prediction, the training procedure is still the same: You provide a dataset that consists of the images and the targets. You also provide a suitable loss function that calculates how wrong the model’s predictions are by comparing them to the targets. Then you use a Stochastic Gradient Descent optimizer, such as Adam, to find the values for the model’s learnable parameters that make the loss value as small as possible. Been there, done that.
+</p>
+<p>No matter what task your neural network performs, whether it’s predicting classes or bounding boxes — or the weather or stock prices or anything else — the training process is always the same. However, each task needs its own kind of training data. And for object detection tasks, the training data must contain bounding box information.
+</p>
+<p>Previously, the targets were just the class names for the images, but now they must also include the so-called <em>ground-truth bounding boxes</em> that tell you where the objects are located inside the training images. Without these bounding box annotations, the loss function wouldn’t be able to calculate how wrong the model is, and training the model to predict bounding boxes would be impossible.
+</p>
+<p>We have provided the bounding box annotations for the snacks dataset as a set of CSV files. To get a feel for how they work, you’ll now take a closer look at those annotations. Create a new Jupyter notebook or follow along with <em>Localization.ipynb</em>.
+</p>
+<p>If you don’t already have it from previous chapters, download the dataset from <a href="https://wolverine.raywenderlich.com/books/mlt/snacks.zip">https://wolverine.raywenderlich.com/books/mlt/snacks.zip</a> and unzip this file. It contains the dataset on which you’ll train the model.
+</p>
+<p>The easiest way to deal with CSV files in Python is by using the Pandas library. As usual, first import the needed packages — NumPy, Matplotlib and Pandas — and define the paths to where you downloaded the dataset:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> os, sys
+<span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+<span class="hljs-keyword">import</span> pandas <span class="hljs-keyword">as</span> pd
+
+%matplotlib inline
+<span class="hljs-keyword">import</span> matplotlib.pyplot <span class="hljs-keyword">as</span> plt
+
+data_dir = <span class="hljs-string">"snacks"</span>
+train_dir = os.path.join(data_dir, <span class="hljs-string">"train"</span>)
+val_dir = os.path.join(data_dir, <span class="hljs-string">"val"</span>)
+test_dir = os.path.join(data_dir, <span class="hljs-string">"test"</span>)</pre>
+<p>Then load the <em>annotations-train.csv</em> file into a new Pandas <code>DataFrame</code> object:
+</p><pre class="code-block">path = os.path.join(data_dir, <span class="hljs-string">"annotations-train.csv"</span>)
+train_annotations = pd.read_csv(path)
+train_annotations.head()</pre>
+<p>The new dataframe <code>train_annotations</code> literally contains the exact same data as the CSV file. Pandas offers a lot of useful functions to manipulate this data. It’s like using the functionality of SQL and Excel but inside Python, which is awesome if you’re into that sort of thing.
+</p>
+<p>The <code>train_annotations.head()</code> command gives as output the “head” of this dataframe, which is the first five rows:
+</p><div class="image-85"><img src="graphics/img157.png"  alt="" title="The first five lines of annotations-train.csv" /></div>
+<p>The dataframe is actually much bigger: When you do <code>len(train_annotations)</code> it should print 7040. The dataframe has one row for each annotation. There are only about 4,800 images in the training set but some pictures have multiple objects in them — that’s why there are more annotations than training images.
+</p>
+<p>Some training images even contain objects of different types. The first three rows in the dataframe all belong to the same image, a picture of a cake, but apparently, there’s also some ice cream in that image (see rows 1 and 2).
+</p>
+<p>There are also a number of images in the training set that do not have bounding box annotations at all.
+</p>
+<p>The coordinates of the bounding box are given by four numbers: <code>x_min</code>, <code>x_max</code>, <code>y_min</code> and <code>y_max</code>. The top-left corner of the box is <code>(x_min, y_min)</code>, the bottom-right corner is <code>(x_max, y_max)</code>. These are floating-point values — or “real-valued” numbers in math speak — between 0 and 1, also known as <em>normalized</em> coordinates.
+</p>
+<p>It’s convenient to use normalized coordinates because it makes them independent of the actual size of the image. This is important: remember that we scale down images to 224×224 pixels during training. If the bounding box coordinates were given in pixels as well, you’d have to remember to scale these down by the same amount... it gets messy really quick. With normalized coordinates, you don’t have to worry about this.
+</p>
+<p>The dataframe has two columns that contain class names: <code>class_name</code>, which is the class of the object inside this bounding box, and <code>folder</code>, which is where the image is stored in the dataset. <code>folder</code> is also the name of the class you used for training the classifier in the previous chapters. From now on, you’ll only use the <code>class_name</code> for training, but you still need <code>folder</code> to know whence to load the image file.
+</p>
+<p>While you’re at it, you might as well load the annotations for the validation and test sets into their own dataframes. These each have about 1,400 rows:
+</p><pre class="code-block">val_annotations = pd.read_csv(os.path.join(data_dir,
+                                   <span class="hljs-string">"annotations-val.csv"</span>))
+test_annotations = pd.read_csv(os.path.join(data_dir,
+                                   <span class="hljs-string">"annotations-test.csv"</span>))</pre>
+<h3 class="segment-chapter">Show me the data!</h3>
+
+<p>Now, let’s have a proper look at these bounding boxes. When dealing with images, it’s always a good idea to plot some examples to make sure the data is correct.
+</p>
+<p>Remember the old adage, “Garbage in equals garbage out.” If you’re training your model on data that doesn’t make sense, then neither will the model’s predictions and you just wasted a lot of time and electricity. Don’t be that person!
+</p>
+<p>The code for plotting the images isn’t terribly exciting, and so we’ve hidden this away in a file <em>helpers.py</em> that you can find in this chapter’s downloads. It’s a good idea to keep your notebook clean and put big functions and reusable code in separate Python files.
+</p>
+<p>Copy <em>helpers.py</em> into the same folder that your Jupyter notebook is in, and then write:
+</p><pre class="code-block">image_width = <span class="hljs-number">224</span>
+image_height = <span class="hljs-number">224</span>
+
+<span class="hljs-keyword">from</span> helpers <span class="hljs-keyword">import</span> plot_image</pre>
+<p>This imports the <code>plot_image</code> function from the <em>helpers.py</em> module. <code>plot_image()</code> takes as arguments an image and a list of one or more bounding boxes and then draws the bounding boxes on top of the image.
+</p>
+<p>Feel free to have a look inside <em>helpers.py</em> to see how this function works. You can also run <code>plot_image?</code> in a new cell to see its documentation, or <code>plot_image??</code> to see the full source code.
+</p>
+<p>To get a single row from the dataframe, you can write the following:
+</p><pre class="code-block">train_annotations.iloc[<span class="hljs-number">0</span>]</pre>
+<p>Here, <code>0</code> is the row index so this returns the fields from the first row:
+</p><pre class="code-block">image_id      009218ad38ab2010
+x_min                  0.19262
+x_max                 0.729831
+y_min                 0.127606
+y_max                 0.662219
+class_name                cake
+folder                    cake
+Name: 0, dtype: object</pre>
+<p>This is a so-called Pandas <code>Series</code> object and you can index it by name to get any of these fields, just like you would a dictionary. Now, grab an image from a single row in the dataframe and plot it together with its bounding box:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.preprocessing <span class="hljs-keyword">import</span> image
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">plot_image_from_row</span><span class="hljs-params">(row, image_dir)</span>:</span>
+    <span class="hljs-comment"># Load the image from "folder/image_id.jpg"</span>
+    image_path = os.path.join(image_dir, row[<span class="hljs-string">"folder"</span>],
+                              row[<span class="hljs-string">"image_id"</span>] + <span class="hljs-string">".jpg"</span>)
+    img = image.load_img(image_path,
+                         target_size=(image_width, image_height))
+
+    <span class="hljs-comment"># Put the box coordinates and class name into a tuple</span>
+    bbox = (row[<span class="hljs-string">"x_min"</span>], row[<span class="hljs-string">"x_max"</span>],
+            row[<span class="hljs-string">"y_min"</span>], row[<span class="hljs-string">"y_max"</span>], row[<span class="hljs-string">"class_name"</span>])</pre><pre class="code-block">    <span class="hljs-comment"># Draw the bounding box on top of the image</span>
+    plot_image(img, [bbox])</pre>
+<p>Now, call this new function to make the plot for a given annotation:
+</p><pre class="code-block">annotation = train_annotations.iloc[<span class="hljs-number">0</span>]
+plot_image_from_row(annotation, train_dir)</pre>
+<p>This draws the following image and bounding box (on the left):
+</p><div class="image-100"><img src="graphics/img158.png"  alt="" title="The ground-truth box for row 0, cake (left) and row 2, ice cream (right)" /></div>
+<p>You can see that the bounding box for the “cake” annotation neatly fits around the actual slice of cake in the picture. So it looks like the data is loaded correctly!
+</p>
+<p>This training image actually has three annotations. The other two are for the ice cream dessert in the top-right corner of the photo. On the right is shown the annotation from row 2. The bounding box from row 1 is very similar and covers the same object.
+</p>
+<p>In the Google Open Images dataset that these images and annotations come from, often the same object in the image has multiple annotations, created by different people. That doesn’t appear to be a problem, as long as these annotations aren’t too different. After all, more training data is usually better.
+</p>
+<p>However, many images have fewer annotations than there are objects, which is not ideal. For example, the image at index 3,500 in the <code>train_annotations</code> dataframe, with <code>image_id</code> 0c429e9be7f72342, has four strawberries but only three annotations, two of which are for the same strawberry. Ideally, this image would have a unique annotation for each individual object.
+</p>
+<p>To get a feel for what the dataset is like, have a look at some of the other images from the training, validation and test annotations.
+</p>
+<p>Because not all objects from all images have annotations, and some have duplicates, this dataset isn’t ideal — but, with over 7,000 annotations, it should still be good enough to train a decent object detection model. When you start building your own models, you’ll find that you’ll be spending a lot of time cleaning up your training data, filling in missing values, and so on. Your model will only ever be as good as the quality of the dataset, so it’s worth putting in the time.
+</p>
+<h3 class="segment-chapter">What about images without annotations?</h3>
+
+<p>If you have a dataset that consists of only images — and possibly class labels for the images — but no bounding box annotations, then you cannot train an object detector on that dataset. Not gonna happen; ain’t no two ways about it.
+</p>
+<p>First, you’ll have to create the bounding box annotations for each image. This can be a time-consuming process, but fortunately, there are some tools that can help. A few suggestions:
+</p>
+<ul>
+<li>
+<p><em>RectLabel</em>, available on the Mac App Store. This is a powerful tool with many options, but it expects the annotations to be provided as a separate XML file for each image. This is not unusual — it’s how the popular Pascal VOC dataset does things — but it won’t be able to handle our CSV files. If you’re getting serious about training your own object detectors, definitely give this tool a try.
+</p></li>
+
+<li>
+<p><em>Labelbox</em> at <a href="https://www.labelbox.io">labelbox.io</a> is an online tool for labeling training data for many different tasks, including object detection. This is a paid service but there is a free tier.
+</p></li>
+
+<li>
+<p><em>Simple Image Annotator</em> from <a href="https://github.com/sgp715/simple_image_annotator">github.com/sgp715</a> is a Python program that runs as a local web service. As its name implies, it’s pretty simple to use and offers only basic editing features. The output is a CSV file but it’s not 100% compatible with the CSV format we’re using.
+</p></li>
+
+<li>
+<p><em>Sloth</em>, which is available at <a href="https://sloth.readthedocs.io/">sloth.readthedocs.io</a>, and is an advanced labeling tool. Requires Linux.
+</p></li>
+
+<li>
+<p><em>CVAT</em>, or Computer Vision Annotation Tool, which is available at <a href="https://github.com/opencv/cvat">github.com/opencv/cvat</a>.
+</p></li>
+</ul>
+
+<p>There are about 800 images in the snacks dataset that do not have annotations. For the purposes of this book, you’re just going to ignore those images and only train on the images that already do have annotations. But, if you’re bored at home on a rainy Sunday afternoon and you feel like labeling the remaining images, don’t let us stop you.
+</p>
+<div class="note">
+<p><em>Note</em>: We just mentioned that RectLabel uses a different format for storing the annotations (XML) and that Simple Image Annotator does use a CSV file but with different fields. Some of the other tools output JSON files. This sort of thing is common. Every dataset will store its data in a slightly different way, and you’ll often find yourself writing small Python scripts to convert data from one format to the other. A large part of any machine-learning project consists of finding data, cleaning it up and annotating it. Once the data is in the format you want, doing the actual machine learning is usually quite straightforward.
+</p></div>
+
+<h3 class="segment-chapter">Your own generator</h3>
+
+<p>Previously, you used <code>ImageDataGenerator</code> and <code>flow_from_directory()</code> to automatically load the images and put them into batches for training. That is convenient when your images are neatly organized into folders, but the new training data consists of a Pandas <code>DataFrame</code> with bounding box annotations. You’ll need a way to read the rows from this dataframe into a batch. Fortunately, Keras lets you write your own custom generator.
+</p>
+<div class="note">
+<p><em>Note</em>: Instead of training on images, you’ll now train on the combination of an image plus a bounding box annotation. For images that have more than one annotation, it’s therefore possible that the same image appears multiple times in the same batch, although each time with a different bounding box.
+</p></div>
+
+<p>The code for this generator is again in <em>helpers.py</em>. First, let’s see the generator in action and then we’ll describe how it works:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> helpers <span class="hljs-keyword">import</span> BoundingBoxGenerator
+
+batch_size = <span class="hljs-number">32</span>
+train_generator = BoundingBoxGenerator(train_annotations, train_dir,
+                                       image_height, image_width,
+                                       batch_size, shuffle=<span class="hljs-keyword">True</span>)</pre>
+<p>This imports the <code>BoundingBoxGenerator</code> class from the helpers module and creates a new instance. You have to give it the following information:
+</p>
+<ul>
+<li>
+<p>The <code>DataFrame</code> that contains the annotations, <code>train_annotations</code>.
+</p></li>
+
+<li>
+<p>The folder that contains the images for this DataFrame, in this case, <code>snacks/train</code>.
+</p></li>
+
+<li>
+<p>The image size that the neural network will expect.
+</p></li>
+
+<li>
+<p>A batch size, i.e., how many training examples the generator should combine into a mini-batch. Here, you’re using a batch size of 32 images.
+</p></li>
+
+<li>
+<p>Whether you want to randomly shuffle the examples or not. For training, this should be <code>True</code>, for validation and testing this is usually <code>False</code>.
+</p></li>
+</ul>
+
+<p>Now, run the following cell to grab a batch of training data:
+</p><pre class="code-block">train_iter = iter(train_generator)
+X, (y_class, y_bbox) = next(train_iter)</pre>
+<p>The <code>iter()</code> function turns <code>train_generator</code> into a so-called iterator object, and <code>next()</code> asks this iterator to return its next element. The generator, in other words, is simply a collection of training examples that you can iterate over. Keras does exactly the same thing in its training loop: it calls <code>next()</code> over and over until it has seen all 7,040 rows from the dataframe.
+</p>
+<p>The NumPy array  <code>X</code> now contains thirty-two training images (because the batch size is 32), while <code>y_class</code> and <code>y_bbox</code> will contain the class labels and ground-truth bounding boxes for these images. You can verify this by printing the shape of these arrays:
+</p><pre class="code-block">X.shape</pre>
+<p>This prints <code>(32, 224, 224, 3)</code> because it contains thirty-two 224×224 color images. The shape of <code>y_class</code> is <code>(32,)</code> because it has thirty-two class labels. And the shape of <code>y_bbox</code> is <code>(32, 4)</code> because it has thirty-two bounding boxes — one per image — and each box is made up of four coordinates. If you print <code>y_bbox</code> it will look like this:
+</p><pre class="code-block">array([[ 0.348343,  0.74359 ,  0.55838 ,  0.936911],
+       [ 0.102564,  0.746717,  0.062909,  0.93219 ],
+       [ 0.      ,  1.      ,  0.135843,  0.98036 ],
+       [ 0.448405,  0.978111,  0.288574,  0.880734],
+       ...</pre>
+<p>The numbers you’ll see will be different because the generator randomly shuffles the examples. <code>y_class</code> will be something like this:
+</p><pre class="code-block">array([ 9, 16, 12,  7,  8, 18, 10,  1, 14,  2,  7, 17, ...])</pre>
+<p>These are the indices of the classes that belong to the bounding boxes. To turn this back into text labels, you can do the following:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> helpers <span class="hljs-keyword">import</span> labels
+list(map(<span class="hljs-keyword">lambda</span> x: labels[x], y_class))</pre>
+<p>The <code>labels</code> variable contains the class names corresponding to these indices and is defined in helpers.py. Using the <code>map()</code> function, which works the same way as Swift’s <code>map()</code>, you can convert from <code>y_class</code>’s numeric indices back to text labels. The <code>helpers</code> module also has a <code>label2index</code> dictionary that does the mapping the other way around, from text labels to numeric class indices.
+</p>
+<p>Now, have a look at how exactly this generator works. Open <em>helpers.py</em> to view the complete code, but here are the highlights. <code>BoundingBoxGenerator</code> is a subclass of the Keras <code>Sequence</code> object that overrides a couple of methods:
+</p><pre class="code-block"><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">BoundingBoxGenerator</span><span class="hljs-params">(keras.utils.Sequence)</span>:</span>
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">__len__</span><span class="hljs-params">(self)</span>:</span>
+        <span class="hljs-keyword">return</span> len(self.df) // self.batch_size
+
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">__getitem__</span><span class="hljs-params">(self, index)</span>:</span>
+        <span class="hljs-comment"># ... code ommitted ...</span>
+        <span class="hljs-keyword">return</span> X, [y_class, y_bbox]
+
+    <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">on_epoch_end</span><span class="hljs-params">(self)</span>:</span>
+        self.rows = np.arange(len(self.df))
+        <span class="hljs-keyword">if</span> self.shuffle:
+            np.random.shuffle(self.rows)</pre>
+<p>The <code>__len()__</code> method determines how many batches this generator can produce: the number of rows in the dataframe, <code>len(self.df)</code>, divided by the size of the batch. The <code>//</code> operator in Python means integer division.
+</p>
+<p>When you write <code>len(train_generator)</code>, Python automatically invokes this <code>__len()__</code> method. It should output 220. The generator produces exactly 220 batches because 7,040 rows / 32 rows per batch = 220 batches. Usually, the size of the training set doesn’t divide so neatly by <code>batch_size</code>, in which case the last, incomplete batch is ignored or is padded with zeros to make it a full batch.
+</p>
+<p>The <code>on_epoch_end()</code> method is called by Keras after it completes an epoch of training, i.e., after the generator has run out of batches. Here, <code>on_epoch_end()</code> creates an instance variable <code>self.rows</code> that contains the indices of the rows in the <code>DataFrame</code>. Normally <code>self.rows</code> is <code>[0, 1, 2, ..., len-1]</code> but if <code>shuffle</code> is true, the indices in <code>self.rows</code> get randomly reordered. <code>BoundingBoxGenerator</code>’s constructor, called <code>__init__</code> in Python, also calls <code>on_epoch_end()</code> to make sure the rows are properly shuffled before the first epoch starts.
+</p>
+<p>The meat of the work happens in <code>__getitem__()</code>. This method is called when you do <code>next()</code> or when you write <code>train_generator[some_index]</code>. This is where the batch gets put together. <code>__getitem__()</code> does the following:
+</p>
+<ol>
+<li>
+<p>Create new NumPy arrays to hold the images <code>X</code>, and the targets <code>y_class</code> and <code>y_bbox</code> for one batch. These arrays are initially empty.
+</p></li>
+
+<li>
+<p>Get the indices of the rows to include in this batch. It looks these up in <code>self.rows</code>.
+</p></li>
+
+<li>
+<p>For every row index, grab the corresponding row from the <code>DataFrame</code>. Load the image, preprocess it using the standard MobileNet normalization function, and put it into <code>X</code>. Also get the class name, use the <code>label2index</code> dictionary to convert it to a number and put it into <code>y_class</code>. Finally, get the bounding box coordinates and put them into <code>y_bbox</code>.
+</p></li>
+
+<li>
+<p>Return <code>X</code>, as well as <code>y_class</code> and <code>y_bbox</code>, to the caller.
+</p></li>
+</ol>
+
+<div class="note">
+<p><em>Note</em>: <code>__getitem__()</code> returns a tuple of two elements: The first one holds the array with the training images <code>X</code>, the second element holds the targets. But you have two different targets here, one for the classes and one for the bounding boxes. This is why earlier you wrote <code>X, (y_class, y_bbox) = next(train_iter)</code>, to unpack this second tuple element into separate <code>y_class</code> and <code>y_bbox</code> variables.
+</p></div>
+
+<p>To test that the generator works OK, plot the images and bounding boxes that it returns:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">plot_image_from_batch</span><span class="hljs-params">(X, y, img_idx)</span>:</span>
+    class_name = labels[y[<span class="hljs-number">0</span>][img_idx]]
+    bbox = y[<span class="hljs-number">1</span>][img_idx]
+    plot_image(X[img_idx], [[*bbox, class_name]])
+
+plot_image_from_batch(X, y_class, y_bbox, <span class="hljs-number">0</span>)</pre>
+<p>This uses the <code>plot_image()</code> function again but this time the image and bounding box comes from the batch. You need to supply the index of the image in the batch (0 to 31).
+</p>
+<p>You may get a warning message now, “Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers).” This is matplotlib telling you that it has trouble interpreting the image data from <code>X</code>. That’s because the pixel values are no longer between 0 and 255 but between -1 and +1 due to the normalization performed by the generator. Matplotlib will still display the images but they are a bit darker than usual.
+</p><div class="image-35"><img src="graphics/img159.png"  alt="" title="The generator seems to be working!" /></div>
+<p>To grab a new batch of images, simply repeat this statement:
+</p><pre class="code-block">X, (y_class, y_bbox) = next(train_iter)</pre>
+<p>You can also do the same on the validation and test iterators. The only difference is that they don’t shuffle their images, so they’ll always appear in the same order.
+</p>
+<p>There you have it: a dataset with bounding box annotations that’s ready for training. All you need to do now is create a suitable model for it.
+</p>
+<div class="note">
+<p><em>Note</em>: In the last chapter, you saw that data augmentation was a neat trick to increase the number of available training examples. The generator is the ideal place to do this sort of thing. To keep the code simple, <code>BoundingBoxGenerator</code> is currently not doing any data augmentation. If you’re up for a challenge, try adding data augmentation code to the generator — but don’t forget that the bounding boxes should be transformed too along with the images!
+</p></div>
+
+<h2 class="segment-chapter">A simple localization model</h2>
+
+<p>You’re now going to extend the existing MobileNet snacks classifier so that it has the ability to predict a bounding box as well as a class label.
+</p>
+<p>To create the classifier, you took the MobileNet feature extractor and added a logistic regression on top, made up of a <code>Dense</code> layer, a softmax activation, as well as a <code>Dropout</code> layer for regularization. Guess what: There’s no reason why you can’t add another bunch of layers that branch off of the feature extractor. These new layers will now predict the bounding box coordinates:
+</p><div class="image-100"><img src="graphics/img160.png"  alt="" title="" /></div>
+<p>This new model now has two outputs: one for the classification results, and one for the bounding box predictions. Both sets of layers are built on the same features from the MobileNet feature extractor, but because you train them on different targets they learn to predict different things.
+</p>
+<p>The classification portion of the model is still the same as before and outputs a probability distribution over the 20 possible classes.
+</p>
+<p>The bounding box predictor outputs four real-valued numbers: <code>x_min</code>, <code>x_max</code>, <code>y_min</code> and <code>y_max</code>. If you train the model well, these four numbers will form the corners of a proper bounding box that encloses the object in the image.
+</p>
+<div class="note">
+<p><em>Note</em>: Neural networks can have as many outputs as you like, one for every task that you want the model to perform. Best of all, you can train the model to learn all of these tasks at the same time. Models can even have multiple inputs. For example, a second input could be a table with extra information about the image such as its EXIF data, which contains the time of day the image was taken, where it was taken, and other metadata. The only requirement is that you can turn this input data into numbers somehow, for example by one-hot encoding it.
+</p></div>
+
+<p>To save some training time, you’ll start with the classifier model from the last chapter. After all, this has already learned how to classify snacks and so it already contains a lot of knowledge about the problem domain. What you’re going to do in this section is to add some additional knowledge about bounding boxes to the model.
+</p>
+<p>To load the best model from last time, do the following:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> keras
+<span class="hljs-keyword">from</span> keras.models <span class="hljs-keyword">import</span> Sequential
+<span class="hljs-keyword">from</span> keras.layers <span class="hljs-keyword">import</span> *
+<span class="hljs-keyword">from</span> keras.models <span class="hljs-keyword">import</span> Model, load_model
+<span class="hljs-keyword">from</span> keras <span class="hljs-keyword">import</span> optimizers, callbacks
+<span class="hljs-keyword">import</span> keras.backend <span class="hljs-keyword">as</span> K
+<span class="hljs-keyword">import</span> keras_applications
+
+checkpoint = <span class="hljs-string">"checkpoints/multisnacks-0.7532-0.8304.hdf5"</span>
+classifier_model = load_model(checkpoint, custom_objects={
+               <span class="hljs-string">"relu6"</span>: keras_applications.mobilenet.relu6 })</pre>
+<p>This simply grabs the best checkpoint and loads it back in. You can find this checkpoint in the last chapter’s resources.
+</p>
+<div class="note">
+<p><em>Tip</em>: Call <code>classifier_model.summary()</code> to check that the model was loaded correctly.
+</p></div>
+
+<p>To add the bounding box predictor layers on top of this checkpoint requires a bit of trickery, because you want to keep most of the existing model but also add a new output. It’s easiest to build a new model but reuse some of the layers. Since this new model will involve a branching structure, you can’t use the <code>Sequential</code> model API anymore but you have to use the Keras functional API as you saw in last chapter’s SqueezeNet section.
+</p>
+<p>The code is as follows. First, you reconstruct the classifier model from last time:
+</p><pre class="code-block">num_classes = <span class="hljs-number">20</span>
+
+<span class="hljs-comment"># The MobileNet feature extractor is the first "layer".</span>
+base_model = classifier_model.layers[<span class="hljs-number">0</span>]
+
+<span class="hljs-comment"># Add a global average pooling layer after MobileNet.</span>
+pool = GlobalAveragePooling2D()(base_model.outputs[<span class="hljs-number">0</span>])
+
+<span class="hljs-comment"># Reconstruct the classifier layers.</span>
+clf = Dropout(<span class="hljs-number">0.7</span>)(pool)
+clf = Dense(num_classes, kernel_regularizer=regularizers.l2(<span class="hljs-number">0.01</span>),
+            name=<span class="hljs-string">"dense_class"</span>)(clf)
+clf = Activation(<span class="hljs-string">"softmax"</span>, name=<span class="hljs-string">"class_prediction"</span>)(clf)</pre>
+<p>A quick reminder of how the functional API works: You create a layer object, such as <code>GlobalAveragePooling2D()</code>, and then call this layer object on a tensor, such as <code>base_model.outputs[0]</code>, which is the output from the MobileNet feature extractor. This, in turn, gives a new tensor, <code>pool</code>. Then, you create a new layer, <code>Dropout(0.7)</code>, apply this to the <code>pool</code> tensor to get the next tensor, and so on. After you run this code, <code>clf</code> is now the tensor that refers to the model’s classification output.
+</p>
+<p>Here is the new bit for the bounding box predictor:
+</p><pre class="code-block">bbox = Conv2D(<span class="hljs-number">512</span>, <span class="hljs-number">3</span>, padding=<span class="hljs-string">"same"</span>)(base_model.outputs[<span class="hljs-number">0</span>])
+bbox = BatchNormalization()(bbox)
+bbox = Activation(<span class="hljs-string">"relu"</span>)(bbox)
+bbox = GlobalAveragePooling2D()(bbox)
+bbox = Dense(<span class="hljs-number">4</span>, name=<span class="hljs-string">"bbox_prediction"</span>)(bbox)</pre>
+<p>This adds a new <code>Conv2D</code> layer that also works directly on the output of the MobileNet feature extractor, given by the tensor <code>base_model.outputs[0]</code>. As is common, the convolution layer is followed by batch normalization and a ReLU. After this comes a <code>GlobalAveragePooling2D</code> layer and the final <code>Dense</code> layer that has four outputs for the bounding box coordinates. <code>bbox</code> is now the tensor for the model’s bounding box output.
+</p>
+<p>Note that the <code>Dense</code> layer for the bounding box prediction does not have an activation function, also sometimes called a <em>linear</em> activation. That means this part of the model performs <em>linear regression</em>, the kind of machine learning that predicts real numbers. Applying a softmax activation here wouldn’t make sense because you’re not trying to predict a probability distribution — you definitely want four independent numbers.
+</p>
+<div class="note">
+<p><em>Note:</em> Because the four predicted numbers for the bounding box ought to be normalized coordinates between 0 and 1, it’s possible to apply a sigmoid activation to this <code>Dense</code> layer. The <em>sigmoid function</em> always returns 0, 1, or a value in between. Applying a sigmoid function is a common mathematical trick to restrict numbers to the range [0, 1]. However, the author found that using a linear activation — i.e., having no activation function — worked better.
+</p></div>
+
+<p>Finally, you combine everything into a new <code>Model</code> object:
+</p><pre class="code-block">model = Model(inputs=base_model.inputs, outputs=[clf, bbox])</pre>
+<p>Don’t forget to set the layers of the MobileNet base model to non-trainable, unless you’re interested in fine-tuning the entire model:
+</p><pre class="code-block"><span class="hljs-keyword">for</span> layer <span class="hljs-keyword">in</span> base_model.layers:
+    layer.trainable = <span class="hljs-keyword">False</span></pre>
+<p>You could also set the classifier layers to be non-trainable since they’ve already been trained before, but it’s probably a good idea to keep training them. The class is now taken from the object in the bounding box, which is not necessarily 100% the same as the class of the entire image.
+</p>
+<p>The <code>model.summary()</code> shows the extra layers, but it can be tricky to understand how they’re connected. To get a good idea of the branching structure, it’s useful to make a plot:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.utils <span class="hljs-keyword">import</span> plot_model
+plot_model(model, to_file=<span class="hljs-string">"bbox_model.png"</span>)</pre>
+<p>The bottom part of this file looks like this:
+</p><div class="image-100"><img src="graphics/img161.png"  alt="" title="The model branches into two outputs" /></div>
+<p>The <code>conv_pw_13</code> layers at the top are part of MobileNet. On the right, it shows the classifier branch, and on the left the new bounding box prediction branch. Note that the bounding box branch is slightly larger: It has an extra convolution layer between the MobileNet output and the global average pooling layer.
+</p>
+<div class="note">
+<p><em>Note</em>: You may be wondering exactly why you’ve added another <code>Conv2D</code> layer, here. Why not do the same as in the classifier branch and just have a <code>Dense</code> layer that immediately follows the global pooling? Good question. The answer is that the author tried both and adding the convolution layer gave much better results. This is probably because this extra layer helps to convert from image-level features to features that are more useful for predicting bounding boxes. The downside is that having this extra <code>Conv2D</code> layer adds over 4 million additional parameters to the model. Yikes. In the next chapter, you’ll look at a more refined approach to building bounding box predictors that uses way fewer parameters.
+</p></div>
+
+<p>Now, at this point, there is an important step you shouldn’t overlook. Because you reconstructed the model’s classification layers, the weights for these layers are still initialized with random numbers. If you’d use this model to make a classification, it would predict a random class. So before you continue, first put the weights back:
+</p><pre class="code-block">layer_dict = {layer.name:i <span class="hljs-keyword">for</span> i, layer <span class="hljs-keyword">in</span> enumerate(model.layers)}
+
+<span class="hljs-comment"># Get the weights from the checkpoint model.</span>
+weights, biases = classifier_model.layers[<span class="hljs-number">-2</span>].get_weights()
+
+<span class="hljs-comment"># Put them into the new model.</span>
+model.layers[layer_dict[<span class="hljs-string">"dense_class"</span>]].set_weights([weights, biases])</pre>
+<p>The <code>layer_dict</code> lets you look up layers in the Keras model by name. That’s why you named the new layers when you created them. <code>&quot;dense_class&quot;</code> is the name of the <code>Dense</code> layer in the classification branch. With <code>get_weights()</code> you can grab a layer’s weights, and biases if it has them; with <code>set_weights()</code>, you can change the weights on a layer.
+</p>
+<div class="note">
+<p><em>Note</em>: In the original classifier model you didn’t give the layers names. In that case, Keras will automatically choose names and you can’t really depend on them having a certain name. That’s why to load the weights, you use <code>layers[-2]</code>. In Python notation, a negative index means that you’re indexing the array from the back, so <code>layers[-1]</code> would be the last layer, which is the softmax activation, making <code>layers[-2]</code> the classification layer. Using indices is fine but giving the layers clear names is better.
+</p></div>
+
+<h3 class="segment-chapter">The new loss function</h3>
+
+<p>With the definition of the model complete, you now can compile it:
+</p><pre class="code-block">model.compile(loss=[<span class="hljs-string">"sparse_categorical_crossentropy"</span>, <span class="hljs-string">"mse"</span>],
+              loss_weights=[<span class="hljs-number">1.0</span>, <span class="hljs-number">10.0</span>],
+              optimizer=optimizers.Adam(lr=<span class="hljs-number">1e-3</span>),
+              metrics={ <span class="hljs-string">"class_prediction"</span>: <span class="hljs-string">"accuracy"</span> })</pre>
+<p>There are a few new things going on, here. Previously, you specified a single <code>loss</code>, <code>categorical_crossentropy</code>. Here, you have specified not one but two loss functions: <code>sparse_categorical_crossentropy</code> and <code>mse</code>. The model has two outputs and each predicts a different thing, so you want to use a different loss function for each output.
+</p>
+<p>The <em>cross-entropy loss function</em> is great for classification tasks, but it’s not suitable for the bounding box prediction.
+</p>
+<div class="note">
+<p><em>Note</em>: The “sparse” categorical cross-entropy you’re using here, does the same thing as the regular one you’ve used in the previous chapters. It compares the predicted probability distribution with the true class label. The difference is one of convenience. Recall that the <code>BoundingBoxGenerator</code> returns the target <code>y_class</code> as a list of class indices. In Chapter 6, “Taking Control of Training with Keras,” you saw that such targets need to be one-hot encoded, so <code>y_class</code> really ought to be a tensor of size <code>(batch_size, 20)</code> with the classes as one-hot encoded vectors. But Keras is clever: if you use the <code>sparse_categorical_crossentropy</code> loss function, it will one-hot encode the class labels on-the-fly, saving you the effort of doing it yourself.
+</p></div>
+
+<p>The loss function for the bounding box predictions is <code>&quot;mse&quot;</code> or <em>mean squared error</em>. This is a typical loss function for regression tasks, i.e., when the output of the model consists of real-valued numbers, such as bounding box coordinates. The math for this loss function looks like this:
+</p><pre class="code-block">mse_loss = sum( (truth - prediction)**<span class="hljs-number">2</span> ) / (<span class="hljs-number">4</span>*batch_size)</pre>
+<p>Let’s unpack this:
+</p>
+<ul>
+<li>
+<p>First, it finds the difference between the ground-truth value and the prediction by subtracting the two numbers: <code>truth - prediction</code>. This is the <em>error</em> in mean squared error.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Then it takes the square, which in Python is done with <code>**2</code>, so that this difference will always be a positive number. This also makes larger errors count more since the square of a large number is much bigger than the square of a small number. This is a common mathematical trick that you see all the time in machine learning. So now you have the <em>squared error.</em>
+</p></li>
+
+<li>
+<p>Finally, it sums up all these squared differences and divides by how many there are. The loss is computed over a batch at a time, and there are four predicted numbers for each bounding box. In other words, it takes the average — the mean — of the squared errors for all the predictions in the batch. Put it all together and you get the <em>mean squared error</em>.
+</p></li>
+</ul>
+
+<p>You don’t need to remember this math; just realize that it’s a really simple formula and that <code>&quot;mse&quot;</code> is the loss function to use when dealing with predictions that are just numbers, as opposed to probability distributions.
+</p>
+<p><code>model.compile()</code> now also has a <code>loss_weights</code> argument. Because there are two outputs, the loss computed during training looks like this:
+</p><pre class="code-block">loss = crossentropy_loss + mse_loss + L2_penalties</pre>
+<p>But not all of these loss terms will have the same scale, so some will count more than others in the final sum. Or perhaps you decide that some of them <i>should</i> count more than others. That’s why each of these terms is weighted. The choices we’ve made with <code>loss_weights=[1.0, 10.0]</code> result in a final loss function that looks like this:
+</p><pre class="code-block">loss = <span class="hljs-number">1.0</span>*crossentropy_loss + <span class="hljs-number">10.0</span>*mse_loss + <span class="hljs-number">0.01</span>*L2_penalties</pre>
+<p>Because this model has already been trained on the classification task but hasn’t learned anything about the bounding box prediction task yet, we’ve decided that the MSE loss for the bounding boxes should count more heavily. That’s why it has a weight of <code>10.0</code> versus a weight of <code>1.0</code> for the cross-entropy loss. This will encourage the model to pay more attention to errors from the bounding box output.
+</p>
+<div class="note">
+<p><em>Note</em>: Recall the that <em>L2 penalties</em> are extra terms that are added to the loss for regularization purposes. The <code>0.01</code> weight for the L2 penalties comes from <code>kernel_regularizer=regularizers.l2(0.01)</code> in the definition of the model.
+</p></div>
+
+<h3 class="segment-chapter">Sanity checks</h3>
+
+<p>At this point, it’s a good idea to see what happens when you load an image and make a prediction. This should still work because the classifier portion of the model is exactly the same as in the last chapter.
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.applications.mobilenet <span class="hljs-keyword">import</span> preprocess_input
+<span class="hljs-keyword">from</span> keras.preprocessing <span class="hljs-keyword">import</span> image
+
+img = image.load_img(train_dir + <span class="hljs-string">"/salad/2ad03070c5900aac.jpg"</span>,
+                     target_size=(image_width, image_height))</pre>
+<p>Now, normalize the image and let the model loose on it:
+</p><pre class="code-block">x = image.img_to_array(img)
+x = np.expand_dims(x, axis=<span class="hljs-number">0</span>)
+x = preprocess_input(x)
+
+preds = model.predict(x)</pre>
+<p>The <code>preds</code> variable is a list containing two NumPy arrays: The first array, <code>preds[0]</code>, is the 20-element probability distribution from the classifier output. The second array, <code>preds[1]</code>, has the four numbers for the bounding box.
+</p>
+<p>Right now, the bounding box prediction is completely bogus because those layers haven’t been trained yet, but the classification result should be reasonable. If not, something is wrong with the model. An easy way to check is to plot the predicted probabilities as a bar chart:
+</p><pre class="code-block">plt.figure(figsize=(<span class="hljs-number">10</span>, <span class="hljs-number">5</span>))
+plt.bar(range(num_classes), preds[<span class="hljs-number">0</span>].squeeze())
+plt.xticks(range(num_classes), labels, rotation=<span class="hljs-number">90</span>, fontsize=<span class="hljs-number">20</span>)
+plt.show()</pre>
+<p>Which indeed shows this is an image of a salad:
+</p><div class="image-50"><img src="graphics/img162.png"  alt="" title="The classifier portion of the model already works" /></div>
+<p>In fact, if you do <code>classifier_model.predict(x)</code>, which uses the last chapter’s model without the bounding box layers added, then you should get the exact same probability distribution. (Try it!)
+</p>
+<p>Of course, you can also use the generator to make predictions:
+</p><pre class="code-block">preds = model.predict_generator(train_generator)</pre>
+<p>This will create predictions for all the rows in the <code>train_annotations</code> dataframe, an array of size (7040, 20) for the classification output, and an array of size (7040, 4) for the bounding box output. But as you’ve seen, the bounding box predictions don’t make much sense yet... at least until you train the model.
+</p>
+<h3 class="segment-chapter">Train it!</h3>
+
+<p>Now that all the pieces are in place, training the model is just like before. This model is again trained best on a machine with a fast GPU. (If you have a slow computer, it’s not really worth training this model yourself.)
+</p>
+<p>First, create a generator for the validation set, with <code>shuffle</code> set to <code>False</code>:
+</p><pre class="code-block">val_generator = BoundingBoxGenerator(val_annotations, val_dir,
+                                     image_height, image_width,
+                                     batch_size, shuffle=<span class="hljs-keyword">False</span>)</pre>
+<p>Some of the helper code now lives in <em>helpers.py</em>, so import those functions:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> helpers <span class="hljs-keyword">import</span> combine_histories, plot_loss, plot_bbox_loss
+histories = []</pre>
+<p>And then train for a number of epochs:
+</p><pre class="code-block">histories.append(model.fit_generator(train_generator,
+                                     epochs=<span class="hljs-number">5</span>,
+                                     validation_data=val_generator,
+                                     workers=<span class="hljs-number">8</span>))</pre>
+<p>Because there is more going on in the model, Keras also prints out more information during training:
+</p><pre class="code-block">Epoch 1/5
+220/220 [==============================] - 14s 64ms/step - loss: 1.8093 - class_prediction_loss: 0.4749 - bbox_prediction_loss: 0.1187 - class_prediction_acc: 0.8709 - val_loss: 1.2640 - val_class_prediction_loss: 0.5931 - val_bbox_prediction_loss: 0.0522 - val_class_prediction_acc: 0.8168</pre>
+<p>There is <code>class_prediction_loss</code>, which has the cross-entropy loss for the classifier output. There is also <code>bbox_prediction_loss</code> with the Mean Squared Error loss for the bounding box prediction. The names of these metrics are taken from the names of the output layers, which is another reason for giving your layers meaningful identifiers.
+</p>
+<p>Notice how the bounding box loss is much smaller than the class loss, <code>0.1187</code> versus <code>0.4749</code>. You can’t really compare these values because they were computed using completely different formulas. It’s only important that they go down over time.
+</p>
+<p>The total <code>loss</code> value is the sum of these two losses, weighed by the <code>loss_weights</code> you supplied to <code>model.compile()</code>, plus the L2 penalty from the classifier’s <code>Dense</code> layer. This overall loss again is just an indication of what the model is doing — the number itself is meaningless.
+</p>
+<p>Keras also prints out a <code>class_prediction_acc</code> metric that measures the accuracy of the classifications over the training set, but there is no such metric for the bounding box predictions. That’s because you told <code>model.compile()</code> that you only wanted <code>metrics={ &quot;class_prediction&quot;: &quot;accuracy&quot; }</code>. After all, what would it mean for a bounding box prediction to be &quot;accurate&quot;? We’ll actually come back to this topic soon because there is a useful metric you can use here, but it’s not accuracy.
+</p>
+<p>It looks like the overall loss is going down during these first five epochs, but it’s hard to say whether this is due to either the classification loss or the bounding box loss. So let’s plot only the bounding box loss and see what that does:
+</p><pre class="code-block">history = combine_histories(histories)
+plot_bbox_loss(history)</pre><div class="image-90"><img src="graphics/img163.png"  alt="" title="Loss for the bounding box predictions in the first 5 epochs" /></div>
+<p>The training loss certainly went down significantly but the validation loss doesn’t look particularly impressive. So is the model actually learning anything useful? It’s hard to say because the loss itself doesn’t tell you much about how well the model works. The only thing you can say for sure is that the model works better when it has a lower loss than when it has a higher loss — not very enlightening.
+</p>
+<p>For the classification output, you can compute the accuracy, which is more interpretable than the loss. If the loss goes down by 10%, what does that mean? Who knows... But the accuracy going up by 10% makes a lot of sense.
+</p>
+<p>Fortunately, for the bounding box predictions, there is also a metric that gives us some intuition about the quality of the model: IOU.
+</p>
+<h3 class="segment-chapter">IOU</h3>
+
+<p>Sorry, this doesn’t mean I owe you any money. The acronym stands for <em>Intersection-over-Union</em>, although some people call it the <em>Jaccard index</em>.
+</p>
+<p>To measure how well the predicted bounding box matches the ground-truth box from the training data, you can compute how much they overlap, or their <em>intersection</em>. But just the overlap is not enough, what also matters is how much they <i>don’t</i> overlap.
+</p>
+<p>The IOU takes the intersection between the two bounding boxes and divides it by their total area, the <em>union</em>, to get a number between 0 and 1. The more similar the two boxes are, the higher the number. A perfect match is 1, while 0 means the boxes don’t overlap at all.
+</p><div class="image-70"><img src="graphics/img164.png"  alt="" title="IOU is the intersection divided by the union of the two boxes" /></div>
+<p>The helpers.py module has a simple function <code>iou()</code> for computing the Intersection-over-Union between two bounding boxes. You use it like this:
+</p><pre class="code-block">bbox1 = [<span class="hljs-number">0.2</span>, <span class="hljs-number">0.7</span>, <span class="hljs-number">0.3</span>, <span class="hljs-number">0.6</span>, <span class="hljs-string">"bbox1"</span>]
+bbox2 = [<span class="hljs-number">0.4</span>, <span class="hljs-number">0.6</span>, <span class="hljs-number">0.2</span>, <span class="hljs-number">0.5</span>, <span class="hljs-string">"bbox2"</span>]
+iou(bbox1, bbox2)</pre>
+<p>This prints 0.235 (rounded off), meaning that these boxes have only about one-fourth in common. You can see this using <code>plot_image</code>:
+</p><pre class="code-block">plot_image(img, [bbox1, bbox2])</pre>
+<p>That seems about right:
+</p><div class="image-50"><img src="graphics/img165.png"  alt="" title="IOU between two bounding boxes" /></div>
+<p>You can use the average IOU over the validation set as a metric of how good the model’s bounding box predictions are. That’s more enlightening than just the loss value.
+</p>
+<p>To use this metric, you need to compile the model, again:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> helpers <span class="hljs-keyword">import</span> iou, MeanIOU, plot_iou
+
+model.compile(loss=[<span class="hljs-string">"sparse_categorical_crossentropy"</span>, <span class="hljs-string">"mse"</span>],
+              loss_weights=[<span class="hljs-number">1.0</span>, <span class="hljs-number">10.0</span>],
+              optimizer=optimizers.Adam(lr=<span class="hljs-number">1e-3</span>),
+              metrics={ <span class="hljs-string">"class_prediction"</span>: <span class="hljs-string">"accuracy"</span>,
+                        <span class="hljs-string">"bbox_prediction"</span>: MeanIOU().mean_iou })</pre>
+<p>The only difference is the addition of the last line. Now Keras computes the mean IOU for the predictions coming from the model’s <code>&quot;bbox_prediction&quot;</code> output. The <code>MeanIOU</code> object is a simple wrapper class that lets Keras and TensorFlow use the <code>iou()</code> function.
+</p>
+<p>If you train the model again, Keras now also prints out the <code>bbox_prediction_mean_iou</code> metric, which gradually increases from 0.25 to about 0.43 for the training set, but only gets up to approximately 0.34 for the validation set.
+</p>
+<p>You can plot how the IOU developed over time using <code>plot_iou(history)</code>. Here is the plot for 15 training epochs, where the learning rate was manually decreased by a factor of 10 after every five epochs.
+</p><div class="image-90"><img src="graphics/img166.png"  alt="" title="The plot of the mean IOU" /></div>
+<p>This shows that the Mean IOU definitely improved over time, at least for the training set. After every five epochs, there’s a nice bump when the learning rate was lowered.
+</p>
+<p>The curve for the validation set isn’t as impressive, though (or as smooth). No doubt there’s some overfitting going on here since that one extra <code>Conv2D</code> layer you added has more parameters than the rest of the model put together...
+</p>
+<p>By the way, this plot is slightly misleading. It may seem as if the validation IOU doesn’t really improve very much, but keep in mind that the validation score is measured <i>after</i> each epoch, so at this point, the model had already seen one epoch of training. On the untrained model, the mean validation IOU is actually close to 0. (Hint: you can see this with <code>model.evaluate_generator(val_generator)</code> before you start training.)
+</p>
+<p>So how good is this simple localization model? Well, look at some pictures from the test set and see with your own eyes.
+</p>
+<div class="note">
+<p><em>Note</em>: You can also use a loss based on the IOU value, known as the <em>DICE loss</em>. Currently, you’re using the <em>MSE loss</em>, which tries to make each individual corner coordinate of the bounding box as close to the ground-truth as possible. But the model doesn’t really know these four numbers are related. With the DICE loss, you optimize the bounding box as a whole, where the goal is to make the box overlap as large as possible.
+</p></div>
+
+<h3 class="segment-chapter">Trying out the localization model</h3>
+
+<p>Just to get a qualitative idea of how well the model works, a picture says more than a thousand loss curves. So, write a function that makes a prediction on an image and plots both the ground-truth bounding box and the predicted one:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">plot_prediction</span><span class="hljs-params">(row, image_dir)</span>:</span>
+    <span class="hljs-comment"># Same as before:</span>
+    image_path = os.path.join(image_dir, row[<span class="hljs-string">"folder"</span>],
+                              row[<span class="hljs-string">"image_id"</span>] + <span class="hljs-string">".jpg"</span>)
+    img = image.load_img(image_path,
+                         target_size=(image_width, image_height))
+    bbox_true = [row[<span class="hljs-string">"x_min"</span>], row[<span class="hljs-string">"x_max"</span>],
+                 row[<span class="hljs-string">"y_min"</span>], row[<span class="hljs-string">"y_max"</span>],
+                 row[<span class="hljs-string">"class_name"</span>].upper()]
+
+    <span class="hljs-comment"># Make the prediction:</span>
+    x = image.img_to_array(img)
+    x = np.expand_dims(x, axis=<span class="hljs-number">0</span>)
+    x = preprocess_input(x)
+    pred = model.predict(x)
+    bbox_pred = [*pred[<span class="hljs-number">1</span>][<span class="hljs-number">0</span>], labels[np.argmax(pred[<span class="hljs-number">0</span>])]]
+
+    <span class="hljs-comment"># Plot both bounding boxes and print the IOU:</span>
+    plot_image(img, [bbox_true, bbox_pred])   
+    print(<span class="hljs-string">"IOU:"</span>, iou(bbox_true, bbox_pred))</pre>
+<p>This is very similar to the <code>plot_image_from_row()</code> function from earlier, but this time it also makes a prediction on the image and plots the predicted bounding box in addition to the ground-truth box. The function also prints the IOU between the two boxes.
+</p>
+<p>To view the results for a random image from the test set, do the following:
+</p><pre class="code-block">row_index = np.random.randint(len(test_annotations))
+row = test_annotations.iloc[row_index]
+plot_prediction(row, test_dir)</pre>
+<p>Here’s an example of a pretty good prediction. The ground-truth box’s label is in uppercase, the predicted box in lowercase.
+</p><div class="image-90"><img src="graphics/img167.png"  alt="" title="Pretty good!" /></div>
+<p>It’s not an exact match, but the model has definitely located where the hot dog is in the image. The IOU between the boxes is 0.67. IOU values over 0.5 are generally considered to be correct matches.
+</p>
+<p>Unfortunately, there are also many images where the model doesn’t do so well:
+</p><div class="image-45"><img src="graphics/img168.png"  alt="" title="Is this fair?" /></div>
+<p>An IOU of about 0.03, that’s very bad. But can you really blame this on the model? This image has many apples, and you can argue that the model did indeed find (a portion of) an apple, just not the one in the annotation.
+</p>
+<p>This image really isn’t a fair test of our simple localization model, which was only trained to find a single object at a time. In the next chapter, you’ll train a proper object detection model that <i>can</i> handle images like these and will find all the apples.
+</p>
+<p>Another example:
+</p><div class="image-45"><img src="graphics/img169.png"  alt="" title="Not great, but not really wrong either" /></div>
+<p>In this image, the bounding boxes do overlap, but less than the IOU of 50% that you’d like to see. Plus, the model actually found a different class. Again, it’s not a completely wrong answer because this image does have a salad in it.
+</p>
+<p>This is a typical result of a model that can only predict a single bounding box when there are multiple objects in the scene. In such situations, the model tends to predict a bounding box that’s in between the two objects. It tries to hedge its bets and predicts an average box that sits somewhere in the middle. Quite clever, actually.
+</p>
+<h3 class="segment-chapter">Conclusion: not bad, could be better</h3>
+
+<p>The good news is that it was pretty easy to make the classification model perform a second task, predicting the bounding boxes. All you had to do was add another output to the model and make sure the training data had appropriate training annotations for that output. Once you have a generator for your data and targets, training the model is just a matter of running <code>model.fit_generator()</code>.
+</p>
+<p>This is a key benefit of deep learning: You can use the same techniques for building neural network-based models for pretty much any problem domain, whether that’s computer vision, language processing, audio recognition, and many others. As long as you have a dataset with training data and target labels, as well as an appropriate loss function, you’re good to go!
+</p>
+<p>Granted, the simple localization model you built here isn’t super. On the validation set, it had an average IOU of a little over 30%. In general, we only consider a bounding box prediction correct when its IOU is over 0.5 or 50%. The model has definitely learned a few things about bounding boxes but it is still more wrong than it is right.
+</p>
+<p>This is partially the fault of the dataset: If you look through the training images, you’ll see that many images have more than one object — sometimes from different classes — but not annotations for all of these objects. Plus, this simple model can only predict a single bounding box at a time, which obviously doesn’t work so well on images with multiple objects. So there’s still room for improvement.
+</p>
+<p>The solution: create a model that can predict more than one bounding box. That’s what the next chapter is all about. Now stuff is getting serious!
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Object detection models are more powerful than classifiers: They can find many different objects in an image. It’s easy to make a simple localization model that predicts a single bounding box, but more tricky to make a full object detector.
+</p></li>
+
+<li>
+<p>To train an object detector, you need a dataset that has bounding box annotations. There are various tools that let you create these annotations. You may need to write your own generator to use the annotations in Keras. Data wrangling is a big part of machine learning.
+</p></li>
+
+<li>
+<p>A model can perform more than one task. To predict a bounding box in addition to classification probabilities, simply add a second output to the model. This output needs to have its own targets in the training data and its own loss function.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>The loss function to use for linear regression tasks, such as predicting bounding boxes, is MSE or Mean Squared Error. An interpretable metric for the accuracy of the bounding box predictions is IOU or Intersection-over-Union. An IOU of 0.5 or greater is considered a good prediction.
+</p></li>
+
+<li>
+<p>When working with images, make plenty of plots to see if your data is correct. Don’t just look at the loss and other metrics, also look at the actual predictions to check how well the model is doing.
+</p></li>
+</ul>
+</body></html>

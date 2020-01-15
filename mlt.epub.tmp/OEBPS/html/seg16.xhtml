@@ -1,0 +1,757 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 6: Taking Control of Training with Keras</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 6: Taking Control of Training with Keras</h1>
+
+<p>In the previous chapters, you’ve learned how to train your own models using Create ML and Turi Create. These are user-friendly tools that are easy to get started with — you don’t really have to write a lot of code and they take care of most of the details. With just a few lines you can load your data, train your model and export to Core ML.
+</p>
+<p>The downside of this approach is that Create ML and Turi Create only let you build a few basic model types and you don’t have much control over the training process. This is fine if you’re just getting your feet wet with machine learning; once you know what you’re doing and you want to get more out of ML, you’re going to need more powerful tools.
+</p>
+<p>In this chapter, you’ll use a popular deep learning tool called <em>Keras</em> to train the snacks classifier. Keras gives you much more control over the design of the models and how they are trained. Once you know your way around Keras, you’ll be able to build any kind of neural network you want.
+</p>
+<div class="note">
+<p><em>Note</em>: You should be able to train the models from this chapter on your Mac, even on older, slower machines. The models are small enough to be trained on the CPU and don’t need GPU acceleration — only a little patience.
+</p></div>
+
+<p>Keras runs on top of a so-called <em>backend</em> that performs the actual computations. The most popular of these is <em>TensorFlow</em>, and so that is what you’ll be using. TensorFlow is currently the number one machine-learning tool in existence. However, it can be a little tricky to use due to its low-level nature. Keras makes using TensorFlow a lot easier.
+</p>
+<p>TensorFlow is really a tool for building any kind of computational graph, not just neural networks. Instead of neural network layers, TensorFlow deals with rudimentary mathematical operations such as matrix multiplications and derivatives. There are higher-level abstractions in TensorFlow too, but most people prefer to use Keras as it’s just more convenient. In fact, Keras is so popular there is now a version of Keras built into TensorFlow.
+</p>
+<div class="note">
+<p><em>Note</em>: In this chapter, you’ll use the standalone version of Keras, not the one built into TensorFlow. Chapter 4 has instructions for installing Keras using Anaconda and <code>pip</code>. If you haven’t installed it yet, now is the time to do so. The authors used Keras version 2.2.0 for this chapter. Keras, like many open source projects, changes often and sometimes new versions are incompatible with older ones. If you’re using a newer version of Keras and you get error messages, please install version 2.2.0 into your working environment.
+</p></div>
+
+<h2 class="segment-chapter">Back to basics with logistic regression</h2>
+
+<p>One of the key topics in this book is <em>transfer learning</em>: a logistic regression model is trained on top of features extracted from the training images. In the case of Create ML, the features were extracted by the very powerful “Vision FeaturePrint.Scene” neural network that is built into iOS 12. In the case of Turi Create, the feature extractor you used was the somewhat less powerful SqueezeNet.
+</p>
+<p>The big advantage of transfer learning is that it is much quicker than training from scratch, because your model can take advantage of the knowledge that is already contained in the pre-trained feature extractor. Hence, you are <i>transferring</i> knowledge from one problem domain to another. In this case, the feature extractors are trained on the general problem of recognizing objects in photos, and you’ll adapt them to the specific problem of recognizing 20 different types of snacks.
+</p>
+<p>We also claimed that this approach of using a feature extractor works better than training the logistic regression classifier on the image pixels directly. To demonstrate the difference, you’ll use Keras to build a logistic regression model that skips the feature extraction part and works directly on pixels.
+</p>
+<p>This is a good way to get started with Keras, and doing this will prove that it’s very hard for a logistic regression model to learn to classify directly from pixel data. Over the course of this chapter and the next, you’ll make the model more and more capable, until at the end you have a classifier that is pretty darn accurate.
+</p>
+<h3 class="segment-chapter">A quick refresher</h3>
+
+<p>Logistic regression is a statistical model used in machine learning that tries to find a straight line between your data points that best separates the classes.
+</p><div class="image-50"><img src="graphics/img120.png"  alt="" title="Logistic regression" /></div>
+<p>Of course, this only works well if these data points can be separated by a straight line, or by what is known as a <em>hyperplane</em> in higher dimensions.
+</p>
+<p>Just to give you an idea of what is going on under the hood when you apply a logistic regression, let’s dive into the math a little. It’s OK if you’re not a fan of math, feel free to just skim this section and skip the bits that make your head spin. Knowing the math is not a prerequisite, but it can be helpful to understand what is going on — and it shows that these models are really not magical at all.
+</p>
+<h3 class="segment-chapter">Let’s talk math</h3>
+
+<p>In the above illustration, data points are two dimensional: They have two coordinates, <code>x[0]</code> and <code>x[1]</code>. In most machine-learning literature and code, <code>x</code> is the name given to the training examples.
+</p>
+<p>In practice, your data points will often be placed in much higher-dimensional spaces. Recall that for an image of size 227×227, the number of dimensions is over 150,000. But for the purpose of explanation, imagine that each data points is just made up of two values.
+</p>
+<p>Hopefully, you still remember from high school math that the algebraic formula for a straight line is:
+</p><pre class="code-block">y = a*x + b</pre>
+<p>Here, <code>x</code> is a coordinate in the first dimension, <code>a</code> is the slope of the line — how steep it is, also known as the coefficient — and <code>b</code> is the <code>y</code>-intercept. You’ve probably seen this formula before. This is the formula that is learned by <i>linear</i> regression, which just tries to fit a line that fits best between the data points.
+</p>
+<p>Logistic regression is a small modification of linear regression, so it makes sense that we look at the linear regression formula first.
+</p>
+<p>The above formula is for one-dimensional data, i.e., for data points that consist of just a single <code>x</code> value. In the illustration above, the data points are two dimensional and therefore have two values, <code>x[0]</code> and <code>x[1]</code>. You can easily extend the line formula to the following:
+</p><pre class="code-block">y = a[0]*x[0] + a[1]*x[1] + b</pre>
+<p>In general, <code>y</code> is the name we use for the predictions made by the model, as well as for the labels that the model is trained on.
+</p>
+<p>Since there are two values in each data point, there are also two coefficients or slopes, <code>a[0]</code> and <code>a[1]</code>. Here, <code>a[0]</code> is the slope of the line for the data point’s first coordinate, <code>x[0]</code>. In other words, <code>a[0]</code> is how much <code>y</code> increases as <code>x[0]</code> becomes larger.
+</p>
+<p>Likewise, <code>a[1]</code> is the slope for the second coordinate, or how much <code>y</code> increases as <code>x[1]</code> becomes larger.
+</p>
+<p>The <code>b</code> is still the y-intercept — the value of <code>y</code> at the origin of the coordinate system — although in machine learning it is called the <em>bias</em>. This is the value of <code>y</code> when both <code>x[0]</code> and <code>x[1]</code> are 0.
+</p>
+<p>It’s a little tricky to draw the value of <code>y</code> on top of a flat picture, but it looks something like this:
+</p><div class="image-50"><img src="graphics/img121.png"  alt="" title="The values of y" /></div>
+<p>Note that <code>y</code> is no longer on the vertical axis. In the above example, the vertical axis is used for <code>x[1]</code>, the second coordinate of the data points. Since the data points use two coordinates, the formula is no longer the equation for a line but for a plane in a three-dimensional coordinate space. <code>a[0]</code> and <code>a[1]</code> are still slopes, but now of a plane instead of a simple line, and <code>b</code> is the height of this plane at the origin.
+</p>
+<p>The data points from class A are in the area where <code>y</code> is negative and the data points from class B are in the area where <code>y</code> is positive. The decision boundary that separates the two classes is exactly where <code>y = 0</code>. The further away you go from the decision boundary, the larger the value of <code>y</code> is (positive or negative).
+</p>
+<p>The coefficients <code>a[0]</code> and <code>a[1]</code> are constants. <code>b</code> is also a constant. In fact, what logistic regression learns during training is the values of these constants. Therefore, we call those the <em>learned parameters</em> of the model. Our model currently has three learned parameters: <code>a[0]</code>, <code>a[1]</code> and <code>b</code>.
+</p>
+<p>After training the model on this tiny example dataset, you might find that <code>a[0] = 1.2</code>, <code>a[1] = -1.5</code> and <code>b = 0.2</code>. The reason <code>a[1]</code> is a negative number is that for large values of <code>x[1]</code>, it’s more likely the data point belongs to class A, and therefore <code>y</code> should be negative. You can verify this in the image.
+</p>
+<p>For large values of <code>x[0]</code>, the model wants <code>y</code> to be positive and so <code>a[0]</code> is a positive number. For data points close to the decision boundary, it depends just on how the numbers turn out.
+</p>
+<p>By the way, when programmers say <em>parameters</em>, we often refer to the values that we pass into functions. Mathematicians call these <em>arguments</em>. To a mathematician, a parameter is a constant that is used inside the function. So, technically speaking, parameters and arguments are two different things, and if you have to believe the mathematicians then we programmers tend to use the wrong term.
+</p>
+<p>If we put the linear regression formula in code it would look like this:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">formula</span><span class="hljs-params">(x0, x1)</span></span> -&gt; <span class="hljs-type">Double</span> {
+  <span class="hljs-keyword">let</span> a0 = <span class="hljs-number">1.2</span>
+  <span class="hljs-keyword">let</span> a1 = -<span class="hljs-number">1.5</span>
+  <span class="hljs-keyword">let</span> b = <span class="hljs-number">0.2</span>
+  <span class="hljs-keyword">return</span> a0*x0 + a1*x1 + b
+}</pre>
+<p>Notice how <code>x0</code> and <code>x1</code> are the arguments that are passed into the function, while <code>a0</code>, <code>a1</code> and <code>b</code> are constants that are always the same for this function. Machine learning is the process of learning the proper values for these constants, and then you can use this function with different kinds of inputs <code>x0</code> and <code>x1</code>.
+</p>
+<h3 class="segment-chapter">Into the 150,000th dimension</h3>
+
+<p>Two-dimensional data is easy enough to understand, but how does this work when you have data points with 150,000 or more dimensions? You just keep adding coefficients to the formula:
+</p><pre class="code-block">y = a[0]*x[0] + a[1]*x[1] + a[2]*x[2] + ... + a[149999]*x[149999] + b</pre>
+<p>This is a bit labor-intensive, which is why mathematicians came up with a shorter notation: the <em>dot product</em>. You can treat <code>a</code> and <code>x</code> as arrays — or <em>vectors</em> in math-speak — with 150,000 elements each. And then you can write:
+</p><pre class="code-block">y = dot(a, x) + b</pre>
+<p>Here, <code>dot()</code> is a function that takes the dot-product between two vectors. It first multiplies each element of the first vector with the corresponding element from the second vector, and then sums up these products. The result of a dot product is always a single number. Here is how you could implement <code>dot()</code> in Swift:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">dot</span><span class="hljs-params">(<span class="hljs-number">_</span> v: [Double], <span class="hljs-number">_</span> w: [Double])</span></span> -&gt; <span class="hljs-type">Double</span> {
+  <span class="hljs-keyword">var</span> sum: <span class="hljs-type">Double</span> = <span class="hljs-number">0</span>
+  <span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-number">0</span>..&lt;v.<span class="hljs-built_in">count</span> {
+    sum += v[i] * w[i]
+  }
+  <span class="hljs-keyword">return</span> sum
+}</pre>
+<p>Using <code>dot()</code> is a nice shorthand way of writing the full formula, plus it works for any number of dimensions, no matter how big <code>a</code> and <code>x</code> are.
+</p>
+<p>So far, the formula we’ve talked about for the line (actually, hyperplane) is for <em>linear</em> regression, not <em>logistic</em>. The linear regression formula just describes the best line that goes between the data points, which is useful in case you want to predict what <code>x[1]</code> is when you only have a given <code>x[0]</code>.
+</p>
+<p>Linear regression, usually just called regression, is statistical model and machine-learning technique that is used to find the relationship between two or more variables. If <code>x[0]</code> is the square footage of a house, and <code>x[1]</code> is the selling price of that house, then linear regression can learn a model that is used to predict house prices based on the size of the house, as well as any other variables that would be relevant.
+</p>
+<p>But you’re not trying to solve that kind of problem here; you’re trying to build an image classifier. To turn this into a classifier, you have to decide for each data point on which side of the line it is to determine its class, and also how far away it is from the line. Further away gives us greater confidence in the class prediction.
+</p>
+<p>To do this, you could simply look at whether <code>y</code> is a positive or negative number, but there is a neat trick that lets you interpret <code>y</code> as a probability value.
+</p>
+<h3 class="segment-chapter">From linear to logistic</h3>
+
+<p>To turn the linear regression formula into a classifier, you extend the formula to make it <em>logistic</em> regression:
+</p><pre class="code-block">probability = sigmoid(dot(a, x) + b)</pre>
+<p>The <code>sigmoid</code> function, also known as the <em>logistic sigmoid</em>, takes the decision boundary and looks at which side of the line the given point <code>x</code> is. The formula for sigmoid is:
+</p><pre class="code-block">sigmoid(x) = 1 / (1 + exp(-x))</pre>
+<p>When you plot this sigmoid function, it looks like this:
+</p><div class="image-60"><img src="graphics/img122.png"  alt="" title="The logistic sigmoid function" /></div>
+<p>This should explain the name of the function: It’s S-shaped, and “sigmoid” literally means “like the letter sigma” — sigma being the Greek letter S.
+</p>
+<p>You can see in the figure that the output of the sigmoid function is 0 for large negative input values, is 1 for large positive inputs, and is somewhere in between for input values between -6 and +6.
+</p>
+<p>For our example, an output of 0 means the data point is in class A, because the input to the sigmoid would have been a (large) negative number. An output of 1 means the data point is in class B — because the input to the sigmoid would have been a (large) postive number.
+</p>
+<p>However, the output of the logistic sigmoid function is usually interpreted as being a probability, so 0 really means there is 0% chance that this data point belongs to class B and 1 means 100% of it being class B. The probability that the data point belongs to class A is therefore <code>1.0 - probability</code>.
+</p>
+<p>For data points that are close to the decision boundary, you saw that <code>y</code> was a small positive or negative number. For such a number, the sigmoid output is somewhere between 0 and 1, for example 0.3. This means the algorithm is 30% confident that the data point is class B, so it’s not entirely sure. Usually we choose 50% as the cut-off point; anything higher is B, anything lower is A. But sometimes it makes sense to choose a higher or a lower cut-off point for making this decision.
+</p>
+<p>So logistic regression is just linear regression with the sigmoid function applied to it. This sigmoid function turns the value of <code>y</code> into a value between 0 and 1 that we can interpret as being a probability percentage.
+</p>
+<h3 class="segment-chapter">Not everything is black and white...</h3>
+
+<p>What if you have more than two classes? In that case, you’ll use a variation of the formula called <em>multinomial</em> logistic regression that works with any number of classes. Instead of one output, you now compute a separate prediction for each class:
+</p><pre class="code-block">probability_A = sigmoid(dot(a_A, x) + b_A)
+probability_B = sigmoid(dot(a_B, x) + b_B)
+probability_C = sigmoid(dot(a_C, x) + b_C)
+probability_D = sigmoid(dot(a_D, x) + b_D)
+...and so on...</pre>
+<p>If you have K classes, you end up with K different logistic regressions. Each has its own slopes and bias, which is why you now don’t have just one <code>a</code> and <code>b</code> but several different ones. For each class, you do the dot product of the input <code>x</code> with the coefficients for that class, add the bias, and take the sigmoid.
+</p>
+<p>So instead of a single decision boundary, each class now has its own decision boundary that separates its data points from the data points of all other classes. For example, if the <code>probability_A</code> is 0.95, it means that the classifier is 95% sure that this data point lies on the side of the line for class A, with a 5% chance that it’s actually one of the other classes. This is also known as a “one-vs.-all” or “one-vs.-rest” classifier.
+</p>
+<p>In practice all of these individual slopes are combined into a big matrix called the <em>weights matrix</em>. This matrix has size N×K, where N is the number of elements in the input vector <code>x</code> and K is the number of classes. All the bias values are combined into a vector of K values. Then the computation is:
+</p><pre class="code-block">output = matmul(W, x) + b</pre>
+<p>The <code>matmul()</code> function performs a matrix multiplication between the input <code>x</code> and the weight matrix <code>W</code> and then adds the bias vector <code>b</code>. The output is a vector of K values, one for each class.
+</p>
+<p>If your matrix math is rusty, don’t panic. This just performs the dot products for the different classes in a single mathematical operation. Just like the dot product itself is shorthand for <code>a[0]*x[0] + a[1]*x[1] + ...</code>, so is a matrix multiplication shorthand for doing a bunch of different dot products.
+</p>
+<p>The result of all this arithmetic, <code>output</code>, contains K different values, one for each class. You can then apply the sigmoid function to each of these K values independently, to get the probability that the data point <code>x</code> belongs to each class:
+</p><pre class="code-block">probability_A = sigmoid(output[0])
+probability_B = sigmoid(output[1])
+probability_C = sigmoid(output[2])
+...and so on...</pre>
+<p>It’s now possible for more than one class to be chosen, since these K probabilities are independent from one another. This is known as a <em>multi-label</em> classifier. You would use this kind of classifier if you wanted to identify more than one kind of object in the same image.
+</p>
+<p>However, for a <em>multi-class</em> classifier, such as the one you’ve been reading about in the past chapters, you don’t want independent probabilities. Instead, you want to choose the best class amongst the K different ones. You can do that by applying a different function instead of the logistic sigmoid, called <em>softmax</em>:
+</p><pre class="code-block">probabilities = softmax(matmul(W, x) + b)</pre>
+<p>The softmax function takes the exponent of each value and then divides it by the sum of all exponentiated values. You may immediately forget this, but the result of this operation is that now all the numbers are between 0 and 1, and together they sum up to <code>1.0</code>. This allows you to interpret the output from the logistic regression as a probability distribution over all the classes taken together. To find the winning class, you simply pick the class with the highest probability.
+</p>
+<p>In practice, you’ll see both sigmoid (multi-label) and softmax (multi-class) used with multinomial logistic regression, depending on the problem that’s being solved. If you’re just interested in the <i>best</i> class, use the softmax.
+</p>
+<h2 class="segment-chapter">Building the model</h2>
+
+<p>In this section, you’ll turn the above math into code using Keras. Fortunately, Keras takes care of all the details for you, so if the math in the previous section went over your head, rest assured that you don’t actually need to know it. Phew!
+</p>
+<p>Fire up Jupyter and create a new Python 3 notebook. You can also follow along with the <em>LogisticRegression.ipynb</em> notebook from this chapter’s downloaded resources.
+</p>
+<p>The first thing you’ll do is import the required packages:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+<span class="hljs-keyword">import</span> keras
+<span class="hljs-keyword">from</span> keras.models <span class="hljs-keyword">import</span> Sequential
+<span class="hljs-keyword">from</span> keras.layers <span class="hljs-keyword">import</span> *
+<span class="hljs-keyword">from</span> keras <span class="hljs-keyword">import</span> optimizers</pre>
+<p>Like most machine-learning and scientific computing packages, Keras heavily depends on NumPy so you import that first. You also import a few modules from Keras.
+</p>
+<p>Next, define some constants:
+</p><pre class="code-block">image_width = <span class="hljs-number">32</span>
+image_height = <span class="hljs-number">32</span>
+num_classes = <span class="hljs-number">20</span></pre>
+<p>Because the model makes predictions for 20 different types of objects (apples, bananas, etc.), you set <code>num_classes</code> to 20.
+</p>
+<p>You’ll use images of 32×32 pixels as input. The SqueezeNet model from Turi Create used 227×227 images. You could certainly use 227×227 here, or any size really, but it will make the model much larger and slower to train. If you have access to a fast GPU, feel free to experiment with a larger <code>image_width</code> and <code>image_height</code>.
+</p>
+<p>Let’s now define the regression model using Keras:
+</p><pre class="code-block">model = Sequential()
+model.add(Flatten(input_shape=(image_height, image_width, <span class="hljs-number">3</span>)))
+model.add(Dense(num_classes))
+model.add(Activation(<span class="hljs-string">"softmax"</span>))</pre>
+<p>The model you’re building is a so-called <code>Sequential</code> model, which is a simple pipeline that consists of a list of layers. Each layer is a stage in the pipeline that transforms the data in some particular way. Here, you’re adding three layers to the model.
+</p><div class="image-80"><img src="graphics/img123.png"  alt="" title="The logistic regression model in Keras" /></div>
+<p>The features that the logistic regression works on are the pixels from the input images. The first layer is <code>Flatten</code>, which takes the three-dimensional image input and turns it into a one-dimensional vector.
+</p>
+<p>“Wait a minute,” I hear you thinking, “an image surely has just two dimensions, not three!” The third dimension is for the pixel’s RGB values. Each pixel is made up of three numbers describing its color: red, green and blue. We consider this the image’s third dimension, or the “depth” dimension. Images often have an alpha channel, too (RGBA), but we typically ignore the alpha channel in machine learning.
+</p>
+<p>Also note that the image dimensions are given as <code>height × width × 3</code>, not <code>width × height × 3</code>. It’s common for programmers to describe the size of an image as width-by-height, but the image is actually stored in memory as rows × columns × RGB. So in machine learning the size of the image is usually given as height-by-width.
+</p>
+<div class="note">
+<p><em>Note</em>: This difference in the order of the dimensions, height coming before width, is easy to overlook and can cause subtle bugs in your model, especially if the width and height are the same, and so it’s easy to mix them up. Pay close attention to the order that tools like Keras expect the input data to be in. When you load an image it’s already loaded as height × width × 3 into memory, so you don’t actually have to do anything special. Just be aware that height goes before width.
+</p></div>
+
+<p>Since logistic regression expects a one-dimensional vector as input, the <code>Flatten</code> layer simply unrolls the image’s lines of pixels into one big strip:
+</p><div class="image-90"><img src="graphics/img124.png"  alt="" title="Flatten turns the 3D image into a 1D vector" /></div>
+<p>The input image is 32×32 pixels times three channels, and so the flattened vector has length 3,072. <code>Flatten</code> doesn’t do any computation, it just changes the shape of the input.
+</p>
+<p>The real meat of the logistic regression happens in the <code>Dense</code> layer. This performs the matrix multiplication between the 3,072 inputs and the 20 outputs. This layer has 20 outputs because that’s the number of classes in the snacks dataset. In a <code>Dense</code> layer, each input is connected to each output.
+</p><div class="image-80"><img src="graphics/img125.png"  alt="" title="What the Dense layer does" /></div>
+<p>This is simply the equation you’ve seen before:
+</p><pre class="code-block">y = a[<span class="hljs-number">0</span>]*x[<span class="hljs-number">0</span>] + a[<span class="hljs-number">1</span>]*x[<span class="hljs-number">1</span>] + ... + a[<span class="hljs-number">3071</span>]*x[<span class="hljs-number">3071</span>] + b</pre>
+<p>This time, it’s expressed in a slightly more efficient form as a matrix, so that Keras can compute this entire thing with a single matrix multiplication.
+</p>
+<p>The weights <code>a</code> represent the strength of the connections between the inputs and the outputs, shown in the illustration as thick and thin lines. The larger the value of the weight  <code>a[i]</code>, the more the corresponding input <code>x[i]</code> counts in the final result.
+</p>
+<p>The <code>Dense</code> layer also adds a bias value for each output, <code>b</code> in the above equation. Because there are 20 outputs, <code>b</code> is a vector of 20 elements. The bias is just a fixed number that’s added to every output, and gives the distance of how far away the decision boundary is from the coordinate system’s origin. This is necessary because the data points might not be nicely distributed around the origin, and so the bias can compensate for that.
+</p>
+<div class="note">
+<p><em>Note</em>: <code>Dense</code> layers are also known as <em>fully connected layers, affine layers, or linear layers</em>. In machine learning a single concept often has multiple names.
+</p></div>
+
+<p>When you create the <code>Dense</code> layer, it assigns random numbers to the weights for the matrix multiplication and zeros to the bias values. The reason it uses random numbers for the weights and not zeros, is that multiplying the inputs with zero makes the outputs zero too, and it’s hard to turn that back into something that is not zero. In practice, training just works better from a randomly chosen starting point.
+</p>
+<p>When you train the logistic regression model, it will learn the best values to use for these weights and biases.
+</p>
+<p>Finally, you need to apply the softmax function to turn the output from the <code>Dense</code> layer into a probability distribution. That’s what <code>Activation(&quot;softmax&quot;)</code> does. An <em>activation function</em> is some non-linear operation that gets applied to the output of a layer from the model. There are many different types of activation functions, but the one at the end of the model is usually the softmax function, at least for classifiers.
+</p>
+<p>Without this softmax function, the model would be a plain linear regression that only tells you how to best fit a line (hyperplane) through all the data points for the training images. By adding the softmax, the model becomes a multinomial logistic regression classifier that tells you which classes the data points belong to, depending on which side of the line they fall.
+</p>
+<p>After you construct a model, it’s useful to verify that all the pieces are in the right place. Keras provides a handy function for this:
+</p><pre class="code-block">model.summary()</pre>
+<p>This outputs a list of all the layers in the model:
+</p><pre class="code-block">_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+flatten_1 (Flatten)          (None, 3072)              0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 20)                61460     
+_________________________________________________________________
+activation_1 (Activation)    (None, 20)                0         
+=================================================================
+Total params: 61,460
+Trainable params: 61,460
+Non-trainable params: 0
+_________________________________________________________________</pre>
+<p>The Output Shape column gives the size of the data after it has been transformed by that layer. As expected, <code>Flatten</code> shows a vector with 3,072 elements and <code>Dense</code> outputs a vector with one element for each of the 20 classes.
+</p>
+<p>Even though <code>Flatten</code> produces a one-dimensional vector, the output shape shown here actually has two dimensions with the first dimension being <code>None</code>.
+</p>
+<p>Keras automatically adds a dimension to the front of the layer’s output, which is the <em>batch</em> dimension. This extra dimension is used during training, so that you can train on multiple images at the same time. The images are combined into a so-called <em>batch</em> or <em>mini-batch</em>. If you were to train on a typical batch size of 64 images at once, the output shape of the <code>Flatten</code> layer is actually a <code>(64, 3072)</code> tensor. Typically, you don’t specify the batch size yet when you construct the model, which is why Keras shows it as <code>None</code>.
+</p>
+<div class="note">
+<p><em>What the </em><em>!</em><em>%#</em><em>&amp;</em><em> is a tensor?</em> It finally happened, we used the T-word, so we’d better explain what a tensor is at this point. Are you ready? Tensor is a fancy word for multi-dimensional array. Yup, that’s all.
+</p>
+<p>In machine learning, you often use multi-dimensional arrays to store your data. You’ve already seen that an image is stored as an array of shape <code>(height, width, 3)</code>. This is a three-dimensional array where the first dimension is the height of the image, the second dimension is the width of the image, and the third and final dimension is for three color channels (RGB). But often you’ll use arrays with even more dimensions: four, five or six.
+</p>
+<p>As the data flows through the pipeline it changes shape: the dimensions can become larger or smaller, and you can even add or remove dimensions, like what <code>Flatten</code> does. Since “multi-dimensional array” is a mouthful, we like to use the word “tensor” instead. This comes from the mathematical field of topology, where it has a somewhat more specific meaning, but in ML it’s just shorthand for multi-dimensional array. This is where TensorFlow gets its name from: it describes the data flow — what we’ve been calling a pipeline — between tensors.
+</p>
+<p>In math terminology, we call a one-dimensional array a vector, a two-dimensional array a matrix, and anything with more dimensions a tensor. The number of dimensions is the rank of the tensor. A vector is a tensor of rank 1, a matrix is a tensor of rank 2, an image is a tensor of rank 3, a batch of images is a tensor of rank 4 and so on. By the way, scalars or single numbers are tensors of rank 0, or zero-dimensional arrays.
+</p>
+<p>At this point, you may be getting confused by the term <em>dimensions</em>. The array that stores an image has three dimensions, but the image itself can be considered a point in 150,000-dimensional space. Or in the case of the 32×32 images you’re using here, a point in 3,072-dimensional space. It’s a little confusing that the same word is used in both cases. For tensors we often also use the word “axis” to describe a dimension, so an image tensor has three axes with the first axis being the height, the second axis the width, and the third axis being the color channels.
+</p></div>
+
+<p>The Param # column shows the number of learnable parameters in each layer. In this simple model, only the <code>Dense</code> layer has learnable parameters: the values of the weights or coefficients <code>a</code> and the values of the bias vector <code>b</code>. There are 3,072×20 weights plus 20 additional bias values, so this model has 61,460 learnable parameters in total.
+</p>
+<p>Turi Create’s model only had 19,090 parameters. Your model is a bit bigger... but is it also better? No spoilers, you’ll have to keep reading!
+</p>
+<p>Before you can use the model you first need to compile it. This tells Keras how to train the model.
+</p><pre class="code-block">model.compile(loss=<span class="hljs-string">"categorical_crossentropy"</span>,
+              optimizer=optimizers.Adam(lr=<span class="hljs-number">1e-3</span>),
+              metrics=[<span class="hljs-string">"accuracy"</span>])</pre>
+<p>The <code>compile()</code> function takes three important arguments:
+</p>
+<ul>
+<li>
+<p><em>The loss function</em> to use: Recall from the introduction that the loss function is used to determine how good — or rather, how bad — the model is at making predictions. During training, the loss is initially high as the model just makes random predictions at the start. But as training progresses the loss should become lower and lower while the model gets better and better.
+</p>
+<p>It’s important to choose a loss function that makes sense for your model. Because your model uses softmax to produce the final output, the corresponding loss function is the <em>categorical cross-entropy</em>. That sounds nasty, but categorical just means you’re building a classifier with more than two classes, and cross-entropy is the loss that belongs with softmax. For a classifier with two classes, you’d use binary cross-entropy loss instead.
+</p></li>
+
+<li>
+<p><em>An optimizer</em>: This is the object that implements the Stochastic Gradient Decent or SGD process that finds the best values for the weights and biases. As the loss function computes how wrong the model is at making predictions, the optimizer uses that loss and tweaks the learnable parameters in the model to make the model slightly better. Mathematically speaking, the optimizer finds the parameters that minimize the loss.
+</p>
+<p>There are different types of optimizers but they all work in kind of the same way. You’re using the Adam optimizer, which is a good default choice, with learning rate 1e-3 or 0.001. The <em>learning rate</em> or LR determines how big the steps are taken by the optimizer. If the LR is too big, the optimizer will go nuts and the loss never becomes any smaller (or may even blow up into a huge number). If the LR is too small, it will take forever for the model to learn anything.
+</p>
+<p>The learning rate is one of the most important hyperparameters that you can set, and finding a good value for the LR is key to getting your model to learn. We tried out a few different values and settled on 1e-3 as a good choice for this particular model.
+</p></li>
+
+<li>
+<p><em>Any metrics</em> you want to see: As it is training your model, Keras will always print out the loss value, but you’re also interested in the accuracy of the model as that is an easier metric to interpret. A loss value of <code>0.35</code> by itself doesn’t say much about how good the model is, but an accuracy value of 94% correct does.
+</p></li>
+</ul>
+
+<p>Cool, now you’re ready to start training this model. But for that you need some data.
+</p>
+<h2 class="segment-chapter">Loading the data</h2>
+
+<p>The snacks dataset consists of three different folders (train, val, test), each containing 20 folders for the different classes, and each folder contains several dozen or hundred images.
+</p><div class="image-90"><img src="graphics/img126.png"  alt="" title="The snacks dataset" /></div>
+<p>Add some variables that point to these folders:
+</p><pre class="code-block">images_dir = <span class="hljs-string">"snacks"</span>
+train_data_dir = images_dir + <span class="hljs-string">"/train/"</span>
+val_data_dir = images_dir + <span class="hljs-string">"/val/"</span>
+test_data_dir = images_dir + <span class="hljs-string">"/test/"</span></pre>
+<p><em>Important</em>: point <code>images_dir</code> at the folder where you’ve downloaded the dataset.
+</p>
+<p>At this point it’s a good idea to actually look at the training data with your own two eyes, to make sure it is correct. To view an image in the notebook, do the following:
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.preprocessing <span class="hljs-keyword">import</span> image
+img = image.load_img(train_data_dir + <span class="hljs-string">"apple/cecd90f5d46f57b0.jpg"</span>, 
+                     target_size=(image_width, image_height))</pre>
+<p>This loads the specified JPEG image into the <code>img</code> variable. This is a PIL image object. PIL is a popular image library for Python 2. We’re in fact using the Python 3-specific fork: Pillow, but the concepts are identical. Potential confusion alert: the <code>image</code> variable here refers to the Keras module for dealing with images, while <code>img</code> is the actual image object.
+</p>
+<p>The <code>load_img()</code> function can automatically resize the image to the size your model accepts, given here by the <code>target_size</code> argument. Note that here the size of the image is specified as <code>(width, height)</code> not <code>(height, width)</code>. Told you... you’ve got to keep paying attention to the order of things.
+</p>
+<p>To show the image in the notebook you can use Matplotlib, a very handy Python library for drawing plots and graphs.
+</p><pre class="code-block">%matplotlib inline
+<span class="hljs-keyword">import</span> matplotlib.pyplot <span class="hljs-keyword">as</span> plt
+plt.imshow(img)</pre>
+<p>The <code>%matplotlib inline</code> directive tells Jupyter to show the image inside the notebook. Without this, it will open in a new window.
+</p><div class="image-60"><img src="graphics/img127.png"  alt="" title="Viewing the image with matplotlib" /></div>
+<p>Keras cannot train directly on PIL images, it always expects data to be in the form of NumPy arrays. So first convert from a PIL image to a NumPy array:
+</p><pre class="code-block">x = image.img_to_array(img)</pre>
+<p>You called this variable <code>x</code> because it is a convention in machine learning that the input data is called <code>x</code> or sometimes capital <code>X</code>. If you now write <code>x</code> or <code>print(x)</code> in a new cell and press Shift-Enter this prints the pixel values from the image:
+</p><pre class="code-block">array([[[<span class="hljs-number">215.</span>, <span class="hljs-number">215.</span>, <span class="hljs-number">217.</span>],
+        [<span class="hljs-number">211.</span>, <span class="hljs-number">211.</span>, <span class="hljs-number">211.</span>],
+        [<span class="hljs-number">207.</span>, <span class="hljs-number">207.</span>, <span class="hljs-number">207.</span>],
+        ...,
+        [<span class="hljs-number">152.</span>, <span class="hljs-number">150.</span>, <span class="hljs-number">137.</span>],
+        [<span class="hljs-number">148.</span>, <span class="hljs-number">146.</span>, <span class="hljs-number">133.</span>],
+        [<span class="hljs-number">149.</span>, <span class="hljs-number">147.</span>, <span class="hljs-number">132.</span>]], ...</pre>
+<p>As you might have expected, the pixels from the image have values between 0 and 255. In principle you can train the model directly on these pixel values but it is customary to <em>normalize</em> the data before you start training on it.
+</p>
+<p>Normalizing or <em>feature scaling</em> means that the data will have an average value or mean of 0 and usually also a standard deviation of 1. This is important when different features are not all in the same numerical range. For example, if your data has one feature with values between 0 and 1000 and another feature with values between 5 and 10, training will generally work better if you first normalize the features so that they both are between -1 and +1.
+</p>
+<p>In your case it’s not such a big deal since all the features — the pixels — are on the same scale from 0 to 255. But normalization is good practice so let’s do it anyway. Write this new function:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">normalize_pixels</span><span class="hljs-params">(image)</span>:</span>
+    <span class="hljs-keyword">return</span> image / <span class="hljs-number">127.5</span> - <span class="hljs-number">1</span></pre>
+<p>This simply scales the pixel values from 0 to 255 to a new range that goes from -1 to +1. Sometimes people subtract different mean values for the red, green, and blue channels and also divide by a standard deviation, but the above method is good enough for dealing with most kinds of images.
+</p>
+<p>The steps to normalize an image <code>img</code> are then:
+</p><pre class="code-block">x = image.img_to_array(img)
+x = normalize_pixels(x)
+x = np.expand_dims(x, axis=<span class="hljs-number">0</span>)</pre>
+<p>If you now look at <code>x</code>, the values are much smaller:
+</p><pre class="code-block">array([[[[ <span class="hljs-number">0.6862745</span> ,  <span class="hljs-number">0.6862745</span> ,  <span class="hljs-number">0.7019608</span> ],
+         [ <span class="hljs-number">0.654902</span>  ,  <span class="hljs-number">0.654902</span>  ,  <span class="hljs-number">0.654902</span>  ],
+         [ <span class="hljs-number">0.62352943</span>,  <span class="hljs-number">0.62352943</span>,  <span class="hljs-number">0.62352943</span>],
+         ...,
+         [ <span class="hljs-number">0.19215691</span>,  <span class="hljs-number">0.17647064</span>,  <span class="hljs-number">0.07450986</span>],
+         [ <span class="hljs-number">0.16078436</span>,  <span class="hljs-number">0.14509809</span>,  <span class="hljs-number">0.04313731</span>],
+         [ <span class="hljs-number">0.1686275</span> ,  <span class="hljs-number">0.15294123</span>,  <span class="hljs-number">0.03529418</span>]], ...</pre>
+<p>If you’re curious, you can print the mean and standard deviation of this training image with  <code>x.mean()</code> and <code>x.std()</code>. The mean of a single training image may not be exactly 0, but across the entire training set it will be close to 0. The standard deviation should be around 0.5.
+</p>
+<p>The <code>np.expand_dims()</code> function added a new dimension to the front, to turn this single image into a batch of images with batch size 1. The tensor containing this image is now of rank 4. You can view this with:
+</p><pre class="code-block">x.shape</pre>
+<p>This prints <code>(1, 32, 32, 3)</code>. It’s always a good idea to double-check the sizes of your images and other data objects, to verify they are correct. Adding this batch dimension is necessary because the Keras training functions always work on a batch of images, and so they expect this dimension to be there.
+</p>
+<h3 class="segment-chapter">Too soon to start making predictions?</h3>
+
+<p>Even though the model isn’t trained yet, you can already make a prediction on the input image:
+</p><pre class="code-block">pred = model.predict(x)
+print(pred)</pre>
+<p>This outputs an array with 20 values, one probability for each class. Since you haven’t trained the model yet, these predictions aren’t very useful. You’ll see something like the following:
+</p><pre class="code-block">[[<span class="hljs-number">0.04173137</span> <span class="hljs-number">0.00418671</span> <span class="hljs-number">0.02269506</span> <span class="hljs-number">0.02889681</span> <span class="hljs-number">0.08140159</span> <span class="hljs-number">0.03577968</span>
+  <span class="hljs-number">0.03044504</span> <span class="hljs-number">0.04758682</span> <span class="hljs-number">0.07940029</span> <span class="hljs-number">0.07274284</span> <span class="hljs-number">0.04531444</span> <span class="hljs-number">0.0115772</span>
+  <span class="hljs-number">0.17158438</span> <span class="hljs-number">0.02129039</span> <span class="hljs-number">0.0233359</span>  <span class="hljs-number">0.1150756</span>  <span class="hljs-number">0.00603842</span> <span class="hljs-number">0.08578367</span>
+  <span class="hljs-number">0.03525693</span> <span class="hljs-number">0.03987688</span>]]</pre>
+<p>You’ll probably get different results since your model will be initialized with different random values for the weights and biases. But note that most of these values are pretty close to 1/20 or 0.05. If you add them all up with <code>pred.sum()</code>, it will print out <code>1.0</code>. Floating point numbers have limited precision, so sometimes you will see <code>0.99999999</code> instead of <code>1.0</code>. Close enough.
+</p>
+<p>An untrained model will make a prediction for each class that is very close to the average, because it hasn’t learned yet how to distinguish the classes. It’s unlikely you’ll see a high percentage such as 90% in the output at this point. Most classes will have a probability score of around 0.05, or <code>1/num_classes</code>, although it can vary a bit because of the random initialization.
+</p>
+<p>If you were to make predictions for the entire dataset at this point, each class would be predicted the same number of times and the overall accuracy would be 0.05 or 5% — basically a random guess. The goal of machine learning is to train a classifier that can do better than random guessing.
+</p>
+<p>To figure out what the actual predicted class is for this image, you find the maximum value amongst the predicted probabilities:
+</p><pre class="code-block">np.argmax(pred)</pre>
+<p>For the prediction array shown above, this prints 12, because the element at index 12 is the highest (<code>0.17158438</code>). Note that the <code>np.max()</code> function returns the actual maximum value, while <code>np.argmax()</code> returns the <em>index</em> of the element with the maximum value.
+</p>
+<p>So which class is this? Well, you actually haven’t assigned class labels to each of the 20 outputs yet. That will be done automatically by Keras during training. It will usually do this alphabetically, so the winning class here would be “orange” since that is the 12th class; as usual we start counting at 0.
+</p>
+<p>But, remember, at this point the predictions are still totally bogus. That said, it’s useful to run <code>model.predict()</code> before training, to make sure that your model actually predicts what you’d expect — in this case, something close to average probability for each class. If the model had returned something else, such as all zeros, then something is broken — and you don’t want to waste any time training a model that is fundamentally buggy.
+</p>
+<h3 class="segment-chapter">Using generators</h3>
+
+<p>You’ve seen how to load an image into a tensor and how to plot it in the notebook. That’s handy for verifying that the training data is correct. During training, you won’t have to load the training images by hand. Keras has a useful helper class called <code>ImageDataGenerator</code> that can automatically load images from folders.
+</p><pre class="code-block"><span class="hljs-keyword">from</span> keras.preprocessing.image <span class="hljs-keyword">import</span> ImageDataGenerator
+datagen = ImageDataGenerator(preprocessing_function=normalize_pixels)</pre>
+<p>The data generator takes the <code>normalize_pixels</code> function as its preprocessing function so that it automatically normalizes the images as it loads them. The data generator can do other stuff as well, as you’ll see in the next chapter when we talk about data augmentation.
+</p>
+<p>Using this <code>ImageDataGenerator</code> object you can create three other generators, one for each subset of images:
+</p><pre class="code-block">batch_size = <span class="hljs-number">64</span>
+
+train_generator = datagen.flow_from_directory(
+                    train_data_dir,
+                    target_size=(image_width, image_height),
+                    batch_size=batch_size,
+                    class_mode=<span class="hljs-string">"categorical"</span>,
+                    shuffle=<span class="hljs-keyword">True</span>)
+
+val_generator = datagen.flow_from_directory(
+                    val_data_dir,
+                    target_size=(image_width, image_height),
+                    batch_size=batch_size,
+                    class_mode=<span class="hljs-string">"categorical"</span>,
+                    shuffle=<span class="hljs-keyword">False</span>)
+
+test_generator = datagen.flow_from_directory(
+                    test_data_dir,
+                    target_size=(image_width, image_height),
+                    batch_size=batch_size,
+                    class_mode=<span class="hljs-string">"categorical"</span>,
+                    shuffle=<span class="hljs-keyword">False</span>)</pre>
+<p>The <code>train_generator</code> is for images from the <em>train</em> folder, the <code>val_generator</code> for images from the <em>val</em> folder, and the <code>test_generator</code> for images from the <em>test</em> folder.
+</p>
+<p>A generator in Python is an object that can produce other objects. In this case you’re making a generator than can produce images by loading them from the given folder. The reason you need to use generators is that you cannot possibly load all the images into memory all at once, since that would require many gigabytes or even terabytes of RAM — more than fits in your computer! The only way to deal with that much data is to load the images on-demand. That’s what the Keras generators allow you to do.
+</p>
+<p>The three generators all do the same thing — load images from their respective folders — but the train generator has <code>shuffle=True</code> while the others have <code>shuffle=False</code>. During training, you want to pick the images at random so that the model doesn’t attempt to learn anything about the order of the images. During testing, however, you want to pick the images in a fixed order as that makes it easier to match them to the correct answers.
+</p>
+<p>The argument <code>class_mode=&quot;categorical&quot;</code> tells Keras that there is a subfolder for each image category. Keras will use the name of the subfolder as the class label for the images from that folder. The batch size is 64, and so the generator will try to load 64 images at a time.
+</p>
+<p>When you run the above code, the Jupyter notebook says:
+</p><pre class="code-block">Found 4838 images belonging to 20 classes.
+Found 955 images belonging to 20 classes.
+Found 952 images belonging to 20 classes.</pre>
+<p>These are the number of training, validation, and test images respectively.
+</p>
+<p>To see what a generator outputs, you call <code>next()</code> on it:
+</p><pre class="code-block">x, y = next(train_generator)
+print(x.shape)
+print(y.shape)</pre>
+<p>You won’t ever need to call <code>next()</code> yourself during training, but it’s useful to test that your generators work. This grabs the next batch of images <code>x</code> and their corresponding labels <code>y</code> from the <em>train</em> folder. The shape of the <code>x</code> tensor is <code>(64, 32, 32, 3)</code> because it contains 64 RGB images of 32×32 pixels.
+</p>
+<p>Since you’ll train on 64 training images at a time, the batch also includes the labels for these 64 images. Recall that these labels, also known as the <em>ground-truths</em>, are used to compute the loss or how “wrong” the model’s predictions are. Because the model produces 20 output values — one probability value for each class — the ground-truth label for a given image also needs to have 20 values. This is why the shape of the <code>y</code> tensor is <code>(64, 20)</code>.
+</p>
+<p>Have a look at the first of these labels, <code>y[0]</code>:
+</p><pre class="code-block">array([<span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, 
+       <span class="hljs-number">0.</span>, <span class="hljs-number">1.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>], dtype=float32)</pre>
+<p>You may have expected to see a label like <code>&apos;apple&apos;</code> or <code>&apos;cake&apos;</code>, but instead you get a vector with 20 numbers. When you try this, you’ll probably get a different label than what’s printed in the book, since the training set is randomly shuffled, but it should consist of 19 zeros and a single one.
+</p>
+<p>This is called <em>one-hot encoding</em>. The position of the <code>1</code> corresponds to the name of the class. In this case the <code>1</code> is in the 13th position, which belongs to class <em>pineapple</em>. You can see this by executing the cell:
+</p><pre class="code-block">train_generator.class_indices</pre>
+<p>This outputs:
+</p><pre class="code-block">{<span class="hljs-string">'apple'</span>: <span class="hljs-number">0</span>,
+ <span class="hljs-string">'banana'</span>: <span class="hljs-number">1</span>,
+ <span class="hljs-string">'cake'</span>: <span class="hljs-number">2</span>,
+ <span class="hljs-string">'candy'</span>: <span class="hljs-number">3</span>,
+ <span class="hljs-string">'carrot'</span>: <span class="hljs-number">4</span>,
+ <span class="hljs-string">'cookie'</span>: <span class="hljs-number">5</span>,
+ <span class="hljs-string">'doughnut'</span>: <span class="hljs-number">6</span>,
+ <span class="hljs-string">'grape'</span>: <span class="hljs-number">7</span>,
+ <span class="hljs-string">'hot dog'</span>: <span class="hljs-number">8</span>,
+ <span class="hljs-string">'ice cream'</span>: <span class="hljs-number">9</span>,
+ <span class="hljs-string">'juice'</span>: <span class="hljs-number">10</span>,
+ <span class="hljs-string">'muffin'</span>: <span class="hljs-number">11</span>,
+ <span class="hljs-string">'orange'</span>: <span class="hljs-number">12</span>,
+ <span class="hljs-string">'pineapple'</span>: <span class="hljs-number">13</span>,
+ <span class="hljs-string">'popcorn'</span>: <span class="hljs-number">14</span>,
+ <span class="hljs-string">'pretzel'</span>: <span class="hljs-number">15</span>,
+ <span class="hljs-string">'salad'</span>: <span class="hljs-number">16</span>,
+ <span class="hljs-string">'strawberry'</span>: <span class="hljs-number">17</span>,
+ <span class="hljs-string">'waffle'</span>: <span class="hljs-number">18</span>,
+ <span class="hljs-string">'watermelon'</span>: <span class="hljs-number">19</span>}</pre>
+<p>To print the name of the label for <code>y[0]</code>, you can do the following:
+</p><pre class="code-block">index2class = {v:k <span class="hljs-keyword">for</span> k,v <span class="hljs-keyword">in</span> train_generator.class_indices.items()}</pre>
+<p>This is a so-called Python <em>dictionary comprehension</em>. It looks at all the key-value pairs in the <code>class_indices</code> dictionary and creates a new dictionary that flips the order of the key and value. Now you can look up the name of the class by the index of the <code>1</code> in the one-hot encoded vector for the label.
+</p>
+<p>To find the name of the class, you do <code>np.argmax()</code> to find the index of the <code>1</code>, and then look up the name in the new dictionary:
+</p><pre class="code-block">index2class[np.argmax(y[<span class="hljs-number">0</span>])]</pre>
+<p>For the <code>y[0]</code> from this book, this will print <code>&apos;pineapple&apos;</code>.
+</p>
+<p>Why go through all this trouble? Most machine-learning algorithms can only handle numbers, not strings. The text label <code>&apos;pineapple&apos;</code> doesn’t mean anything to the logistic regression. So, instead, you first convert this string into something numeric, a one-hot encoded vector. Now the machine-learning algorithm can tell the classes apart because each class has its own unique one-hot encoded vector:
+</p><pre class="code-block"><span class="hljs-string">'apple'</span>      [<span class="hljs-number">1</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>]
+<span class="hljs-string">'banana'</span>     [<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>]
+<span class="hljs-string">'cake'</span>       [<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>]
+<span class="hljs-string">'candy'</span>      [<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>]
+              . . .
+<span class="hljs-string">'waffle'</span>     [<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">0</span>]
+<span class="hljs-string">'watermelon'</span> [<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">0</span>,<span class="hljs-number">1</span>]</pre>
+<p>This also means that the first output from the model is the probability the class is <em>apple</em>, the second output is the probability that the class is <em>banana</em>, and so on. These one-hot encoded vectors establish the relationship between the model’s outputs and the class labels.
+</p>
+<p>Think of this one-hot encoded vector as the “ideal” probability distribution for the corresponding training image. If the label of a training image is <code>&apos;apple&apos;</code> then this ideal probability distribution should have class apple at 100% (the <code>1</code> in the one-hot encoded vector) and the other classes at 0% (the <code>0</code>s in the vector).
+</p>
+<p>The generator automatically makes these one-hot encoded vectors for you. It looks at the name of the folder to determine the correct class label for the image, and then one-hot encodes it, to turn to it into a numeric label that can be given to the machine learning algorithm.
+</p>
+<h3 class="segment-chapter">The first evaluation</h3>
+
+<p>At this point, it’s a good idea to run the untrained model on the entire test set, to verify that the model and the generators actually work.
+</p><pre class="code-block">model.evaluate_generator(test_generator)</pre>
+<p>It’s as easy as that. Keras now uses the <code>test_generator</code> to load all the images from the test set, gives them to the model to make predictions, and compares the model’s output to the ground-truth label for each test image.
+</p>
+<p>For example, if the model’s thirteenth output has the highest probability value, the model has predicted this image contains a pineapple. If the label for that image really is <code>&apos;pineapple&apos;</code>, then this counts as a correct prediction. But if the label was something else, then it counts as a wrong prediction. The accuracy of the model is the number of correct predictions divided by the number of total predictions.
+</p>
+<div class="note">
+<p><em>Tip:</em> If you get an out-of-memory error at this point, reduce the batch size. It’s common to use powers of two for this, so if a batch size of 64 is too large, try 32. If that’s still too large, try 16, and so on. If you keep getting memory errors even with a batch size of 1, you’ll need to restart the notebook and run all the cells again. Sometimes Keras or TensorFlow cannot recover from these out-of-memory errors, and it’s best to start afresh.
+</p></div>
+
+<p>After about 10 seconds or so of number crunching, <code>evaluate_generator()</code> prints out values similar to the following:
+</p><pre class="code-block">[<span class="hljs-number">3.311799808710563</span>, <span class="hljs-number">0.059873949579831935</span>]</pre>
+<p>The first one is the loss, the second, accuracy. Your values should be similar, but will be slightly different because of the different random initialization of the model weights.
+</p>
+<p>At this point, the accuracy across the entire test set should be about 0.05 or 5% correct, which is the same as randomly picking an answer from the 20 categories, which is exactly what happens because the model currently consists of all random numbers.
+</p>
+<p>The initial loss for a classifier that uses the cross-entropy loss function should be approximately <code>np.log(num_classes)</code>, where log is the natural logarithm. Here, <code>np.log(20) = 2.9957</code> so the loss is slightly higher. But it’s close enough. Again, this discrepancy is the result of the random initialization. If you were to get a loss that is much larger or much smaller than about <code>3.0</code>, something is not right with the model. It also tells you that if the loss becomes smaller than <code>3.0</code> during training, the model is actually learning something.
+</p>
+<div class="note">
+<p><em>Note</em>: Try for yourself what the initial loss and accuracy are on the training and validation sets. Evaluating the training set may take a few minutes instead of seconds because it has more images.
+</p></div>
+
+<h2 class="segment-chapter">Training the logistic regression model</h2>
+
+<p>All the pieces are in place to finally train the model. First, do the following:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> warnings
+warnings.filterwarnings(<span class="hljs-string">"ignore"</span>)</pre>
+<p>As a responsible programmer, you know it’s not a good idea to ignore warnings but unfortunately the PIL library that is used to load the training images will complain about the EXIF data on some of the JPEG files. That just causes a lot of sloppy debug output in the Jupyter notebook, and so it’s cleaner to disable those warnings.
+</p>
+<p>Training is really just a matter of calling <code>fit_generator()</code> on the model. To start with, you’ll train for five epochs — an <em>epoch</em> is one pass through all the training images.
+</p>
+<p>To get good results, you’ll need to show each training image more than once — dozens or hundreds of times, in fact — which is why you need to train for multiple epochs:
+</p><pre class="code-block">model.fit_generator(train_generator, 
+                    validation_data=val_generator,
+                    epochs=<span class="hljs-number">5</span>,
+                    workers=<span class="hljs-number">4</span>)</pre>
+<p>Depending on the speed of your computer, this may take a few minutes to complete.
+</p>
+<p>The generator you used here is <code>train_generator</code> because that loads the training images. You also pass in the <code>val_generator</code> to use as the validation data.
+</p>
+<p>During training, Keras calculates the accuracy on the training images, but this can be misleading since it doesn’t tell you anything about how well the model does on images it hasn’t seen before.
+</p>
+<p>Training accuracy going up — and training loss going down — only means that the model is learning <i>something</i>, but you can’t be sure it is really learning the thing you are aiming to teach it. That’s why, after every epoch of training, Keras uses the validation set to compute the validation accuracy and loss, to give you an idea of whether the model really is working or not. If training accuracy is high but validation accuracy is low, you’ve got a problem.
+</p>
+<div class="note">
+<p><em>Note</em>: The <code>workers=4</code> argument tells Keras it can use multiple threads to load and prepare the images. If you have more than four CPU cores in your computer, feel free to increase this number for some extra speed.
+</p></div>
+
+<h3 class="segment-chapter">What happens during training?</h3>
+
+<p>When Keras trains the model, it will randomly choose an image from the train folder and show it to the model. Say it picks an image from the <em>banana</em> folder. The model will then make a prediction, for example <em>pretzel</em>. Of course, this is totally wrong.
+</p>
+<p>Initially, when you create the model, the learnable parameters are just randomly chosen numbers and the predictions will be way off. Over the course of training, these random numbers will slowly change into something more reasonable that can actually make good predictions.
+</p>
+<p>Since it knows what folder the image came from, <em>banana</em>, Keras can compute a loss between the prediction (pretzel) and the ground-truth label for the image (banana). Of course, banana and pretzel are meaningless concepts to Keras, but, after turning them into numbers — using one-hot encoding — Keras can compute some kind of difference between them.
+</p>
+<p>The ground-truth for banana is this one-hot encoded vector:
+</p><pre class="code-block">[ <span class="hljs-number">0.</span>, <span class="hljs-number">1.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, 
+  <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span>, <span class="hljs-number">0.</span> ]</pre>
+<p>The dot behind the numbers means that these are floating-point values. Think of these as probabilities: The probability for class banana is <code>1.0</code> or 100%, the probabilities for all other classes are 0%. That is because we are 100% sure this image contains a banana, since that is how we labeled it when we created the dataset. No doubt there.
+</p><div class="image-80"><img src="graphics/img128.png"  alt="" title="The ground-truth probabilities" /></div>
+<p>The prediction from the model for this banana image may be something like this:
+</p><pre class="code-block">[ <span class="hljs-number">0.01360181</span>, <span class="hljs-number">0.21590623</span>, <span class="hljs-number">0.00830788</span>, <span class="hljs-number">0.01217055</span>, <span class="hljs-number">0.05090828</span>,
+  <span class="hljs-number">0.01749134</span>, <span class="hljs-number">0.01430813</span>, <span class="hljs-number">0.07134261</span>, <span class="hljs-number">0.02015499</span>, <span class="hljs-number">0.00142231</span>,
+  <span class="hljs-number">0.01328659</span>, <span class="hljs-number">0.01184934</span>, <span class="hljs-number">0.01497147</span>, <span class="hljs-number">0.04739711</span>, <span class="hljs-number">0.00372085</span>,
+  <span class="hljs-number">0.38552788</span>, <span class="hljs-number">0.03598726</span>, <span class="hljs-number">0.0047219</span> , <span class="hljs-number">0.01521332</span>, <span class="hljs-number">0.04171015</span> ]</pre>
+<p>This is the output of the softmax layer, which makes sure that the most confident prediction is large, less confident predictions are smaller, and all the numbers add up to <code>1.0</code>. That probability distribution looks a lot messier than the ground-truth:
+</p><div class="image-80"><img src="graphics/img129.png"  alt="" title="The predicted probabilities" /></div>
+<p>The highest number in this vector is for pretzel (38.55%) but note that the model isn’t entirely certain and even thinks it might be a banana after all (21.59%). Especially early on in the training process, the model will not be very certain about its predictions yet.
+</p>
+<p>Now that you have two vectors of 20 elements each, it means you can compare them. The formula for this is known as the <em>cross-entropy loss</em>. This chapter has already had enough math in it, so let’s just say that this compares each element between the two vectors in some fashion, and adds up the results. This gives the loss for this particular image, which is just a single number.
+</p>
+<p>If the prediction was also (mostly) banana, then the softmax output looks a lot like the ground-truth and the loss is very small; if the prediction was 100% banana, then the loss is 0 because it’s exactly right.
+</p>
+<p>If the prediction for this image is not banana, then the loss is a larger number. The worse the prediction is, the less the predicted probabilities match the ground-truth probabilities, and the higher the loss will be.
+</p>
+<p>For this particular example, the loss is <code>1.5329</code>. That number by itself doesn’t tell you very much, it’s just a number. What’s important is that this number goes down over time while the model is being trained. Say that, after a few more epochs of training, the prediction for this image now has <code>0.9</code> for banana and the remaining <code>0.1</code> is spread out amongst the other classes. The new loss is then <code>0.1054</code>. This prediction is much better, and so the loss is also lower.
+</p>
+<p>Once it has computed a loss, Keras uses the optimizer you provided when you compiled the model to figure out which parts of the model contributed to this loss. The optimizer finds which parts of the model were responsible for making this (bad) prediction and “punishes” them. It does this by slightly tweaking the learnable parameters by moving them in the opposite direction — a positive number becomes more negative, a negative number becomes more positive — so that next time this image is shown to the model it will make a slightly better prediction.
+</p>
+<p>In practice, Keras won’t compute the loss for a single image but for a mini-batch of multiple images at a time. You are using a batch of 64 images. The loss for this batch is the average of the 64 individual losses. There are two reasons for using batches:
+</p>
+<ol>
+<li>
+<p>It uses the GPU more efficiently, if you’re lucky enough to have a GPU for training. The key to efficient GPU performance is to keep it busy, and with a batch you use more of the GPU’s memory bandwidth. The size of the batch is limited by the amount of RAM on the GPU. For a large model with many layers, a batch size of 64 may be too big to fit on the GPU and you’ll have to smaller batches.
+</p></li>
+
+<li>
+<p>Mathematically speaking, the “true” loss function really ought to be computed over the entire training set at once. So when you’re using batches, which only contain a small portion of the training set, you’re not actually computing the true loss of the model. That would seem to be a bad thing, but the opposite is true: using only 64 or fewer images at a time introduces a certain amount of randomness into the training process. And it turns out that this randomness makes it easier for the model to learn. Strange, but true. That’s why the S in SGD stands for Stochastic, which means “random” but sounds more impressive.
+</p></li>
+</ol>
+
+<h3 class="segment-chapter">Hey, it’s progress!</h3>
+
+<p>While the training process is happening, Keras outputs a progress bar:
+</p><pre class="code-block">Epoch 1/5
+76/76 [==============================] - 3s 38ms/step - loss: 3.2150 - acc: 0.1050 - val_loss: 3.2654 - val_acc: 0.1162
+Epoch 2/5
+76/76 [==============================] - 2s 26ms/step - loss: 2.7257 - acc: 0.2079 - val_loss: 3.2375 - val_acc: 0.1152
+Epoch 3/5
+76/76 [==============================] - 2s 27ms/step - loss: 2.4124 - acc: 0.2990 - val_loss: 3.2756 - val_acc: 0.1120
+Epoch 4/5
+76/76 [==============================] - 2s 27ms/step - loss: 2.1712 - acc: 0.3722 - val_loss: 3.2727 - val_acc: 0.1246
+Epoch 5/5
+76/76 [==============================] - 2s 26ms/step - loss: 1.9735 - acc: 0.4462 - val_loss: 3.3359 - val_acc: 0.1141</pre>
+<p>During training, Keras reports the training loss <code>loss</code> and training accuracy <code>acc</code>. After each epoch, Keras also computes the validation loss <code>val_loss</code> and accuracy <code>val_acc</code> over the entire validation set.
+</p>
+<p>Notice how <code>loss</code> and <code>acc</code> are improving over time. The training loss goes down while the accuracy goes up. That’s the good news. However, the bad news is that the validation loss doesn’t seem to be getting much better and the validation accuracy never gets higher than about 12%.
+</p>
+<p>Even if you keep training for more epochs, the training accuracy keeps improving but the validation accuracy does not. Try it out, run <code>model.fit_generator()</code> again and see what happens. In fact, if you repeat this enough times, the validation accuracy may get worse over time. After 50 or so epochs of training, the training accuracy was 90% but the validation accuracy had dropped to 8%.
+</p>
+<p>To make sure this is not a fluke, you can also try this trained model on the test set:
+</p><pre class="code-block">model.evaluate_generator(test_generator)</pre>
+<p>This should print something like:
+</p><pre class="code-block">[<span class="hljs-number">3.142886356145394</span>, <span class="hljs-number">0.12079831951556086</span>]</pre>
+<p>Again, that is only about 12% accuracy on the images from the test set. Also note that the loss reported here, <code>3.1428</code>, is only marginally better than the test set loss you saw on the untrained model, which was <code>3.31179</code>.
+</p>
+<h3 class="segment-chapter">It could be better...</h3>
+
+<p>What does this mean? Well, the model did learn <i>something</i>. After all, you started with a validation accuracy of 0.05 and it went up to about 0.12. So the model did gain a little bit of knowledge about the dataset. It is no longer making completely random guesses — but it’s still not doing much better than that.
+</p>
+<p>How come the training accuracy is so high then, about 90% after 50 epochs? This is an extreme case of <em>overfitting</em>. Yup, there it is again. The model isn’t actually learning to classify images, it’s just learning to tell apart the images that are in the training set. It’s likely that the model is learning which combinations of pixels belong to which training image — and that’s not what you want. You want the model to understand what those pixels represent in a more abstract sense.
+</p>
+<p>The model has 61,460 learnable parameters and there are only 4,838 images in the training set, so the model easily has enough capacity to remember which class goes with what image in the training set. In fact, with a training accuracy of 90%, and a very low accuracy on the validation set and test set, it means that the model managed to remember the class for nine out of 10 images. In the previous chapter, you saw that the Turi Create model also suffered from overfitting and it had fewer parameters than this model, only 19,019. In general, the more parameters a model has, the worse a problem overfitting becomes.
+</p>
+<p>You don’t want to train a model that <i>remembers</i> specific training images; you want a model that can learn to classify images it hasn’t seen yet. And this model fails spectacularly at that. There are several techniques you can use to dissuade the model from overfitting, but it’s clear already that trying to learn directly from pixels what these 20 different types of categories are, is a task that logistic regression is not up to.
+</p>
+<p>Now don’t let this section make you believe that logistic regression is a bad machine learning model. It isn’t. In fact, for many ML problems it is the go-to solution. But for logistic regression to work well it is important that the number of features is much less than the number of training examples. In our case, we had 3,072 features but only about 4,800 training images. The logistic regression model might work better if we had 10 times or 100 times as many training images.
+</p>
+<div class="note">
+<p><em>Note</em>: For fun, try making the input images smaller or larger, thereby changing the number of features, and see what kind of effect that has on the training and validation accuracy. If you do, you may also need to make the learning rate larger or smaller, so experiment with that too.
+</p></div>
+
+<p>For better results on our kinds of images, we’ll need to create a better model. Learning directly from the pixel values is just too hard, as the logistic regression (the <code>Dense</code> layer) cannot extract enough meaning from them.
+</p>
+<p>The hyperplanes it can draw through this 3,072-dimensional space do not separate the data points cleanly by their classes. This is why Turi Create first converts the pixels into a smaller number of features using SqueezeNet, and why Create ML does the same with Vision FeaturePrint.Scene. The image data needs to go through more transformations than just this one <code>Dense</code> layer!
+</p>
+<p>In classical computer vision, before the advent of deep learning, people carefully hand-crafted feature extractors (SIFT, SURF, HOG, ORB, etc.) in order to turn the pixel data into something more meaningful that they then could apply logistic regression to. However, deep learning can automatically learn to extract features from the pixels, and generally does a better job than man-made feature extractors.
+</p>
+<p>It’s clear that logistic regression directly on the image pixels isn’t going to work. Let’s make the model more powerful by turning it into an artificial neural network.
+</p>
+<h2 class="segment-chapter">Your first neural network</h2>
+
+<p>Logistic regression is considered to be one of the classical machine-learning algorithms. Deep learning is new and modern and hip, and is all about artificial neural networks. But to be fair, neural networks have been around for at least half century already, so they’re not <i>that</i> new. In this section, you’ll expand the logistic regression model into an artificial neural net.
+</p>
+<p>A classical neural network looks like this:
+</p><div class="image-90"><img src="graphics/img130.png"  alt="" title="An old-school fully-connected neural network" /></div>
+<p>The idea is that this kind of network mimics connections between neurons in the human brain, in which the circles in the picture represent the neurons. Notice how similar this is to the picture of the <code>Dense</code> layer from earlier? That’s because you can think of this kind of neural network as being two or more logistic regressions in a row.
+</p>
+<p>You can do this in Keras by adding a second <code>Dense</code> layer to the previous model:
+</p><pre class="code-block">model = Sequential()
+model.add(Flatten(input_shape=(image_height, image_width, <span class="hljs-number">3</span>)))
+model.add(Dense(<span class="hljs-number">500</span>, activation=<span class="hljs-string">"relu"</span>))  <span class="hljs-comment"># this line is new</span>
+model.add(Dense(num_classes))
+model.add(Activation(<span class="hljs-string">"softmax"</span>))</pre>
+<p>Now the <code>model.summary()</code> looks like this:
+</p><pre class="code-block">_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+flatten_1 (Flatten)          (None, 3072)              0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 500)               1536500   
+_________________________________________________________________
+dense_2 (Dense)              (None, 20)                10020     
+_________________________________________________________________
+activation_1 (Activation)    (None, 20)                0         
+=================================================================
+Total params: 1,546,520
+Trainable params: 1,546,520
+Non-trainable params: 0
+_________________________________________________________________</pre>
+<p>The first <code>Dense</code> layer connects all flattened 3,072 input pixel values to 500 intermediate <em>hidden neurons</em>, and the second <code>Dense</code> layer connects these 500 neurons to the 20 outputs. This kind of neural network is called a two-layer feed-forward network.
+</p>
+<p>The first half of this neural network, from the input to the output of the first <code>Dense</code> layer is the first logistic regression. The second half of the network, from the second <code>Dense</code> layer to the end is the second logistic regression. So all you’ve done is stick two separate logistic regression models together.
+</p>
+<p>The activation function at the end of the model is still the softmax that converts the outputs into probabilities. The new <code>Dense</code> layer also has an activation function. This is not a softmax but a <code>relu</code>, also called ReLU or <em>rectified linear unit</em>.
+</p>
+<p>In most neural networks every layer is followed by an activation function. This is usually a very simple mathematical operation that transforms the output of the layer in some non-linear way.
+</p>
+<p>Such non-linearities are necessary because otherwise the model can only learn linear relationships between their inputs (the pixels) and their outputs (the classes) and that gives very limited results.
+</p>
+<p>Remember that the goal is to transform the input data in such a way that the model can draw an imaginary straight line / hyperplane between the classes. Without these non-linear activation functions, you’d only be able to do that if you could already draw that straight line between the original input data points; in which case you wouldn’t need to train a model at all. It is the non-linearities that allow the model to learn all kinds of interesting data transformations.
+</p>
+<p>ReLU is an extremely simple mathematical function that looks like this:
+</p><div class="image-80"><img src="graphics/img131.png"  alt="" title="The ReLU activation function" /></div>
+<p>In code, it is:
+</p><pre class="code-block">y = max(<span class="hljs-number">0</span>, x)</pre>
+<p>In other words, if the number <code>x</code> is less than 0, the output of the ReLU is 0, otherwise the number passes through to the next layer unchanged.
+</p>
+<p>There are other activation functions, too, such as the logistic sigmoid that you’ve seen in the math section (if you didn’t skip it), but usually you’d use ReLU. The <em>linear unit</em> part of ReLU’s name means that it’s just a straight line, and <em>rectified</em> means the line gets flattened for negative values, making this function non-linear.
+</p>
+<p>It turns out that the actual shape of the activation function that you’re using doesn’t really matter so much, as long as it introduces non-linear behavior into the model. Most machine-learning models use ReLU because it’s really simple and fast to compute. For a <i>real</i> logistic regression, you would actually use the sigmoid activation function, so technically speaking the first half of this neural network isn’t <i>really</i> a logistic regression because it uses ReLU instead, but that’s a small detail you will conveniently ignore.
+</p>
+<p>The math for this network is something like this:
+</p><pre class="code-block">output_dense_1 = relu(matmul(W_1, x) + b_1)
+output_dense_2 = softmax(matmul(W_2, output_dense_1) + b_2)</pre>
+<p>For each layer, the pattern is the same: a matrix multiplication of the layer’s input with the weights, plus the bias, and an activation function applied to it. Repeated twice because you have two <code>Dense</code> layers.
+</p>
+<div class="note">
+<p><em>Note</em>: This model has 1.5 million parameters. That’s a lot for a model with just two layers. This is the problem with using <code>Dense</code> or fully connected layers. Since each of the 3,072 inputs is connected to each of the 500 intermediate neurons, this requires 3,072×500 = 1.5 million connections, plus 500 bias values. Since this model has so many connections, you can expect it to overfit again on the relatively small dataset.
+</p></div>
+
+<p>As usual, don’t forget to compile the model first or you cannot train it:
+</p><pre class="code-block">model.compile(loss=<span class="hljs-string">"categorical_crossentropy"</span>,
+              optimizer=optimizers.Adam(lr=<span class="hljs-number">1e-3</span>),
+              metrics=[<span class="hljs-string">"accuracy"</span>])</pre>
+<p>Train this model by calling <code>fit_generator()</code>, and you’ll see that the results will be a little better than before:
+</p><pre class="code-block">model.fit_generator(train_generator, 
+                    validation_data=val_generator,
+                    epochs=<span class="hljs-number">3</span>,
+                    workers=<span class="hljs-number">4</span>)</pre>
+<p>Training for three epochs gives the following results:
+</p><pre class="code-block">Epoch 1/3
+76/76 [==============================] - 2s 28ms/step - loss: 3.2228 - acc: 0.1315 - val_loss: 3.1306 - val_acc: 0.1351
+Epoch 2/3
+76/76 [==============================] - 2s 24ms/step - loss: 2.4553 - acc: 0.2849 - val_loss: 3.0794 - val_acc: 0.1466
+Epoch 3/3
+76/76 [==============================] - 2s 27ms/step - loss: 2.0033 - acc: 0.4284 - val_loss: 3.1929 - val_acc: 0.1613</pre>
+<p>The validation score is a little better now than with the logistic regression model, so this new model has learned how to classify images a bit better — but it’s still nothing to write home about. The reason you’re only doing three epochs is that the validation score becomes worse if you train for longer because of overfitting.
+</p>
+<p>See what it does on the test set:
+</p><pre class="code-block">model.evaluate_generator(test_generator)</pre>
+<p>For me, the output is about 0.15 or 15% correct. It’s better than a random guess, and better than the model with just a single <code>Dense</code> layer, but not by much. Adding more <code>Dense</code> layers might boost the validation and test scores by a little, but you’re still very far off from the accuracy scores you got from Create ML and Turi Create.
+</p>
+<p>It should be clear by now that these classical methods, logistic regression and fully connected neural networks, just don’t work very well for image data. One reason is that the model you’ve created actually destroys the spatial nature of the training data.
+</p>
+<p>Images have a width and height, but the first thing the model does is <code>Flatten</code> the image so it can be connected to a <code>Dense</code> layer. As you’ve seen, <code>Flatten</code> unrolls the original three-dimensional image data — height, width and color channels — into a one-dimensional vector. This destroys the relationships between neighboring pixels that was present in the original image. By doing this, you’ve unintentionally been making it hard on the model to understand our data. It would be better if you could use a model that kept the spatial relationships intact, and that understood the true nature of images. That’s exactly what convolutional layers do. And that’s the topic of the next chapter!
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Linear regression is one of the most basic machine-learning models, dating back to the 1800s when Gauss and others discovered the method of Ordinary Least Squares. It models the relationship between different variables. You can turn linear regression into logistic regression with the sigmoid function, making it a classifier model.
+</p></li>
+
+<li>
+<p>To build a logistic regression classifier in Keras, you just need one <code>Dense</code> layer followed by softmax activation. To use images with the <code>Dense</code> layer, you need to <code>Flatten</code> the image data into a one-dimensional vector first.
+</p></li>
+
+<li>
+<p>To train a model in Keras, you need to choose a loss function — cross-entropy for a classifier — as well as an optimizer. Setting the optimizer’s learning rate is important or the model won’t be able to learn anything.
+</p></li>
+
+<li>
+<p>Load your data with <code>ImageDataGenerator</code>. Use a normalization function to give your data a mean of 0 and a standard deviation of 1. Choose a batch size that fits on your GPU — 32 or 64 is a good default choice.
+</p></li>
+
+<li>
+<p>Be sure to check the loss and accuracy of your test set on the untrained model, to see if you get reasonable values. The accuracy should be approximately <code>1/num_classes</code>, the loss should be close to <code>np.log(num_classes)</code>.
+</p></li>
+
+<li>
+<p>Keep your eye on the validation accuracy during training. If it stops improving while the training accuracy continues going up, your model is overfitting.
+</p></li>
+
+<li>
+<p>A classical neural network is just two or more logistic regressions in a row.
+</p></li>
+
+<li>
+<p>Logistic regression and classical feed-forward neural networks are not the best choice for building image classifiers.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Challenge</h2>
+
+<p>Try adding more layers to the neural network, and varying the number of neurons inside these layers. Can you get a better test score this way? You’ll find that the more layers you add, the harder it actually becomes to train the model.
+</p></body></html>

@@ -1,0 +1,539 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 3: Training the Image Classifier</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 3: Training the Image Classifier</h1>
+
+<p>In the previous chapter, you saw how to use a trained model to classify images with Core ML and Vision. However, using other people’s models is often not sufficient — the models may not do exactly what you want or you may want to use your own data and categories — and so it’s good to know how to train your own models.
+</p>
+<p>In the chapters that follow, you’ll learn to create your own models. You’ll learn how to use common tools and libraries used by machine learning experts to create models. Apple provides developers with Create ML as a machine learning framework to create models in Xcode. In this chapter, you’ll learn how to train the snacks model using Create ML.
+</p>
+<h2 class="segment-chapter">The dataset</h2>
+
+<p>Before you can train a model, you need data. You may recall from the introduction that machine learning is all about training a model to learn “rules” by looking at a lot of examples. Since you’re building an image classifier, it makes sense that the examples are going to be images. You’re going to train an image classifier that can tell apart 20 different types of snacks. Here are the possible categories, again:
+</p><pre class="code-block">Healthy: apple, banana, carrot, grape, juice, orange,
+         pineapple, salad, strawberry, watermelon
+
+Unhealthy: cake, candy, cookie, doughnut, hot dog,
+           ice cream, muffin, popcorn, pretzel, waffle</pre>
+<p>Double-click <em>starter/snacks-download-link.webloc</em> to download and unzip the <em>snacks</em> dataset in your default download location, then move the <em>snacks</em> folder into the <em>dataset</em> folder. It contains the images on which you’ll train the model.
+</p>
+<p>This dataset has almost 7,000 images — roughly 350 images for each of these categories.
+</p><div class="image-90"><img src="graphics/img44.png"  alt="" title="The snacks dataset" /></div>
+<p>The dataset is split into three folders: train, test and val. For training the model, you will use only the 4,800 images from the <em>train</em> folder, known as the <em>training set</em>.
+</p>
+<p>The images from the <em>val</em> and <em>test</em> folders (950 each) are used to measure how well the model works once it has been trained. These are known as the <em>validation set</em> and the <em>test set</em>, respectively. It’s important that you don’t use images from the validation set or test set for training; otherwise, you won’t be able to get a reliable estimate of the quality of your model. We’ll talk more about this later in the chapter.
+</p>
+<p>Here are a few examples of training images:
+</p><div class="image-100"><img src="graphics/img45.png"  alt="" title="Selected training images" /></div>
+<p>As you can see, the images come in all kinds of shapes and sizes. The name of the folder will be used as the class name — also called the <em>label</em> or the <em>target</em>.
+</p>
+<h2 class="segment-chapter">Create ML</h2>
+
+<p>You will now use Create ML to train a multi-class classifier on the snacks dataset.
+</p>
+<p>In Xcode, open <em>starter/MultiSnacks.playground</em>, and enter this code:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> CreateMLUI
+
+<span class="hljs-keyword">let</span> builder = <span class="hljs-type">MLImageClassifierBuilder</span>()
+builder.showInLiveView()</pre>
+<div class="note">
+<p><em>Note</em>: This is a <em>macOS</em> playground. <code>CreateMLUI</code> doesn’t work in an iOS playground. Also note that Create ML requires macOS Mojave (10.14).
+</p></div>
+
+<p>Show the assistant editor and click the Run button:
+</p><div class="image-85"><img src="graphics/img46.png"  alt="" title="" /></div>
+<p>You’re creating and showing an interactive view for training and evaluating an image classifier.
+</p>
+<p>Drag the <em>snacks/train</em> folder onto the view.
+</p><div class="image-85"><img src="graphics/img47.png"  alt="" title="" /></div>
+<p>The training process starts immediately. Images load, with a progress bar below. After a short time, a table appears in the debug area, displaying <em>Images Processed</em>, <em>Elapsed Time</em> and <em>Percent Complete</em>:
+</p><div class="image-85"><img src="graphics/img48.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: You may be wondering how Create ML can load <i>all</i> of the training data in memory, since 4,800 images may actually take up more physical memory than you have RAM. Create ML loads data into <code>MLDataTable</code> structures, which keep only the image metadata in memory, then loads the images themselves on demand. This means that you can have very large <code>MLDataTable</code>s that contain a lot of data.
+</p></div>
+
+<p>Watch some of the images in the interactive view to get a feel for what’s there. Each image is in a subdirectory named for the type of food shown in the image, like “apple” or “cookie.” Depending on the processors in your Mac, training can take 5–10 minutes or more. While you wait, continue reading about <em>dataset curation</em> and <em>transfer learning</em>.
+</p>
+<h2 class="segment-chapter">How we created the dataset</h2>
+
+<p>Collecting good training data can be very time consuming! It’s often considered to be the most expensive part of machine learning. Despite — or because of — the wealth of data available on the internet, you’ll often need to <i>curate</i> your dataset: You must manually go through the data items to remove or clean up bad data or to correct classification errors.
+</p>
+<p>The images in this dataset are from the Google Open Images Dataset, which contains more than 9 million images organized into thousands of categories. The Open Images project doesn’t actually host the images — only the URLs to these images. Most of the images come from Flickr and are all licensed under a Creative Commons license (CC BY 2.0). You can find the Open Images Dataset at <a href="https://storage.googleapis.com/openimages/web/index.html">storage.googleapis.com/openimages/web/index.html</a>
+</p>
+<p>To create the snacks dataset, we first looked through the thousands of classes in Open Images and picked 20 categories of healthy and unhealthy snacks. We then downloaded the <em>annotations</em> for all the images. The annotations contain metadata about the images, such as what their class is. Since, in Open Images, the images can contain multiple objects, they may also have multiple classes.
+</p>
+<p>We randomly grabbed a subset of image URLs for each of our 20 chosen classes, and we then downloaded these images using a Python script. Quite a few of the images were no longer available or just not very good, while some were even mislabeled as being from the wrong category, so we went through the downloaded images by hand to clean them up.
+</p>
+<p>Here are some of the things we had to do to clean up the data:
+</p>
+<ul>
+<li>
+<p>The pictures in Open Images often contain more than one object, such as an apple and a banana, and we can’t use these to train the classifier because the classifier expects only a single label per image. The image must have either an apple <i>or</i> a banana, not both; otherwise, it will just confuse the learning algorithm. <em>We only kept images with just one main object</em>.
+</p></li>
+
+<li>
+<p>Sometimes, the lines between categories are a little blurry. Many downloaded images from the cake category were of cupcakes, which are very similar to muffins, so <em>we removed these ambiguous images from the dataset</em>. For our purposes, we decided that cupcakes belong to the muffins category, not the cake category.
+</p></li>
+
+<li>
+<p><em>We made sure the selected images were meaningful for the problem you’re trying to solve</em>. The snacks classifier was intended to work on food items you’d typically find in a home or office. But the banana category had a lot of images of banana trees with stacks of green bananas — that’s not the kind of banana we wanted the classifier to recognize.
+</p></li>
+
+<li>
+<p>Likewise, <em>we included a variety of images</em>. We did not only want to include “perfect” pictures that look like they could be found in cookbooks, but photos with a variety of backgrounds, lighting conditions and humans in them (since it’s likely that you’ll use the app in your home or office, and the pictures you take will have people in them).
+</p></li>
+
+<li>
+<p><em>We threw out images in which the object of interest was very small</em>, since the neural network resizes the images to 299x299 pixels, a very small object would be just a few pixels in size — too small for the model to learn anything from.
+</p></li>
+</ul>
+
+<p>The process of downloading images and curating them was repeated several times, until we had a dataset that gave good results. Simply by improving the data, the accuracy of the model also improved.
+</p>
+<p>When training an image classifier, more images is better. However, we limited the dataset to about 350 images per category to keep the download small and training times short so that using this dataset would be accessible to all our readers. Popular datasets such as ImageNet have 1,000 or more images per category, but they are also hundreds of gigabytes.
+</p>
+<p>The final dataset has 350 images per category, which are split into 250 training images, 50 validation images and 50 test images. Some categories, such as pretzel and popcorn, have fewer images because there simply weren’t more suitable ones available in Open Images.
+</p>
+<p>It’s not necessary to have exactly the same number of images in each category, but the difference also should not be too great, or the model will be tempted to learn more about one class than another. Such a dataset is called <em>imbalanced</em> and you need special techniques to deal with them, which we aren’t going to cover, here.
+</p>
+<p>All images were resized so that the smallest side is 256 pixels. This isn’t necessary, but it does make the download smaller and training a bit faster. We also stripped the EXIF metadata from images because some of the Python image loaders give warnings on those images, and that’s just annoying. The downside of removing this metadata is that EXIF contains orientation info for the images, so some images may actually appear upside down... Oh well.
+</p>
+<p>Creating the dataset took quite a while, but it’s vital. If your dataset is not high quality, then the model won’t be able to learn what you want it to learn. As they say, it’s not who has the best algorithms, but who has the best data.
+</p>
+<div class="note">
+<p><em>Note</em>: You are free to use the images in the snacks dataset as long as you stick to the rules of the CC BY 2.0 license. The filenames have the same IDs as used in the Google Open Images annotations. You can use the included <code>credits.csv</code> file to look up the original URLs of where the images came from.
+</p></div>
+
+<h2 class="segment-chapter">Transfer learning</h2>
+
+<p>So what’s happening in the playground? Create ML is currently busy training your model using <em>transfer learning</em>. As you may recall from the first chapter, transfer learning is a clever way to quickly train models by reusing knowledge from another model that was originally trained on a different task.
+</p>
+<p>The HealthySnacks and MultiSnacks models you used in the previous chapter were built on top of something called SqueezeNet. The underlying model used by Create ML is not SqueezeNet but <code>VisionFeaturePrint_Screen</code>, a model that was designed by Apple specifically for getting high-quality results on iOS devices.
+</p>
+<p><code>VisionFeaturePrint_Screen</code> was pre-trained on a ginormous dataset to recognize a huge number of classes. It did this by learning what <em>features</em> to look for in an image and by learning how to combine these features to classify the image. Almost all of the training time for your dataset, is the time the model spends extracting 2,048 features from your images. These include low-level edges, mid-level shapes and task-specific high-level features.
+</p>
+<p>Once the features have been extracted, Create ML spends only a relatively tiny amount of time training a <em>logistic regression</em> model to separate your images into 20 classes. It’s similar to fitting a straight line to scattered points, but in 2,048 dimensions instead of two.
+</p>
+<p>Transfer learning only works successfully when features of your dataset are reasonably similar to features of the dataset that was used to train the model. A model pre-trained on ImageNet — a large collection of photos — might not transfer well to pencil drawings or microscopy images.
+</p>
+<h3 class="segment-chapter">A closer look at the training loop</h3>
+
+<p>Transfer learning takes less time than training a neural network from scratch. However, before we can clearly understand how transfer learning works, we have to gain a little insight into what it means to train a neural network first. It’s worth recalling an image we presented in the first chapter:
+</p><div class="image-70"><img src="graphics/img49.png"  alt="" title="" /></div>
+<p>In words, this how a neural network is trained:
+</p>
+<ol>
+<li>
+<p><em>Initialize the neural network’s “brain” with small random numbers</em>. This is why an untrained model just makes random guesses: its knowledge literally is random. These numbers are known as the <em>weights</em> or <em>learned parameters</em> of the model. Training is the process of changing these weights from random numbers into something meaningful.
+</p></li>
+
+<li>
+<p><em>Let the neural network make predictions for all the training examples</em>. For an image classifier, the training examples are images.
+</p></li>
+
+<li>
+<p><em>Compare the predictions to the expected answers</em>. When you’re training a classifier, the expected answers — commonly referred to as the “targets” — are the class labels for the training images. The targets are used to compute the “error” or <em>loss</em>, a measure of how far off the predictions are from the expected answers. The loss is a multi-dimensional function that has a minimum value for some particular configuration of the weights, and the goal of training is to determine the best possible values for the weights that get the loss very close to this minimum. On an untrained model, where the weights are random, the loss is high. The lower this loss value, the more the model has learned.
+</p></li>
+
+<li>
+<p>To improve the weights and reduce the error, you <em>calculate the gradient of the loss function</em>. This gradient tells you how much each weight contributed to the loss. Using this gradient, you can correct the weights so that next time the loss is a little lower. This correction step is called <em>gradient descent</em>, and happens many times during a training session. This nudges the model’s knowledge a little bit in the right direction so that, next time, it will make slightly more correct predictions for the training images.
+</p>
+<p>For large datasets, using all the training data to calculate the gradient takes a long time. <em>Stochastic gradient descent</em> (SGD) estimates the gradient from randomly selected <em>mini-batches</em> of training data. This is like taking a survey of voters ahead of election day: If your sample is representative of the whole dataset, then the survey results accurately predict the final results.
+</p></li>
+
+<li>
+<p>Go to step two to <em>repeat this process hundreds of times for all the images in the training set</em>. With each training step, the model becomes a tiny bit better: The brain’s learned parameters change from random numbers into something that is more suitable to the task that you want it to learn. Over time, the model learns to make better and better predictions.
+</p></li>
+</ol>
+
+<p>Stochastic gradient descent is a rather brute-force approach, but it’s the only method that is practical for training deep neural networks. Unfortunately, it’s also rather slow. To make SGD work reliably, you can only make small adjustments at a time to the learned parameters, so it takes a lot of training steps (hundreds of thousands or more) to make the model learn anything.
+</p>
+<p>You’ve seen that an untrained model is initialized with random weights. In order for such a model to learn the desired task, such as image classification, it requires a lot of training data. Image classifiers are often trained on datasets of thousands of images per class. If you have too few images, the model won’t be able to learn anything. Machine learning is very data hungry!
+</p>
+<p>Those are the two big downsides of training a deep learning model from scratch: You need a lot of data and it’s slow.
+</p>
+<p>Create ML uses a smarter approach. Instead of starting with an untrained model that has only random numbers in its brain, Create ML takes a neural network that has already been successfully trained on a large dataset, and then it fine-tunes it on your own data. This involves training only a small portion of the model instead of the whole thing.
+</p>
+<p>This shortcut is called <em>transfer learning</em> because you’re transferring the knowledge that the neural network has learned on some other type of problem to your specific task. It’s a lot faster than training a model from scratch, and it can work just as well. It’s the machine learning equivalent of “work smarter, not harder!”
+</p>
+<p>The pre-trained <code>VisionFeaturePrint_Screen</code> model that Create ML uses has seen lots of photos of food and drinks, so it already has a lot of knowledge about the kinds of images that you’ll be using it with. Using transfer learning, you can take advantage of this existing knowledge.
+</p>
+<div class="note">
+<p><em>Note</em>: When you use transfer learning, you need to choose a <i>base model</i> that you’ll use for feature extraction. The two base models that you’ve seen so far are SqueezeNet and <code>VisionFeaturePrint_Screen</code>. Turi Create analyzes your training data to select the most suitable base model. Currently, Create ML’s image classifier always uses the <code>VisionFeaturePrint_Screen</code> base model. It’s large, with 2,048 features, so the feature extraction process takes a while. The good news is that <code>VisionFeaturePrint_Screen</code> is part of iOS 12 and the Vision framework, so models built on this are tiny — kilobytes instead of megabytes, because they do not need to include the base model. The bad news is that models trained with Create ML will not work on iOS 11, or on other platforms such as Android.
+</p></div>
+
+<p>Since this pre-trained base model doesn’t yet know about our 20 specific types of snacks, you cannot plug it directly into the snack detector app, but you <i>can</i> use it as a <em>feature extractor</em>.
+</p>
+<h3 class="segment-chapter">What is feature extraction?</h3>
+
+<p>You may recall that machine learning happens on “features,” where we’ve defined a feature to be any kind of data item that we find interesting. You could use the photo’s pixels as features but, as the previous chapter demonstrated, the individual RGB values don’t say much about what sort of objects are in the image.
+</p>
+<p><code>VisionFeaturePrint_Screen</code> transforms the pixel features, which are hard to understand, into features that are much more descriptive of the objects in the images.
+</p>
+<p>This is the pipeline that we’ve talked about before. Here, however, the output of <code>VisionFeaturePrint_Screen</code> is not a probability distribution that says how likely it is that the image contains an object of each class.
+</p>
+<p><code>VisionFeaturePrint_Screen</code>’s output is, well, more features.
+</p><div class="image-100"><img src="graphics/img50.png"  alt="" title="VisionFeaturePrint_Screen extracts features" /></div>
+<p>For each input image, <code>VisionFeaturePrint_Screen</code> produces a list of 2,048 numbers. These numbers represent the content of the image at a high level. Exactly what these numbers mean isn’t always easy to describe in words, but think of each image as now being a point in this new 2,048-dimensional space, wherein images with similar properties are grouped together.
+</p>
+<p>For example, one of those 2,048 numbers could represent the color of a snack, and oranges and carrots would have very similar values in that dimension. Another feature could represent how elongated an object is, and bananas, carrots and hot dogs would have larger values than oranges and apples. On the other hand, apples, oranges and doughnuts would score higher in the dimension for how “round” the snack is, while waffles would score lower in that dimension (assuming a negative value for that feature means squareness instead of roundness).
+</p>
+<p>Models usually aren’t that interpretable, though, but you get the idea: These new 2,048 features describe the objects in the images by their true characteristics, which are much more informative than pixel intensities. However, you cannot simply draw a line (sorry, a <i>hyperplane</i>) through this 2,048-dimensional space to separate the images into the different classes we’re looking for, because <code>VisionFeaturePrint_Screen</code> is not trained on our own dataset. It was trained on ImageNet, which has 1000 classes, not 20.
+</p>
+<p>While <code>VisionFeaturePrint_Screen</code> does a good job of creating more useful features from the training images, in order to be able to classify these images we need to transform the data one more time into the 20-dimensional space that we can interpret as the probability distribution over our 20 types of snacks.
+</p>
+<p>How do we do that? Well, Create ML uses these 2,048 numbers as the input to a new machine learning model called <em>logistic regression</em>. Instead of training a big, hairy model on images that have 150,000 features (difficult!), Create ML just trains a much simpler model on top of the 2,048 features that <code>VisionFeaturePrint_Screen</code> has extracted.
+</p>
+<h2 class="segment-chapter">Logistic regression</h2>
+
+<p>By the time you’re done reading the previous section, Create ML has (hopefully) finished training your model. The tables show 3m 9s for feature extraction and 6.6s to train and calibrate the solver.
+</p>
+<div class="note">
+<p><em>Note</em>: I’m running Create ML on a 2018 MacBook Pro with a 6-core 2.7GHz CPU and Radeon 560 GPU. You’ll probably get slightly different results than this. Untrained models, in this case the logistic regression, are initialized with random numbers, which can cause variations between different training runs.
+</p></div>
+<pre class="code-block">Extracting image features from full data set.
+Analyzing and extracting image features.
++------------------+--------------+------------------+
+| Images Processed | Elapsed Time | Percent Complete |
++------------------+--------------+------------------+
+| 1                | 5.13s        | 0%               |
+| 2                | 5.18s        | 0%               |
+| 3                | 5.23s        | 0%               |
+| 4                | 5.28s        | 0%               |
+| 5                | 5.33s        | 0%               |
+...
+| 4500             | 2m 57s       | 93%              |
+| 4600             | 3m 1s        | 95%              |
+| 4700             | 3m 4s        | 97%              |
+| 4800             | 3m 8s        | 99%              |
+| 4838             | 3m 9s        | 100%             |
++------------------+--------------+------------------+
+Automatically generating validation set from 5% of the data.
+Beginning model training on processed features.
+Calibrating solver; this may take some time.
++-----------+--------------+-------------------+---------------------+
+| Iteration | Elapsed Time | Training-accuracy | Validation-accuracy |
++-----------+--------------+-------------------+---------------------+
+| 1         | 1.108525     | 0.714441          | 0.675000            |
+| 2         | 2.353929     | 0.798173          | 0.783333            |
+| 3         | 2.916080     | 0.813180          | 0.787500            |
+| 4         | 3.447996     | 0.830579          | 0.791667            |
+| 5         | 3.988087     | 0.850152          | 0.829167            |
+| 10        | 6.638566     | 0.911918          | 0.891667            |
++-----------+--------------+-------------------+---------------------+</pre>
+<p>The solver that Create ML trains is a classifier called <em>logistic regression</em>. This is an old-school machine learning algorithm but it’s still extremely useful. It’s arguably the most common ML model in use today.
+</p>
+<p>You may be familiar with another type of regression called <em>linear regression</em>. This is the act of fitting a line through points on a graph, something you may have done in high school where it was likely called the method of (ordinary) least squares.
+</p><div class="image-80"><img src="graphics/img51.png"  alt="" title="Linear and logistic regression" /></div>
+<p>Logistic regression does the same thing, but says: All points on one side of the line belong to class A, and all points on the other side of the line belong to class B. See how we’re literally drawing a line through space to separate it into two classes?
+</p>
+<p>Because books cannot have 2,048-dimensional illustrations, the logistic regression in the above illustration is necessarily two-dimensional, but the algorithm works the same way, regardless of how many dimensions the input data has. Instead of a line, the decision boundary is really a high-dimensional object that we’ve mentioned before: a <em>hyperplane</em>. But because humans have trouble thinking in more than two or three dimensions, we prefer to visualize it with a straight line.
+</p>
+<p>Create ML actually uses a small variation of the algorithm — <em>multinomial logistic regression</em> — that handles more than two classes.
+</p>
+<p>Training the logistic regression algorithm to transform the 2,048-dimensional features into a space that allows us to draw separating lines between the 20 classes is fairly easy because we already start with features that say something meaningful about the image, rather than raw pixel values.
+</p>
+<div class="note">
+<p><em>Note</em>: If you’re wondering about exactly how logistic regression works, as usual it involves a transformation of some kind. The logistic regression model tries to find “coefficients” (its learned parameters) for the line so that a point that belongs to class A is transformed into a (large) negative value, and a point from class B is transformed into a (large) positive value. Whether a transformed point is positive or negative then determines its class. The more ambiguous a point is, i.e. the closer the point is to the decision boundary, the closer its transformed value is to 0. The multinomial version extends this to allow for more than two classes. We’ll go into the math in a later chapter. For now, it suffices to understand that this algorithm finds a straight line / hyperplane that separates the points belonging to different classes in the best way possible.
+</p></div>
+
+<h2 class="segment-chapter">Looking for validation</h2>
+
+<p>Even though there are 4,838 images in the snacks/train dataset, Create ML uses only 95% of them for training. In the output, after feature extraction, there’s this message:
+</p><pre class="code-block">Automatically generating validation set from 5% of the data.</pre>
+<p>During training, it’s useful to periodically check how well the model is doing. For this purpose, Create ML sets aside a small portion of the training examples — 5%, so about 240 images. It doesn’t train the logistic classifier on these images, but only uses them to evaluate how well the model does (and possibly to tune certain settings of the logistic regression).
+</p>
+<p>This is why the output has one column for <em>training accuracy</em> and one for <em>validation accuracy</em>:
+</p><pre class="code-block">+-----------+--------------+-------------------+---------------------+
+| Iteration | Elapsed Time | Training-accuracy | Validation-accuracy |
++-----------+--------------+-------------------+---------------------+
+| 1         | 1.108525     | 0.714441          | 0.675000            |
+| 2         | 2.353929     | 0.798173          | 0.783333            |
+| 3         | 2.916080     | 0.813180          | 0.787500            |
+| 4         | 3.447996     | 0.830579          | 0.791667            |
+| 5         | 3.988087     | 0.850152          | 0.829167            |
+| 10        | 6.638566     | 0.911918          | 0.891667            |
++-----------+--------------+-------------------+---------------------+
+Completed (Iteration limit reached).</pre>
+<p>After 10 iterations, training accuracy was 0.91 or 91%, meaning that out of 100 training examples it correctly predicts the class for 91 of them. In other words, the classifier is correct for 9 out of 10 images. The validation accuracy is similar: 0.89, close enough to 9 out of 10 images correct.
+</p>
+<div class="note">
+<p><em>Note</em>: What Create ML calls an iteration is one pass through the entire training set, also known as an “epoch”. This means Create ML has given the model a chance to look at all 4,582 training images once (or rather, the extracted feature vectors of all training images). If you do 10 iterations, the model will have seen each training image (or its feature vectors) 10 times.
+</p></div>
+
+<p>By default, Create ML trains the logistic regression for up to 10 iterations, but you can change this with the <em>Max iterations</em> setting. In general, the more iterations, the better the model, but also the longer you have to wait for training to finish. But training the logistic regression doesn’t take long, so no problem!
+</p>
+<p>The problem with this is doing the feature extraction all over again! If your Mac did the feature extraction in five minutes or less, go ahead and try this:
+</p><div class="image-50"><img src="graphics/img52.png"  alt="" title="" /></div>
+<ol>
+<li>
+<p>Stop the playground; then run it again.
+</p></li>
+
+<li>
+<p>Click the disclosure arrow to show the options.
+</p></li>
+
+<li>
+<p>Increase <em>Max iterations</em> to 25.
+</p></li>
+
+<li>
+<p>Drag <em>snacks/train</em> onto the view to start feature extraction.
+</p></li>
+</ol>
+
+<p>Here’s what happened on my Mac:
+</p><pre class="code-block">...
+Automatically generating validation set from 5% of the data.
+Beginning model training on processed features.
+Calibrating solver; this may take some time.
++-----------+--------------+-------------------+---------------------+
+| Iteration | Elapsed Time | Training Accuracy | Validation Accuracy |
++-----------+--------------+-------------------+---------------------+
+| 1         | 1.009019     | 0.739452          | 0.754167            |
+...
+| 5         | 3.645678     | 0.845368          | 0.870833            |
+| 10        | 6.054766     | 0.908221          | 0.891667            |
+| 15        | 8.408861     | 0.953458          | 0.904167            |
+| 20        | 10.796781    | 0.965855          | 0.920833            |
+| 25        | 13.168258    | 0.984776          | 0.916667            |
++-----------+--------------+-------------------+---------------------+
+Completed (Iteration limit reached).</pre>
+<p>Huh? Training accuracy improved, but validation accuracy stayed pretty much the same! Maybe 240 validation images isn’t enough? Remember, there’s a snacks/val subdirectory, with about 50 images per class, so try using these, instead of letting Create ML choose 5% at random.
+</p>
+<p>Stop and restart the playground. Open the options to increase <em>Max iterations</em> to 25, and set <em>Validation data</em> to <em>snacks/val</em> (double-click on <em>Choose...</em> to open a file selection dialog):
+</p><div class="image-50"><img src="graphics/img53.png"  alt="" title="" /></div>
+<p>Here’s what I got:
+</p><pre class="code-block">+-----------+--------------+-------------------+---------------------+
+| Iteration | Elapsed Time | Training Accuracy | Validation Accuracy |
++-----------+--------------+-------------------+---------------------+
+| 1         | 1.073211     | 0.743076          | 0.720419            |
+| 2         | 2.332538     | 0.788136          | 0.757068            |
+| 3         | 2.866700     | 0.812112          | 0.786387            |
+| 4         | 3.426697     | 0.831749          | 0.801047            |
+| 5         | 3.964355     | 0.847458          | 0.825131            |
+| 10        | 6.610393     | 0.907400          | 0.889005            |
+| 15        | 9.270788     | 0.950186          | 0.915183            |
+| 20        | 11.920261    | 0.964035          | 0.913089            |
+| 25        | 14.616540    | 0.983258          | 0.919372            |
++-----------+--------------+-------------------+---------------------+</pre>
+<p>This is with 955 validation images, not 240. And this time the training used all 4,838 training images. But validation accuracy still doesn’t improve, indicating the model may be <em>overfitting</em>.
+</p>
+<h3 class="segment-chapter">Overfitting happens</h3>
+
+<p>Overfitting is a term you hear a lot in machine learning. It means that the model has started to remember <i>specific</i> training images. For example, the image train/ice cream/b0fff2ec6c49c718.jpg has a person in a blue shirt enjoying a sundae:
+</p><div><img src="graphics/img54.jpg" height="40%"  alt="" title="Yummy!" /></div>
+<p>Suppose a classifier learns a rule that says, “If there is a big blue blob in the image, then the class is ice cream.” That’s obviously not what you want the model to learn, as the blue shirt does not have anything to do with ice cream in general. It just happens to work for this particular training image.
+</p>
+<p>This is why you use a validation set of images that are not used for training. Since the model has never seen these images before, it hasn’t learned anything about them, making this is a good test of how well the trained model can generalize to new images.
+</p>
+<p>So the <i>true</i> accuracy of this particular model is 92% correct (the validation accuracy), not 98% (the training accuracy). If you only look at the training accuracy, your estimate of the model’s accuracy can be too optimistic. Ideally, you want the validation accuracy to be similar to the training accuracy, as it was after only 10 iterations — that means that your model is doing a good job.
+</p>
+<p>Typically, the validation accuracy is a bit lower, but if the gap between them is too big, it means the model has been learning too many irrelevant details from the training set — in effect, memorizing what the result should be for specific training images. Overfitting is one of the most prevalent issues with training deep learning models.
+</p>
+<p>There are several ways to deal with overfitting. The best strategy is to train with more data. Unfortunately, for this book we can’t really make you download a 100GB dataset, and so we’ve decided to make do with a relatively small dataset. For image classifiers, you can <em>augment</em> your image data by flipping, rotating, shearing or changing the exposure of images. Here’s an illustration of data augmentation:
+</p><div class="image-85"><img src="graphics/img55.png"  alt="" title="" /></div>
+<p>So try it: restart the playground, set the options as before, but also select some data augmentation:
+</p><div class="image-50"><img src="graphics/img56.png"  alt="" title="" /></div>
+<div class="note">
+<p><em>Note</em>: The window lists the augmentation options from greatest to least training effectiveness, so Crop is the most effective choice. This is also the order in which the classifier applies options, if you select more than one. Selecting <em>Crop</em> creates four flipped images for each original image, so feature extraction takes almost five times longer (12m 47s, for me). Selecting all six augmentation options creates 100 augmented images for each original! Actually, “only 100,” because the number of augmentation images is capped at 100.
+</p></div>
+
+<p>Here’s what I got:
+</p><pre class="code-block">+-----------+--------------+-------------------+---------------------+
+| Iteration | Elapsed Time | Training Accuracy | Validation Accuracy |
++-----------+--------------+-------------------+---------------------+
+...
+| 5         | 20.242937    | 0.834436          | 0.827225            |
+...
+| 10        | 33.283525    | 0.895246          | 0.892147            |
+| 11        | 35.874542    | 0.899173          | 0.891099            |
+| 12        | 38.447442    | 0.903555          | 0.897382            |
+| 13        | 41.025082    | 0.916164          | 0.901571            |
+| 14        | 43.655974    | 0.925878          | 0.912042            |
+| 15        | 46.174075    | 0.928648          | 0.913089            |
+| 16        | 48.803652    | 0.932038          | 0.914136            |
+| 17        | 51.366629    | 0.934270          | 0.916230            |
+| 18        | 54.006646    | 0.937205          | 0.912042            |
+| 19        | 56.663583    | 0.942538          | 0.913089            |
+| 20        | 59.219079    | 0.944688          | 0.910995            |
+| 21        | 61.769311    | 0.946755          | 0.914136            |
+| 22        | 64.411917    | 0.948698          | 0.912042            |
+| 23        | 67.025052    | 0.952005          | 0.912042            |
+| 24        | 69.681690    | 0.955147          | 0.916230            |
+| 25        | 72.288230    | 0.957131          | 0.912042            |
++-----------+--------------+-------------------+---------------------+</pre>
+<p>Well, training accuracy is a little lower, but validation accuracy is stuck at 91–92%. So it’s still overfitting, but it’s also taking longer to learn — that’s understandable, with almost 25,000 images!
+</p>
+<div class="note">
+<p><em>Note</em>: Xcode 10 beta 6 has problems with the blur option for every image: <code>Failed to render 89401 pixels because a CIKernel’s ROI function did not allow tiling.</code>
+</p></div>
+
+<p>Another trick is adding <em>regularization</em> to the model — something that penalizes large weights, because a model that gives a lot of weight to a few features is more likely to be overfitting. Create ML doesn’t let you do regularization, so you’ll learn more about it in Chapter 5: “Digging Deeper into Turi Create.”
+</p>
+<p>The takeaway is that training accuracy is a useful metric, but it only says something about whether the model is still learning new things, not about how well the model works in practice. A good score on the training images isn’t really that interesting, since you already know what their classes are, after all.
+</p>
+<p>What you care about is how well the model works on images that it has never seen before. Therefore, the metric to keep your eye on is the validation accuracy, as this is a good indicator of the performance of the model in the real world.
+</p>
+<div class="note">
+<p><em>Note</em>: By the way, overfitting isn’t the only reason why the validation accuracy can be lower than the training accuracy. If your training images are different from your validation images in some fundamental way (silly example: all your training images are photos taken at night while the validation images are taken during the day), then your model obviously won’t get a good validation score. It doesn’t really matter where your validation images come from, as long as these images were not used for training but they do contain the same kinds of objects. This is why Create ML randomly picks 5% of the training images to use for validation. You’ll take a closer look at overfitting and the difference between the training and validation accuracies in the next chapters.
+</p></div>
+
+<h2 class="segment-chapter">More metrics and the test set</h2>
+
+<p>Now that you’ve trained the model, it’s good to know how well it does on new images that it has never seen before. You already got a little taste of that from the validation accuracy during training, but the dataset also comes with a collection of test images that you haven’t used yet. These are stored in the <em>snacks/test</em> folder, and are organized by class name, just like the training data.
+</p>
+<p>Drag the <em>snacks/test</em> folder onto the view to evaluate this model:
+</p><div class="image-85"><img src="graphics/img57.png"  alt="" title="" /></div>
+<p>This takes a few moments to compute. Just like during training, the feature extraction on the images takes more time than classification.
+</p><pre class="code-block">Extracting image features from evaluation data.
+Analyzing and extracting image features.
++------------------+--------------+------------------+
+| Images Processed | Elapsed Time | Percent Complete |
++------------------+--------------+------------------+
+| 1                | 62.735ms     | 0%               |
+| 2                | 102.807ms    | 0%               |
+...
+| 952              | 29.13s       | 100%             |
+| 951              | 29.09s       | 99.75%           |
++------------------+--------------+------------------+
+----------------------------------
+Number of examples: 952
+Number of classes: 20
+Accuracy: 90.97%</pre>
+<p>91% accuracy! This is consistent with validation accuracy.
+</p>
+<div class="note">
+<p><em>Note</em>: You may be wondering what the difference is between the validation set that’s used during training and the test set you’re using now. They are both used to find out how well the trained model does on new images.
+</p>
+<p>However, the validation set is often also used to tune the settings of the learning algorithm — the so-called <em>hyperparameters</em>. Because of this, the model does get influenced by the images in the validation set, even though the training process never looks at these images directly. So while the validation score gives a better idea of the true performance of the model than the training accuracy, it is still not completely impartial.
+</p>
+<p>That’s why it’s a good idea to reserve a separate test set. Ideally, you’d evaluate your model <i>only once</i> on this test set, when you’re completely done training it. You should resist the temptation to go back and tweak your model to improve the test set performance. You don’t want the test set images to influence how the model is trained, making the test set no longer a good representation of unseen images. It’s probably fine if you do this a few times, especially if your model isn’t very good yet, but it shouldn’t become a habit. Save the test set for last and evaluate on it as few times as possible.
+</p></div>
+
+<p>Again, the question: Is 91% correct a good score or a bad score? It means every one out of 10 images is scored wrong. Obviously, we’d rather see an accuracy score of 99% (only one out of 100 images wrong) or better, but whether that’s feasible depends on the capacity of your model, the number of classes and how many training images you have.
+</p>
+<p>Even if 91% correct is not ideal, it does mean your model has actually learned quite a bit. After all, with 20 classes, a totally random guess would only be correct one out of 20 times or 5% on average. So the model is already doing much better than random guesses. But it looks like Create ML isn’t going to do any better than this with the current dataset.
+</p>
+<p>Keep in mind, the accuracy score only looks at the top predicted class with the highest probability. If a picture contains an apple, and the most confident prediction is “hot dog,” then it’s obviously a wrong answer. But if the top prediction is “hot dog” with 40% confidence, while the second highest class is “apple” with 39% confidence, then you might still consider this a correct prediction.
+</p>
+<h3 class="segment-chapter">Precision and recall</h3>
+
+<p>Printed below the accuracy value in the Create ML output is the <em>confusion matrix</em>. You’ll look at that in Chapter 5, “Digging Deeper Into Turi Create,” when you create a nifty visualization of this matrix.
+</p>
+<p>Following the confusion matrix are two other useful metrics for classifiers — <em>precision</em> and <em>recall</em>:
+</p><pre class="code-block">******PRECISION RECALL******
+----------------------------------
+Class      Precision(%)   Recall(%)      
+apple      91.49          86.00          
+banana     96.15          100.00         
+cake       76.47          78.00          
+candy      88.00          88.00          
+carrot     90.20          92.00          
+cookie     88.64          78.00          
+doughnut   92.16          94.00          
+grape      97.92          94.00          
+hot dog    97.83          90.00          
+ice cream  88.00          88.00          
+juice      98.04          100.00         
+muffin     83.64          95.83          
+orange     89.80          88.00          
+pineapple  86.36          95.00          
+popcorn    100.00         97.50          
+pretzel    92.00          92.00          
+salad      87.27          96.00          
+strawberry 87.23          83.67          
+waffle     93.88          92.00          
+watermelon 97.92          94.00</pre>
+<p>Create ML computes precision and recall for each individual class, which is useful for understanding which classes perform better than others. These values are mostly above 80%. But what do they mean?
+</p>
+<p><em>Precision</em> means: Of all the images that the model predicts to be “apple”, 91.49% of them are actually apples. Precision is high if we don’t have many <em>false positives</em>, and it is low if we often misclassify something as being “apple.” A false positive happens if something isn’t actually from class “X”, but the model mistakenly thinks it is.
+</p>
+<p><em>Recall</em> is similar, but different: It counts how many apples the model found among the total number of apples — in this case, it found 86% of the “apple” images. This gives us an idea of the number of <em>false negatives</em>. If recall is low, it means we actually missed a lot of the apples. A false negative happens if something really <i>is</i> of class “X”, but the model thinks it’s a different class.
+</p>
+<p>Again, we like to see high numbers here, and &gt; 80% is reasonable. For example, look at the results for the “carrot” class: It has a precision of 90.2%, which means that about one out of 10 things the model claimed were carrot really aren’t. For recall, it means that the model found 92.0% of the carrot images in the test set. That’s pretty good.
+</p>
+<p>For precision, the worst performing classes are “cake” (76%) and “muffin” (84%). For recall, the worst are “cake” (78%) and “cookie” (78%). These would be the classes to pay attention to, in order to improve the model — for example, by gathering more or better training images for these classes.
+</p>
+<h2 class="segment-chapter">Exporting to Core ML</h2>
+
+<p>The whole point of training your own models is to use them in your apps, so let’s save this new model so you can load it with Core ML.
+</p>
+<p>Click the disclosure symbol next to <em>ImageClassifier</em> to see a different set of options. Click on the text, and change it to <em>MultiSnacks</em>. Change the <em>Where</em> location to the <em>starter</em> folder, then click <em>Save</em>:
+</p><div class="image-50"><img src="graphics/img58.png"  alt="" title="" /></div>
+<p>A Core ML model normally combines the feature extractor with the logistic regression classifier into a single model. You still need the feature extractor because, for any new images you want to classify, you also need to compute their feature vectors. With Core ML, the logistic regression is simply another layer in the neural network, i.e., another stage in the pipeline.
+</p>
+<p>However, a <code>VisionFeaturePrint_Screen</code>-based Core ML model doesn’t need to include the feature extractor, because it’s part of iOS 12. So the Core ML model is basically just the logistic regression classifier, and quite small!
+</p>
+<p>Once you’ve saved the <code>mlmodel</code> file, add it to Xcode in the usual way. Simply replace the existing .mlmodel file with your new one. The model that’s currently in the Snacks app was created with SqueezeNet as the feature extractor — it’s <em>5MB</em>. Your new model from Create ML is only 312<em>KB</em>! It’s actually a much bigger model, but most of it — the <code>VisionFeaturePrint_Screen</code> feature extractor — is already included in the operating system, and so you don’t need to distribute that as part of the .mlmodel file.
+</p>
+<div class="note">
+<p><em>Note</em>: There are a few other differences between these two feature extractors. SqueezeNet is a relatively small pre-trained model that expects 227×227 images, and extracts 1,000 features. <code>VisionFeaturePrint_Screen</code> uses 299×299 images, and extracts 2,048 features. So the kind of knowledge that is extracted from the image by the Vision model is much richer, which is why the model you just trained with Create ML actually performs better than the SqueezeNet-based model from the previous chapter, which only has a 67% validation accuracy!
+</p></div>
+
+<h3 class="segment-chapter">Classifying on live video</h3>
+
+<p>The example project in this chapter’s resources is a little different than the app you worked with in the previous chapter. It works on live video from the camera. The <code>VideoCapture</code> class uses <code>AVCaptureSession</code> to read video frames from the iPhone’s camera at 30 frames per second. The <code>ViewController</code> acts as the delegate for this <code>VideoCapture</code> class and is called with a <code>CVPixelBuffer</code> object 30 times per second. It uses Vision to make a prediction and then shows this on the screen in a label.
+</p>
+<p>The code is mostly the same as in the previous app, except now there’s no longer a <code>UIImagePicker</code> but the app runs the classifier continuously.
+</p><div><img src="graphics/img59.png" height="40%"  alt="" title="The classifier on live video" /></div>
+<p>There is also an <code>FPSCounter</code> object that counts how many frames per second the app achieves. With a model that uses <code>VisionFeaturePrint_Screen</code> as the feature extractor you should be able to get 30 FPS on a modern device.
+</p>
+<div class="note">
+<p><em>Note</em>: The app has a setting for <code>videoCapture.frameInterval</code> that lets you run the classifier less often, in order to save battery power. Experiment with this setting, and watch the energy usage screen in Xcode for the difference this makes.
+</p></div>
+
+<p>The <code>VideoCapture</code> class is just a bare bones example of how to read video from the camera. We kept it simple on purpose so as not to make the example app too complicated. For real-word production usage you’ll need to make this more robust, so it can handle interruptions, and use more camera features such as auto-focus, the front-facing camera, and so on.
+</p>
+<h2 class="segment-chapter">Recap</h2>
+
+<p>In this chapter, you got a taste of training your own Core ML model with Create ML. Partly due to the limited dataset, the default settings got only about 90% accuracy. Increasing max iterations increased training accuracy, but validation accuracy was stuck at ~90%, indicating that overfitting might be happening. Augmenting the data with flipped images reduced the gap between training and validation accuracies, but you’ll need more iterations to increase the accuracies.
+</p>
+<p>More images is better. We use 4,800 images, but 48,000 would have been better, and 4.8 million would have been even better. However, there is a real cost associated with finding and annotating training images, and for most projects a few hundred images or at most a few thousand images per class may be all you can afford. Use what you’ve got — you can always retrain the model at a later date once you’ve collected more training data. Data is king in machine learning, and who has the most of it usually ends up with a better model.
+</p>
+<p>Create ML is super easy to use, but lets you tweak only a few aspects of the training process. It’s also currently limited to image and text classification models.
+</p>
+<p>Turi Create gives you more task-focused models to customize, and lets you get more hands-on with the training process. It’s almost as easy to use as Create ML, but you need to write Python. The next chapter gets you started with some useful tools, so you can train a model with Turi Create. Then, in Chapter 5, “Digging Deeper Into Turi Create,” you’ll get a closer look at the training process, and learn more about the building blocks of neural networks.
+</p>
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>You can use macOS playgrounds to test out Create ML, and play with the different settings, to create simple machine learning models.
+</p></li>
+
+<li>
+<p>Create ML allows you to create small models that leverage the built-in Vision feature extractor already installed on iOS 12 devices.
+</p></li>
+
+<li>
+<p>Ideally, you want the validation accuracy to be similar to the training accuracy.
+</p></li>
+
+<li>
+<p>There are several ways to deal with overfitting: include more images, increase training iterations, or augment your data.
+</p></li>
+
+<li>
+<p>Precision and recall are useful metrics when evaluating your model.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Challenge</h2>
+
+<p>Create your own dataset of labelled images, and use Create ML to train a model.
+</p>
+<p>A fun dataset is the Kaggle dogs vs. cats competition <a href="https://www.kaggle.com/c/dogs-vs-cats">www.kaggle.com/c/dogs-vs-cats</a>, which lets you train a binary classifier that can tell apart dogs from cats. The best models score about 98% accuracy — how close can you get with Create ML?
+</p>
+<p>Also check out some of Kaggle’s other image datasets:
+</p><pre class="code-block">https://www.kaggle.com/datasets?sortBy=relevance&amp;group=featured&amp;search=image`</pre>
+<p>Of course, don’t forget to put your own model into the iOS app to impress your friends and co-workers!
+</p></body></html>

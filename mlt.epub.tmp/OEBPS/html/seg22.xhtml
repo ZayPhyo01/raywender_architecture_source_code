@@ -1,0 +1,549 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 11: Data Collection for Sequence Classification</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 11: Data Collection for Sequence Classification</h1>
+
+<p>You worked exclusively with images throughout the first section of this book, and for good reason — knowing how to apply machine learning to images lets you add many exciting and useful features to your apps. Techniques like classification and object detection can help you answer questions like “Is this snack healthy?” or “Which of these objects is a cookie?”
+</p>
+<p>But you’ve focused on <i>individual</i> images — even when processing videos, you processed each frame individually with complete disregard for the frames that came before or after it. Given the following <i>series</i> of images, can the techniques you’ve learned so far tell me where my cookies went?
+</p><div class="image-100"><img src="graphics/img183.png"  alt="" title="The Case of the Disappearing Cookies" /></div>
+<p>Each of the above images tells only part of the story. Rather than considering them individually, you need to reason over them as a <i>sequence</i>, applying what you see in earlier frames to help interpret later ones.
+</p>
+<p>There are many such tasks that involve working with sequential data, such as:
+</p>
+<ul>
+<li>
+<p>Extracting meaning from videos. Maybe you want to make an app that translates sign language, or search for clips based on the events they depict.
+</p></li>
+
+<li>
+<p>Working with audio, for example converting speech to text, or songs to sheet music.
+</p></li>
+
+<li>
+<p>Understanding text, such as these sentences you’ve been reading, which are sequences of words, themselves sequences of letters (assuming you’re reading this in a language that uses letters, that is).
+</p></li>
+
+<li>
+<p>And countless others. From weather data to stock prices to social media feeds, there are endless streams of sequential data.
+</p></li>
+</ul>
+
+<p>With so many types of data and almost as many techniques for working with it, this chapter can’t possibly cover everything. You’ll learn ways to deal with text in later chapters, and some of the techniques shown here are applicable to multiple domains. But to keep things practical, this chapter focuses on a specific type of sequence classification — human activity detection. That is, using sensor data from a device worn or held by a person to identify what that person is physically doing. You’ve probably already experienced activity detection on your devices, maybe checking your daily step count on your iPhone or closing rings on your Apple Watch. Those just scratch the surface of what’s possible.
+</p>
+<p>In this chapter, you’ll learn how to collect sensor data from Apple devices and prepare it for use training a machine learning model. Then you’ll use that data in the next chapter, along with Turi Create’s task-focused API for activity detection, to build a neural network that recognizes user activity from device motion data. Finally, you’ll use your trained neural net to recognize player actions in a game. The game you’ll make is similar to the popular Bop It toy, but instead of calling out various physical bits to bop and twist, it will call out gestures for the player to make with their iPhone. Perform the correct action before time runs out! The gestures detected include a chopping motion, a shaking motion and a driving motion (imagine turning a steering wheel).
+</p>
+<p>We chose this project because collecting data and testing it should be comfortably within the ability of most readers. However, you can use what you learn here for more than just gesture recognition — these techniques let you track or react to any activity identifiable from sensor data available on an Apple device.
+</p>
+<p>Modern hardware comes packed with sensors — depending on the model, you might have access to an accelerometer, gyroscope, pedometer, magnetometer, altimeter or GPS. You may even have access to the user’s heart rate!
+</p>
+<p>With so much data available, there are countless possibilities for behaviors you can detect, including sporadic actions like standing up from a chair or falling off a ladder, as well as activities that occur over longer durations like jogging or sleeping. And machine learning is the perfect tool to make sense of it all. But before you can fire up those neural nets, you’ll need a dataset to train them.
+</p>
+<h2 class="segment-chapter">Building a dataset</h2>
+
+<p>So you’ve got an app you want to power using machine learning. You do the sensible thing and scour the internet for a suitable, freely available dataset that meets your needs. You try tools like <a href="https://toolbox.google.com/datasetsearch">Google Dataset Search</a>, check popular data science sites like <a href="https://www.kaggle.com">Kaggle</a>, and exhaust every keyword search trick you know. If you find something — great, move on to the next section! But if your search for a dataset turns up nothing, all is not lost — you can build your own.
+</p>
+<p>Collecting and labeling data is the kind of thing professors make their graduate students do — time consuming, tedious work that may make you want to cry. When labeling human activity data, it’s not uncommon to record video of the activity session, go through it manually to decide when specific activities occur, and then label the data using timecodes synced between the data recordings and the video. That may sound like fun to some people, but those people are wrong and should never be trusted.
+</p>
+<p>This chapter takes a different approach — the data collection app <i>automatically</i> adds labels. They may not be as exact — manual labeling lets you pinpoint precise moments when test subjects begin or end an activity — but in many cases, they’re good enough.
+</p>
+<p>To get started, download the resources for this chapter if you haven’t already done so, and open the <em>GestureDataRecorder</em> starter project in Xcode.
+</p>
+<div class="note">
+<p><em>Note</em>: The chapter resources include data files you can use unchanged, so you aren’t <i>required</i> to collect more here. However, the experience will help later when working on your own projects. Plus, adding more data to the provided dataset should improve the model you make later in the chapter.
+</p></div>
+
+<p>Take a look through the project to see what’s there. <em>ViewController.swift</em> contains most of the app’s code, and it’s the only file you’ll be asked to change. Notice the <code>ActivityType</code> enum which identifies the different gestures the app will recognize:
+</p><pre class="code-block"><span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">ActivityType</span>: <span class="hljs-title">Int</span> </span>{
+    <span class="hljs-keyword">case</span> <span class="hljs-keyword">none</span> = <span class="hljs-number">0</span>, driveIt, shakeIt, chopIt
+}</pre>
+<p>If you run the app now, it will <i>seem</i> like it’s working but it won’t actually collect or save any data. The following image shows the app’s interface:
+</p><div class="image-35"><img src="graphics/img184.png"  alt="" title="Gesture Data Recorder app interface" /></div>
+<p>GestureDataRecorder probably won’t win any design awards, but that’s OK — it’s just a utility app that records sensor data. Users enter their ID, choose what activity and how many short sessions of that activity to record, and then hit <em>Start Session</em> to begin collecting data. The app speaks instructions to guide users through the recording process. And the <em>Instructions</em> button lets users see videos demonstrating the activities.
+</p>
+<div class="note">
+<p><em>Note</em>: For some datasets, it may be better to randomize activities during a session, rather than having users choose one for the entire thing. My test subjects didn’t seem to enjoy having to pay that much attention, though.
+</p></div>
+
+<p>Why require a user ID? You’ll learn more about this later, but it’s important to be able to separate samples in your dataset by their sources. You don’t need <i>specific</i> details about people, like their names — in fact, identifying details like that are often a bad idea for privacy and ethics reasons — but you need <i>some</i> way to distinguish between samples.
+</p>
+<p>GestureDataRecorder takes a simple but imperfect approach to this problem: it expects users to provide a unique identifier and then saves data for each user in separate files. To support this, the app makes users enter an ID number and then includes that in the names of the files it saves. If any files using that ID already exist on this device, the app requests confirmation and then appends new data to those files. So it trusts users not to append their data to someone else’s files on the device, and it’s up to you to ensure no two users enter the same ID on <i>different</i> devices.
+</p>
+<p>The starter code supports the interface and other business logic for the app — you’ll add the motion-related bits now so you get to know how that all works.
+</p>
+<h3 class="segment-chapter">Accessing device sensors with Core Motion</h3>
+
+<p>You’ll use Core Motion to access readings from the phone’s motion sensors, so import it by adding the following line along with the other imports in <em>ViewController.swift</em>:
+</p><pre class="code-block"><span class="hljs-keyword">import</span> CoreMotion</pre>
+<p>This lets you access Core Motion within your <i>code</i>, but it’s not enough to allow your <i>app</i> to do so. Apple rightly wants users to decide which apps can access their data, so it requires developers to include an explanation for <i>why</i> they want it. The starter project’s <em>Info.plist</em> file already includes this explanation as a value for the key <em>Privacy - Motion Usage Description</em>. And because motion data is <i>required</i> for this app to function, rather than just a nice additional feature, both <em>accelerometer</em> and <em>gyroscope</em> have been added to <em>Info.plist</em>’s <em>Required device capabilities</em> list, too. Don’t forget to provide the appropriate properties in your own apps.
+</p>
+<p>Next, in order to interact with Core Motion, add the following properties inside <code>ViewController</code>. Keep things organized by putting them under the existing comment that reads <code>// MARK: - Core Motion properties</code>:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> motionManager = <span class="hljs-type">CMMotionManager</span>()
+<span class="hljs-keyword">let</span> queue = <span class="hljs-type">OperationQueue</span>()</pre>
+<p>Here you create a <code>CMMotionManager</code> to access the device’s motion data. Each app should contain only one such object, regardless of how many sensors it plans to use. You’ll use <code>queue</code> to keep sensor update callbacks off the main thread, which helps the device remain responsive while processing these high frequency events. Using a separate <code>OperationQueue</code> like this also ensures your app doesn’t miss updates if it is temporarily too busy to process events.
+</p>
+<p>Before you go any further, find the following two lines inside <code>startRecordingSession</code> and delete them:
+</p><pre class="code-block"><span class="hljs-comment">/* <span class="hljs-doctag">TODO:</span> REMOVE THIS LINE
+...
+<span class="hljs-doctag">TODO:</span> REMOVE THIS LINE */</span></pre>
+<p>These lines were commenting out a <code>guard</code> statement that ensures the app has access to device motion, and alerts the user otherwise. They were commented out because they require <code>motionManager</code>, which you just added.
+</p>
+<p>You need to tell <code>motionManager</code> how often to produce sensor data. <code>ViewController</code> stores its configuration-related constants inside its <code>Config</code> struct, so add the following constant there:
+</p><pre class="code-block"><span class="hljs-keyword">static</span> <span class="hljs-keyword">let</span> samplesPerSecond = <span class="hljs-number">25.0</span></pre>
+<p>Here you set <code>samplesPerSecond</code> to 25, which you’ll use later to specify you want the device to send you 25 sensor updates every second. This number is important because it determines how much data your model looks at based on how often you perform predictions. That is, if you classify the user’s activity once per second, this gives you 25 samples per classification; if you do it once every four seconds, this rate gives you 100 samples.
+</p>
+<p>But why 25? The sensors in Apple devices are capable of producing updates many times per second — at least 100, according to the docs — so shouldn’t you just use the max? After all, aren’t people always saying that when it comes to machine learning, more data is always better?
+</p>
+<p>There are a few reasons why you shouldn’t necessarily increase the update frequency too high:
+</p>
+<ul>
+<li>
+<p>More updates means more data processing, which means less CPU available for whatever else your app needs to do.
+</p></li>
+
+<li>
+<p>Faster updates usually means feeding more data into your model per prediction. That requires more complex ML models, which run more slowly — maybe too slowly to keep up with those faster updates.
+</p></li>
+
+<li>
+<p>Higher frequency updates increase battery usage. You don’t want users deleting your app because it sucks the life out of their devices.
+</p></li>
+</ul>
+
+<p>It’s true that higher frequency updates let you perceive finer details within the data, so there are times when you may need them. But not always — some activities involve slower changes over a longer time, where sensor readings might be necessary only a few times per second, or even less. The value of 25 used here was chosen arbitrarily — it works fine, but experiments to find the lowest usable update rate were not performed.
+</p>
+<div class="note">
+<p><em>Note</em>: There’s another option you aren’t using here, but you may want to consider for your own projects. Perform data <i>collection</i> at a high rate, and then <i>downsample</i> it to train multiple models and find the lowest rate that works well. For example, collect data at 80Hz and then train multiple models — 80Hz using all the data, 40Hz using every other sample, 20Hz using every fourth sample, etc. This let’s you collect data once and then have different options for how to use it, which is better than having to recollect it multiple times to experiment with update rates. Once you find the lowest rate that still works well, use that in your production app.
+</p></div>
+
+<p>In this app, you’ll store all the collected sensor data in memory and then write it out to disk at the end of the recording session. Add the following array with the other properties under the comment that reads <code>// MARK: - Core Motion properties</code> in <code>ViewController</code>:
+</p><pre class="code-block"><span class="hljs-keyword">var</span> activityData: [<span class="hljs-type">String</span>] = []</pre>
+<p>You’ll create a single string containing all the data you want to record for a sample, and append it to <code>activityData</code>. The entire recording session will live inside this array as one long sequence, and GestureDataRecorder calls <code>saveActivityData</code> at the end of the session to save all these strings to file. However, you need to add the following line to actually save the array. Put it inside <code>saveActivityData</code> in <code>ViewController</code>, inside the <code>do</code> block that currently only contains a <code>print</code> statement:
+</p><pre class="code-block"><span class="hljs-keyword">try</span> <span class="hljs-keyword">self</span>.activityData.appendLinesToURL(fileURL: dataURL)</pre>
+<p>This writes all the strings in the array out to the appropriate file using a helper function from inside <em>StringArrayExtensions.swift</em>. This function creates the file if it doesn’t already exist, or appends to the file otherwise.
+</p>
+<p>One important aspect of GestureDataRecorder is that it keeps recording sessions very short. As such, there’s no fear of running out of memory while storing data in <code>activityData</code>. That also means it’s not a big deal if something goes wrong while recording and you need to throw out some data — it’s never much more than a minute’s worth. Shorter sessions are also easier on your test subjects — it’s probably a bit much to ask someone to shake their phone for an hour straight, but doing lots of tiny sessions isn’t so bad.
+</p>
+<p>However, when working with longer lasting activities, where data collection takes several minutes or more, you don’t want to risk having to throw away too much data. In that case, you should write your data out to disk periodically rather than at the end of the session. You should also consider making your app more robust, by saving data when the app gets interrupted from things like incoming phone calls, for example.
+</p>
+<p>You haven’t enabled motion updates just yet, but eventually the app will receive them in the form of <code>CMDeviceMotion</code> objects. Add the following method to <code>ViewController</code> to process them:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">processMotionData</span><span class="hljs-params">(<span class="hljs-number">_</span> motionData: CMDeviceMotion)</span></span> {
+  <span class="hljs-comment">// 1</span>
+  <span class="hljs-keyword">let</span> activity = isRecording ? currActivity : .<span class="hljs-keyword">none</span>
+  <span class="hljs-comment">// 2</span>
+  <span class="hljs-keyword">let</span> sample = <span class="hljs-string">""</span><span class="hljs-string">"
+  <span class="hljs-subst">\(sessionId!)</span>-<span class="hljs-subst">\(numActionsRecorded)</span>,\
+  <span class="hljs-subst">\(activity.rawValue)</span>,\
+  <span class="hljs-subst">\(motionData.attitude.roll)</span>,\
+  <span class="hljs-subst">\(motionData.attitude.pitch)</span>,\
+  <span class="hljs-subst">\(motionData.attitude.yaw)</span>,\
+  <span class="hljs-subst">\(motionData.rotationRate.x)</span>,\
+  <span class="hljs-subst">\(motionData.rotationRate.y)</span>,\
+  <span class="hljs-subst">\(motionData.rotationRate.z)</span>,\
+  <span class="hljs-subst">\(motionData.gravity.x)</span>,\
+  <span class="hljs-subst">\(motionData.gravity.y)</span>,\
+  <span class="hljs-subst">\(motionData.gravity.z)</span>,\
+  <span class="hljs-subst">\(motionData.userAcceleration.x)</span>,\
+  <span class="hljs-subst">\(motionData.userAcceleration.y)</span>,\
+  <span class="hljs-subst">\(motionData.userAcceleration.z)</span>
+  "</span><span class="hljs-string">""</span>
+  <span class="hljs-comment">// 3</span>
+  activityData.append(sample)
+}</pre>
+<p>This method creates samples for your dataset from <code>CMDeviceMotion</code> objects. Here’s how it works:
+</p>
+<ol>
+<li>
+<p>You label each sample with the activity it represents. This line checks to see if there <i>is</i> an activity being recorded or if this data is arriving in-between activities. In the latter case, you label it as <code>ActivityType.none</code>. The current activity is set from within the starter code after the app announces the activity to the user.
+</p></li>
+
+<li>
+<p>Here you create one big string representing a single data sample. It includes a session ID, the current activity and the sensor readings extracted from <code>motionData</code>, all separated by commas.
+</p></li>
+
+<li>
+<p>This line appends the string to <code>activityData</code>. The entire array gets saved to disk later, when the recording session ends.
+</p></li>
+</ol>
+
+<p>Along with the session ID and the activity type, you’re saving 12 different values at each moment in time. These were chosen because they seem like they <i>could</i> be relevant to the task at hand. However, you might not use all of them when you train your model.
+</p>
+<p>But it’s a good idea to record as much data as you can, because it gives you more options later when building your model. You can always remove data you don’t need, but there’s no way to go back to these moments and record additional data — adding features requires a new data collection effort.
+</p>
+<p>Notice the session ID gets created by combining <code>sessionId</code>, which is a timecode created when recording starts, and the number of which recording the user is currently doing. That means that each time a user runs the app, they’ll choose between creating one, two or three <i>sessions</i>, even though to the user it will seem like just one session.
+</p>
+<p>Why is that important? You’ll be using Turi Create’s activity classification API, and it <i>currently</i> requires a few things when training. (Comments from its developers on GitHub seem to indicate they would like to make it more flexible in the future.) First, it doesn’t like super short sessions. Without going into detail here, you’ll want your sessions to be about as long as 20 predictions worth of data. So if you plan on predicting once per second, for example, sessions should be at least 20 seconds long. It doesn’t need to be exact, but sessions much shorter than that may not work well.
+</p>
+<p>Secondly, Turi Create seems to prefer a lot of sessions. So instead of fewer, longer sessions, this app opts for creating more, shorter ones. Note however that sessions do <em>not</em> need to contain just a single activity. In fact, the sessions for this app will each contain <i>two</i> activities — the gesture itself, as well as a period of <code>none</code> data recorded before the gesture. In your own apps you can record any number of activities within a single session, but labeling them like this was an easy way to get more sessions with fewer actual user recordings.
+</p>
+<p>You’ve got a method to process <code>CMDeviceMotion</code> objects, but you still need Core Motion to send them. Add the following to <code>ViewController</code> to enable device motion updates:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">enableMotionUpdates</span><span class="hljs-params">()</span></span> {
+  <span class="hljs-comment">// 1</span>
+  motionManager.deviceMotionUpdateInterval =
+    <span class="hljs-number">1.0</span> / <span class="hljs-type">Config</span>.samplesPerSecond
+  <span class="hljs-comment">// 2</span>
+  activityData = [<span class="hljs-type">String</span>]()
+  <span class="hljs-comment">// 3</span>
+  motionManager.startDeviceMotionUpdates(
+    using: .xArbitraryZVertical,
+    to: queue, withHandler: { [<span class="hljs-keyword">weak</span> <span class="hljs-keyword">self</span>] motionData, error <span class="hljs-keyword">in</span>
+      <span class="hljs-comment">// 4</span>
+      <span class="hljs-keyword">guard</span> <span class="hljs-keyword">let</span> <span class="hljs-keyword">self</span> = <span class="hljs-keyword">self</span>, <span class="hljs-keyword">let</span> motionData = motionData <span class="hljs-keyword">else</span> {
+        <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> error = error {
+          <span class="hljs-built_in">print</span>(
+            <span class="hljs-string">"Device motion update error: <span class="hljs-subst">\(error.localizedDescription)</span>"</span>)
+        }
+        <span class="hljs-keyword">return</span>
+      }
+      <span class="hljs-comment">// 5</span>
+      <span class="hljs-keyword">self</span>.processMotionData(motionData)
+  })
+}</pre>
+<ol>
+<li>
+<p>Use <code>samplesPerSecond</code> that you defined earlier to set how often <code>motionManager</code> sends updates to your app. In this case, you’re setting it to update every 0.04 seconds, or 25 times per second.
+</p></li>
+
+<li>
+<p>Initialize <code>activityData</code> to an empty array. The project starter code calls this function each time the user starts a new recording session — this line ensures each session starts with a fresh array.
+</p></li>
+
+<li>
+<p>This line instructs <code>motionManager</code> to start sending device motion updates, passing a block to execute on <code>queue</code> for each update. The <code>using</code> parameter tells Core Motion to use <code>xArbitraryZVertical</code> as the device position relative to which the device’s attitude values should be reported. Check out <code>CMAttitudeReferenceFrame</code>’s <a href="https://developer.apple.com/documentation/coremotion/cmattitudereferenceframe">documentation</a> for the available options.
+</p></li>
+
+<li>
+<p>This <code>guard</code> statement ensures the callback received motion data. If not, you log an error message if one is available. If you find yourself getting many errors, then you may need a more robust solution here. For example, receiving too many errors in a row could trigger the session to stop and discard the data.
+</p></li>
+
+<li>
+<p>Call <code>processMotionData</code>, which you added earlier, to extract features from the sensor data and append them to <code>activityData</code>.
+</p></li>
+</ol>
+
+<p>In this app you use Core Motion’s device motion API. <code>CMMotionManager</code> also allows you to access accelerometer, gyroscope and magnetometer data directly, but the device motion API is often a better choice. Data directly from the sensors is often quite noisy and requires some preprocessing to smooth it out. But the good folks at Apple have already worked out some nice preprocessing steps and do them for you if you access the device motion data instead. Another nice touch — it separates acceleration due to the user from acceleration due to gravity, which makes the motion represented by the data easier to decipher.
+</p>
+<p>However, if you ever want raw data from those sensors, <code>CMMotionManager</code> provides APIs that match that of device motion. So <code>deviceMotionUpdateInterval</code>, <code>startDeviceMotionUpdates</code>, etc., become <code>accelerometerUpdateInterval</code>, <code>startAccelerometerUpdates</code>, and so on. Similar methods exist for each sensor.
+</p>
+<div class="note">
+<p><em>Note</em>: There are also versions of <code>startDeviceMotionUpdates</code>, <code>startAccelerometerUpdates</code>, etc. that take no parameters. These methods quietly update properties on the <code>CMMotionManager</code>, such as <code>deviceMotion</code> and <code>accelerometerData</code>. For some apps, it makes sense to use these methods instead of the ones that take parameters, and then poll the properties directly when you want sensor data.
+</p></div>
+
+<p>Now that you’ve defined <code>enableMotionUpdates</code>, find the comment that reads <code>// TODO: enable Core Motion</code> inside the <code>Utterances.sessionStart</code> case in <code>speechSynthesizer</code>, and add a call to your new method there:
+</p><pre class="code-block">...
+<span class="hljs-keyword">case</span> <span class="hljs-type">Utterances</span>.sessionStart:
+  <span class="hljs-comment">// <span class="hljs-doctag">TODO:</span> enable Core Motion</span>
+  enableMotionUpdates()
+  queueNextActivity()
+...</pre>
+<p>Most of the timing in GestureDataRecorder actually comes from logic in <code>speechSynthsizer</code>. The app’s <code>AVSpeechSynthesizer</code> calls this function whenever it finishes uttering a phrase, and the app uses the finished utterance to determine what to do next. In the case of the <code>sessionStart</code> message, it enables motion updates and calls <code>queueNextActivity</code> to get the recording started.
+</p>
+<p>You’ve started motion updates, so you’ll need to stop them at some point. Add the following method to <code>ViewController</code> to do that:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">disableMotionUpdates</span><span class="hljs-params">()</span></span> {
+  motionManager.stopDeviceMotionUpdates()
+}</pre>
+<p>This function tells <code>motionManager</code> to stop sending motion updates. Add a call to it inside the following <code>case</code> statement in <code>speechSynthesizer</code>:
+</p><pre class="code-block">...
+<span class="hljs-keyword">case</span> <span class="hljs-type">Utterances</span>.sessionComplete:
+  disableMotionUpdates()
+...</pre>
+<p>This statement executes after the recording session completes. You disable the motion updates and then the rest of the <code>case</code> statement saves the data to a file.
+</p>
+<h3 class="segment-chapter">Collecting some data</h3>
+
+<p>Now go collect some data, ideally from multiple people. Invite your friends over, serve some nice canapés and make it a phone shaking party. If your friends are anything like my kids, they’ll be willing to record data at least once before losing interest. :|
+</p>
+<p>Keep in mind, performing activities incorrectly while recording data will reduce your model’s performance. That’s because you aren’t manually labeling things, so you’ll end up with mislabeled sequences in your dataset.
+</p>
+<p>In the next section you’ll see how to get rid of mislabeled data, but it’s much better to avoid recording it in the first place. That’s why GestureDataRecorder presents a confirmation window at the end of each recording session — it gives you the chance to discard data without saving it if you know something went wrong during the session.
+</p>
+<p>Any files GestureDataRecorder saves will be accessible from the <em>Files</em> app on your iPhone, and inside the <em>File Sharing</em> area in iTunes. This works because the starter project’s <em>Info.plist</em> includes the keys <em>Application supports iTunes file sharing</em> and <em>Supports opening documents in place</em>, both with values of <em>YES</em>.
+</p>
+<p>Get any data you’ve collected from the device(s) and onto your computer, and store the files in one of the following three folders, all within the <em>notebooks</em> folder of the resources you downloaded: <em>data/train</em>, <em>data/valid</em> or <em>data/test</em>.
+</p>
+<p>These folders hold the files from which you’ll create the three datasets you’ll use when building your model: train, validation and test. You’ll read more about why later, but try not to store data collected from one person in more than one of these folders. You should put data from most people in <em>data/train</em>, while putting data from about 10% of your users in each of the other two folders. If you end up recording data from only one person — be honest, it was just you, right? — it’s probably best to put it in <em>data/train</em>.
+</p>
+<div class="note">
+<p><em>Note</em>: The device’s orientation affects the data you collect. For example, imagine holding an iPhone out in front of you and then moving it up and down, side to side, and toward and away from you. Sensor data collected while doing so would be different if the phone was held in portrait or landscape (including variations based on home button position), with the screen facing toward or away from you, to the left, right, up, down or some angle in between. The gravity fields you stored are enough to determine orientation — that’s actually how iOS knows when to rotate your app’s UI — so your model <i>can</i> learn to identify activities in any of these situations. However, you’ll need to provide plenty of training data to cover all the possibilities well enough for it to recognize them.
+</p></div>
+
+<div class="note">
+<p>For your own projects, you can handle this in one of three ways: Instruct users to position their devices a specific way and accept the model may not work well if they fail to do so, collect a much larger dataset that includes data from devices in all probable orientations, or apply a preprocessing step that transforms values into a known orientation. The projects in this chapter settle for the first option.
+</p></div>
+
+<h2 class="segment-chapter">Analyzing and preparing your data</h2>
+
+<p>So you’ve got some data. You’ve collected it yourself or acquired it from elsewhere, but either way, your next step is to <i>look</i> at it. Don’t try reading every number — that way lies madness — but do some analysis to see exactly what you’re working with. You want to ensure there aren’t any problems that might ruin the models you try to build.
+</p>
+<p>So what are you looking for? Here are a few things to consider:
+</p>
+<ul>
+<li>
+<p>If you didn’t create the dataset yourself, it’s important to see what’s there.
+</p></li>
+
+<li>
+<p>Mislabeled data. Data is often labeled manually and mistakes are common.
+</p></li>
+
+<li>
+<p>Poorly collected data. Sometimes mistakes are made while recording, such as misplaced sensors, incorrectly followed instructions, etc.
+</p></li>
+
+<li>
+<p>Source errors. Sometimes the data source introduces errors, such as a damaged or malfunctioning device reporting bad data. And datasets made by people often contain data entry mistakes.
+</p></li>
+
+<li>
+<p>Incorrect data types. For example, strings where there should be numbers.
+</p></li>
+
+<li>
+<p>Missing values. It’s common for some rows to have values missing. You’ll need to decide how to handle those — remove such rows or insert reasonable values. The choice depends on your project, and there are many options for how to fill the values if you go that route. For example, you might use that feature’s mean, median or mode value, or perhaps calculate a new value based on values from nearby rows.
+</p></li>
+
+<li>
+<p>Outliers. <i>Some</i> variation is required to make a good dataset, but there are cases when a few samples may be too rare to be worth including in your dataset. Training with them can confuse the model, reducing its overall performance, and it’s sometimes better to accept that there are some things your model just won’t handle.
+</p></li>
+</ul>
+
+<div class="note">
+<p><em>Note</em>: You don’t <i>have</i> to remove such samples — you may very well want your model to support them. But it’s something to consider.
+</p></div>
+
+<p>You’ll work with Python for the rest of this and the next chapter, so no more Xcode for a while. You’ll also need Juptyer and Turi Create, so if you don’t already have an environment that includes these from earlier in the book, then create one now using the file at <em>projects/notebooks/turienv.yaml</em>. If you’re unsure how to do so, take a look at Chapter 4, “Getting Started with Python &amp; Turi Create.”
+</p>
+<div class="note">
+<p>From here on out, we’ll assume your environment with Turi Create is named <em>turienv</em>, so keep that in mind when you see it mentioned.
+</p></div>
+
+<p>Launch Jupyter from within your <em>turienv</em> environment. Create a new notebook in the <em>notebooks</em> folder of the chapter resources. Or if you’d prefer to follow along in a completed notebook, you can open <em>notebooks/Data</em><em>_</em><em>Exploration</em><em>_</em><em>Complete.ipynb</em> instead.
+</p>
+<p>Get started by entering the following code in a cell and running it with <em>Shift+Return</em>:
+</p><pre class="code-block">%matplotlib inline
+<span class="hljs-keyword">import</span> turicreate <span class="hljs-keyword">as</span> tc
+<span class="hljs-keyword">import</span> activity_detector_utils <span class="hljs-keyword">as</span> utils</pre>
+<p>This gives you access to the <code>turicreate</code> package as well as some helper functions provided in <em>activity</em><em>_</em><em>detector</em><em>_</em><em>utils.py</em>, which you can find in the <em>notebooks</em> folder. The first line is what’s known as a “magic” and it tells Jupyter to display any Matplotlib plots inside the notebook instead of in separate windows.
+</p>
+<p>Now run the following code to load your datasets:
+</p><pre class="code-block">train_sf = utils.sframe_from_folder(<span class="hljs-string">"data/train"</span>)
+valid_sf = utils.sframe_from_folder(<span class="hljs-string">"data/valid"</span>)
+test_sf = utils.sframe_from_folder(<span class="hljs-string">"data/test"</span>)</pre>
+<p>Here you use the <code>sframe_from_folder</code> function from <em>activity</em><em>_</em><em>detector</em><em>_</em><em>utils.py</em> to load your datasets. It takes the path to a folder — given here relative to the <em>notebooks</em> folder in which your notebook resides — and attempts to parse all the CSV files it finds there.
+</p>
+<p>We’ve provided enough data to make the project work, but hopefully you’ve used GestureDataRecorder to collect some more. If so, whatever files you’ve added to these folders get loaded here as well.
+</p>
+<div class="note">
+<p><em>Note</em>: If you reuse <code>utils.sframe_from_folder</code> in your own projects, you’ll need to modify it slightly — it currently contains some project-specific details.
+</p></div>
+
+<p>After running that cell, the variables <code>train_sf</code>, <code>valid_sf</code> and <code>test_sf</code> will be Turi Create <code>SFrame</code> objects, which are data structures designed to work efficiently with structured data, such as huge tables of numbers collected from an iPhone’s motion sensors.
+</p>
+<p>These three <code>SFrame</code>s contain the data you’ll use for your training, validation and test sets, respectively. Take a peek at some samples by running the following code:
+</p><pre class="code-block">train_sf.head()</pre>
+<p>This displays the first 10 rows of the dataset, along with their column names. These names were assigned in <code>sframe_from_folder</code> but could also have come from the CSV files directly. The following image shows an example of some output from <code>head</code>, edited slightly to fit here:
+</p><div class="image-100"><img src="graphics/img185.png"  alt="" title="First three samples of training set" /></div>
+<div class="note">
+<p><em>Note</em>: If you’ve included your own data in any of these datasets, your results may vary from those shown here. This is true for all the images in this section.
+</p></div>
+
+<p>Notice how there is a column named <em>userId</em>. This was added inside <code>sframe_from_folder</code> — the values are derived from the names of your data files. This only works if your files each contain data from just one user, and their names are prefixed with the user’s ID followed by a hyphen (-).
+</p>
+<p>For example, all data read from a file named “bob-data.csv” would be assigned a <em>userId</em> value of “bob.” You could have stored the user ID in each row when you were collecting the data, but saving each user’s data into separate files keeps them smaller and makes them easier to organize. Either way, it’s important to know the source of your data — you’ll see why later.
+</p>
+<p>Here’s another thing about <code>head</code>’s output — the values in the <em>activity</em> column are all <code>0</code>. That’s nothing to worry about — it’s just because you’re only looking at the first few rows, which represent less than one second of activity. But what does <code>0</code> even mean?
+</p>
+<p>Inside GestureDataRecorder, you stored activity types as numeric values. Turi Create can deal with that just fine, but we humans sometimes interpret words more easily than numbers.
+</p>
+<p>To convert those integers into something more readable, enter the following code in a cell and run it:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+activity_values_to_names = {
+  <span class="hljs-number">0</span> : ’rest_it’,
+  <span class="hljs-number">1</span> : ’drive_it’,
+  <span class="hljs-number">2</span> : ’shake_it’,
+  <span class="hljs-number">3</span> : ’chop_it’
+}
+<span class="hljs-comment"># 2</span>
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">replace_activity_names</span><span class="hljs-params">(sframe)</span>:</span>
+  sframe[’activity’] = sframe[’activity’].apply(
+    <span class="hljs-keyword">lambda</span> val: activity_values_to_names[val])
+<span class="hljs-comment"># 3</span>
+replace_activity_names(train_sf)
+replace_activity_names(valid_sf)
+replace_activity_names(test_sf)</pre>
+<p>This replaces the numeric activity values in your datasets with the names of the gestures they represent. Here’s how it works:
+</p>
+<ol>
+<li>
+<p>You create a dictionary that maps numeric activity values to strings. These strings were chosen arbitrarily, but they should describe the values clearly — that’s the whole point of replacing them, right? Also note, the app you write later uses these values, too, so you’ll need to modify code there if you change these strings.
+</p></li>
+
+<li>
+<p>You use the activity column’s <code>apply</code> function to run a lambda function on the value in each row. Lamdba functions are similar to closures in Swift. This one replaces the column’s integers with their corresponding strings from the dictionary. <code>SFrame</code> columns are represented by <code>SArray</code> objects, so check out that class in the Turi Create class if you’d like to see what’s available. You define this line as a function just to make the next lines cleaner.
+</p></li>
+
+<li>
+<p>You call <code>replace_activity_names</code> for each of your dataset <code>SFrame</code>s.
+</p></li>
+</ol>
+
+<p>After running this cell, you’ve modified your datasets to make them easier to interpret, which you can see by calling <code>train_sf.head()</code> again:
+</p><div class="image-100"><img src="graphics/img186.png"  alt="" title="Partial list of features from first three samples of training set, with activity as strings" /></div>
+<div class="note">
+<p><em>Note</em>: You certainly could have stored these strings directly when you created the files in GestureDataRecorder, saving yourself the trouble of changing them now.
+</p>
+<p>However, using integers conserves a bit of disk space. And more importantly, it gave you the chance to see an example of modifying some data in an <code>SFrame</code>, which you might want to do while preparing future datasets.
+</p></div>
+
+<p>It’s helpful to plot your data to examine it, so run the following code to look at your test set:
+</p><pre class="code-block">utils.plot_gesture_activity(test_sf)</pre>
+<p>Here you call <code>plot_gesture_activity</code> from inside <em>activity</em><em>_</em><em>detector</em><em>_</em><em>utils.py</em>. It uses Matplotlib to display an <code>SFrame</code>’s contents as a line chart. The following image shows the plot generated when you run that code:
+</p><div class="image-100"><img src="graphics/img187.png"  alt="" title="Plot of testing dataset" /></div>
+<div class="note">
+<p><em>Note</em>: The plots shown in this chapter may be difficult to read, especially in the black-and-white printed version. They are all from <em>notebooks/Data</em><em>_</em><em>Exploration</em><em>_</em><em>Complete.ipynb</em> — you are encouraged to open it in Jupyter to get a better look at these plots as well as several others not included here.
+</p></div>
+
+<p>There’s too much data in this plot to see much detail. But even at this zoomed-out scale, it’s already clear there are distinct patterns present here.
+</p>
+<p>With the <code>plot_gesture_activity</code> helper function, you can plot data for a single activity by specifying its name. The following example would show data just for the <code>drive_it</code> gesture:
+</p><pre class="code-block">utils.plot_gesture_activity(test_sf, activity=<span class="hljs-string">"drive_it"</span>)</pre>
+<p>And you can zoom in on chunks of data by specifying a slice of the dataset, like so:
+</p><pre class="code-block">utils.plot_gesture_activity(
+  test_sf[<span class="hljs-number">11950</span>:<span class="hljs-number">12050</span>], activity=<span class="hljs-string">"drive_it"</span>)</pre>
+<p>The following three plots were created using code similar to the line above, showing slices of 100 samples for each of the three gestures in the test set:
+</p><div class="image-100"><img src="graphics/img188.png"  alt="" title="100 samples of ‘shake_it’, ‘chop_it’, and ‘drive_it’ activities from test dataset" /></div>
+<p>The actual values aren’t important in these plots. The important thing to notice is how each gesture appears as a clearly discernable pattern. It certainly seems like we <i>should</i> be able to recognize when a user performs these gestures, but imagine trying to write your own algorithm to do it using <code>if/else</code> statements — it might be pretty difficult! But don’t worry — machine learning makes it <i>much</i> easier.
+</p>
+<h3 class="segment-chapter">Removing bad data</h3>
+
+<p>Now you’ll see one way to find and remove errors from your dataset. If you run the code suggested earlier to plot all the <code>drive_it</code> activity data in the test set, you’ll see a plot something like the one on the next page.
+</p><div class="image-90"><img src="graphics/img189.png"  alt="" title="‘drive_it’ samples in test dataset" /></div>
+<p>While much of this data looks similar, some of it stands out as different. Particularly, the last two blocks of activity seem odd. The following code looks at a small section in the second one of those areas:
+</p><pre class="code-block">utils.plot_gesture_activity(
+  test_sf[<span class="hljs-number">22200</span>:<span class="hljs-number">22300</span>], activity=<span class="hljs-string">"drive_it"</span>)</pre>
+<p>Remember, these specific slice numbers might not be the same in your dataset, but hopefully you can come up with values to find a slice within this section of the data.
+</p>
+<p>This produces the following output:
+</p><div class="image-90"><img src="graphics/img190.png"  alt="" title="Mislabeled data in test dataset" /></div>
+<p>If you compare this to the examples you plotted earlier, you’ll see it looks more like a <code>shake_it</code> than a <code>drive_it</code> action. It seems someone performed the wrong gesture while recording, essentially mislabeling your data.
+</p>
+<p>The second area of concern is a bit more difficult to see because it <i>mostly</i> looks the same as the good data. But if you look closely you may notice an area of green at the top of the data — green that you don’t see in any of the other <code>drive_it</code> data. The following code zooms in on this area and plots only a few features:
+</p><pre class="code-block">utils.plot_gesture_activity(
+  test_sf[<span class="hljs-number">21200</span>:<span class="hljs-number">21500</span>], activity=<span class="hljs-string">"drive_it"</span>,
+  features=[<span class="hljs-string">"gravX"</span>, <span class="hljs-string">"gravY"</span>, <span class="hljs-string">"gravZ"</span>])</pre>
+<p>This call uses another one of <code>plot_gesture_activity</code>’s optional parameters to specify a list of features to plot. So rather than showing all the data in this slice, it shows just the data for the device’s gravity readings. The following image was made using code similar to the line above (with some slight adjustments to help with formatting). The plot on the left shows a 100 sample sequence from the suspicious looking area, and the plot on the right shows a 100 sample sequence similar to the majority of the <code>drive_it</code> data:
+</p><div class="image-100"><img src="graphics/img191.png"  alt="" title="Gravity values for ‘drive_it’ gesture. Left: Incorrectly oriented. Right: Correctly oriented." /></div>
+<p>These plots show similar readings for gravity along the X and Y axes. The scale is slightly different for gravity along the Y axis, but the two plots are still basically the same. However, the gravity readings along the Z axis seem to be quite different. The <i>patterns</i> are the same, but the values are negative in the left example and positive in the right one. This indicates the user was not holding the phone in the correct orientation while performing the motion — the screen was facing up instead of down.
+</p>
+<p>Both of these sessions contain data that will only serve to confuse your model, reducing its performance, so it’s best to remove them from your dataset before continuing. To do so, run the following code, replacing the index values with ones that work for your dataset:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+bad_session_1 = test_sf[<span class="hljs-number">21350</span>][<span class="hljs-string">"sessionId"</span>]
+bad_session_2 = test_sf[<span class="hljs-number">22250</span>][<span class="hljs-string">"sessionId"</span>]
+<span class="hljs-comment"># 2</span>
+test_sf = test_sf.filter_by(
+  [bad_session_1, bad_session_2],
+  column_name=’sessionId’, exclude=<span class="hljs-keyword">True</span>)</pre>
+<p>Here’s what that does:
+</p>
+<ol>
+<li>
+<p>Grabs the session ID from a row in the middle of each area of bad data. Each session contains data for only one activity, so once you know the session ID for one, you know it for all the rows you want to delete.
+</p></li>
+
+<li>
+<p>Calls <code>SFrame</code>’s <code>filter_by</code> method to return a new <code>SFrame</code> that excludes any rows where the <em>sessionId</em> column contains the value of either of the bad sessions.
+</p></li>
+</ol>
+
+<p>Plotting the test set’s <code>drive_it</code> data again shows the suspect sessions are now gone. The plot isn’t included here to save space, but the <em>Data</em><em>_</em><em>Exploration</em><em>_</em><em>Complete.ipynb</em> notebook includes this plot if you’d like to compare it to your results.
+</p>
+<p>This section included a few examples demonstrating some things to look for, but you should spend time thoroughly exploring all three of your datasets, both to clean up problems and to better understand your data. And don’t neglect any particular dataset — testing with bad data can be just as problematic as training with it.
+</p>
+<div class="note">
+<p><em>Note</em>: The erroneous data you removed from the test set all comes from one file: <em>notebooks/data/test/bad-drive-it-data.csv</em>. You can safely remove that file if you don’t want to go through this exercise again.
+</p></div>
+
+<h3 class="segment-chapter">Optional: Removing non-activity data</h3>
+
+<p>What about motions that have nothing to do with gestures? You know, all those sensor readings that arrive <i>between</i> the gestures? Take a look at that data by plotting the <code>rest_it</code> activity. Here’s how you do so for the test set:
+</p><pre class="code-block">utils.plot_gesture_activity(test_sf, activity=<span class="hljs-string">"rest_it"</span>)</pre>
+<p>This plots all samples in the test set labeled as <code>rest_it</code>, which means data that is <i>not</i> a gesture. Here are the results:
+</p><div class="image-90"><img src="graphics/img192.png"  alt="" title="‘rest_it’ samples in test dataset" /></div>
+<p>Unlike with the gestures you plotted earlier, the resting data shows no clear pattern. That makes sense — users can do whatever they want between gestures, so there are basically an infinite number of possible sequences that could appear with this label.
+</p>
+<p>Depending on how similar the resting and activity data are, a model might have trouble learning to classify them both well. In those cases, it often helps to increase the size of your dataset set. However, in many cases — such as this one — the model will learn to recognize both resting and activities. This is probably because the sequences related to the other gestures are so much more distinct. That is, it will likely learn to classify the other gestures well, and then learn that anything else is resting. It will get some samples wrong — users sometimes perform the gestures while GestureDataRecorder is recording rest data, essentially adding mislabeled data to your dataset — but the juxtaposition of the messy resting data and the patterned gestures should make the model even more confident about its gesture predictions.
+</p>
+<p>For this app, train with all your data, including the resting samples. However, you’re encouraged to try making another model that excludes the resting data to see which you prefer. The results might vary depending on exactly what your datasets look like.
+</p>
+<p>If you ever want to try removing that data, you can do so with the following code:
+</p><pre class="code-block">train_sf = train_sf.filter_by(
+  [<span class="hljs-string">"rest_it"</span>], ’activity’, exclude=<span class="hljs-keyword">True</span>)
+test_sf = test_sf.filter_by(
+  [<span class="hljs-string">"rest_it"</span>], ’activity’, exclude=<span class="hljs-keyword">True</span>)
+valid_sf = valid_sf.filter_by(
+  [<span class="hljs-string">"rest_it"</span>], ’activity’, exclude=<span class="hljs-keyword">True</span>)</pre>
+<p>Much like how you removed the bad sessions, this would create new <code>SFrame</code>s that do not contain any samples whose <em>activity</em> value was <code>rest_it</code>.
+</p>
+<h3 class="segment-chapter">Balancing your classes</h3>
+
+<p>After you are satisfied you’ve cleaned your data, there’s one final thing you should check: How many examples of each class do you have? Run the following code to count the examples in each dataset:
+</p><pre class="code-block">utils.count_activities(train_sf)
+utils.count_activities(valid_sf)
+utils.count_activities(test_sf)</pre>
+<p>Here you call <code>count_activities</code>, another helper function defined in <em>activity</em><em>_</em><em>detector</em><em>_</em><em>utils.py</em>. It dislays a table showing how many sessions are present for each activity, both per user and total.
+</p>
+<p>The following shows the counts for the datasets we provided:
+</p><div class="image-100"><img src="graphics/img193.png"  alt="" title="Activity counts for train, validation and test sets" /></div>
+<p>Here you can see that each dataset contains the same three gestures, and no gesture is represented more than any other within a specific dataset. Users within a dataset are represented equally as well. For example, each of the training set’s two users supplied 50% of the training data. Things are looking great! You won’t always have such perfectly balanced datasets, but you want them to be as well balanced as possible. If any gesture or user is overrepresented in the training set, your model may bias itself toward those samples. But unbalanced validation or test sets can be a problem, too, because they’ll skew your evaluation results, making it more difficult to judge your model.
+</p>
+<div class="note">
+<p><em>Note</em>: The <code>rest_it</code> activity takes up half of each dataset — you might want to remove some of those samples to bring it in line with the other gestures, but it wasn’t a problem when training the model included with the book.
+</p></div>
+
+<p>The dataset included in the resources contains 216 actions for training, 24 for validation and 27 for testing. It’s not a lot of data, but it’s as much as the author’s family was willing to put up with collecting. :[ Still, it’s a reasonable balance, with about 80% of your data for training, and around 10% each for validation and testing.
+</p>
+<p>Once you’re convinced your datasets are good to go, run the following code to save the cleaned up <code>SFrame</code>s for later use:
+</p><pre class="code-block">train_sf.save(’data/cleaned_train_sframe’)
+test_sf.save(’data/cleaned_test_sframe’)
+valid_sf.save(’data/cleaned_valid_sframe’)</pre>
+<p>The <code>save</code> method lets you save <code>SFrame</code>s in several different formats, such as CSV and JSON. Here you’re using a format that creates the given folder and stores various binary files in it. It’s convenient because it’s smaller and loads faster than the others, but feel free to use any format you like. And remember, you still have your original files, so you can always start over if you decide you don’t like something about your cleaned data.
+</p>
+<div class="note">
+<p><em>Note</em>: Turi Create has many options for data exploration and manipulation, as do Pandas and NumPy. And it provides methods to convert to and from the data structures used by these other libraries, so if there’s something you prefer to do in one package over another, you can freely move back and forth. It’s a good idea to spend some time looking through the documentation for these various frameworks to see what’s available, but don’t try to learn everything all at once — as you do more with machine learning, you’ll continue to discover new things about it and all these supporting frameworks, too.
+</p></div>
+
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p>Core Motion provides access to motion sensors on iOS and WatchOS devices.
+</p></li>
+
+<li>
+<p>When building a dataset, prefer collecting less data from more sources over more data from fewer sources.
+</p></li>
+
+<li>
+<p>Inspect and clean your data before training any models to avoid wasting time on potentially invalid experiments. Be sure to check <i>all</i> your data — training, validation and testing.
+</p></li>
+
+<li>
+<p>Try isolating data from a single source into one of the train, validation or test sets.
+</p></li>
+
+<li>
+<p>Prefer a balanced class representation. In cases where that’s not possible, evaluate your model with techniques other than accuracy, such as precision and recall.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>You have a bunch of motion data sequences organized into training, validation and test sets. Now it’s time to make a model that can recognize specific gestures in them. In the next chapter, you’ll use Turi Create to do just that.
+</p></body></html>

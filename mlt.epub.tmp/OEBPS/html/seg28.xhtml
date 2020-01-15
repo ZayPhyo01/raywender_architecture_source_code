@@ -1,0 +1,567 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <link rel="stylesheet" type="text/css" href="mlt.css"/>
+  <title>Chapter 16: Natural Language Transformation, Part 2</title>
+</head>
+<body class="segment-chapter">
+
+
+<h1 class="segment-chapter">Chapter 16: Natural Language Transformation, Part 2</h1>
+
+<p>The previous chapter introduced <em>sequence-to-sequence models</em>, and you built one that (sort of) translated Spanish text to English. This chapter introduces other techniques that can improve performance for such tasks. It picks up where you left off, so continue using the same <em>nlpenv</em> environment and SMDB project you already made. It’s inadvisable to read this chapter without first completing that one, but if you’d like a clean starter project, use the final version of SMDB found in Chapter 15’s resources.
+</p>
+<h2 class="segment-chapter">Bidirectional RNNs</h2>
+
+<p>Your original model predicts the next character using only the characters that appear <i>before</i> it in the sentence. But is that really how people read? Consider the following two English sentences and their Spanish translations (according to <i>Google Translate</i>):
+</p><div class="image-90"><img src="graphics/img242.png"  alt="" title="Examples where context after a word matters" /></div>
+<p>The first five words are the same in the English versions of both sentences, but only the first two words end up the same in the Spanish translations. That’s because the meaning of the word “bank” is different in each sentence, but you cannot know that until you’ve read <i>past</i> that word in the sentence. That is, its meaning comes from its context, including the words both before <i>and</i> after it.
+</p>
+<p>In order to consider the full context surrounding each token, you can use what’s called a <em>bidirectional recurrent neural network (BRNN)</em>, which processes sequences in both directions, like this:
+</p><div class="image-65"><img src="graphics/img243.png"  alt="" title="Bidirectional RNN" /></div>
+<p>As the diagram shows, a bidirectional RNN consists of two recurrent layers: one processing the sequence from left to right and the other from right to left. These layers act independently of each other, but their outputs get merged into a single vector. In this chapter, you’ll concatenate them, but other merge options, like taking the sum or average, can also work. As such, the number of units in your bidirectional layer’s output will be twice the number used in its recurrent layers.
+</p>
+<p>The forward and reverse layers themselves can be any recurrent type, such as the LSTMs you’ve worked with elsewhere in this book. However, in this chapter, you’ll use a new type called a <em>gated recurrent unit</em>, or GRU.
+</p>
+<p>GRUs were invented after LSTMs and were meant to serve the same purpose of learning longer-term relationships while training more easily than standard recurrent layers. Internally, they are implemented differently from LSTMs, but, from a user’s standpoint, the main difference is that they do not have separate hidden and cell states. Instead, they only have hidden states, which makes them a bit less complicated to work with when you have to manage state directly — like you do with the decoder in a seq2seq model.
+</p>
+<p>So now you’ll try a new version of the model you trained in the previous chapter — one that includes a bidirectional encoder. The Python code for this section is nearly identical to what you wrote for your first seq2seq model. As such, the chapter’s resources include a pre-filled Jupyter notebook for you to run at <em>notebooks/Bidir-Char-Seq2Seq-Starter.ipynb</em>. Or, you can just review the contents of <em>notebooks/Bidir-Char-Seq2Seq-Complete.ipynb</em>, which shows the output from the run used to build the pre-trained bidirectional model included in the <em>notebooks/pre-trained/BidirCharModel/</em> folder.
+</p>
+<p>The rest of this section goes over the important differences between this and the previous model you built.
+</p>
+<p>The first difference isn’t out of necessity, but this model uses a larger <code>latent_dim</code> value:
+</p><pre class="code-block">latent_dims = <span class="hljs-number">512</span></pre>
+<p>The previous model used 256 dimensions, which meant you passed 512 features from your encoder to your decoder — the LSTM produced two 256-length vectors, one for the hidden state and one for the cell state. GRU layers don’t have a cell state, so they return only a single vector of length <code>latent_dim</code>. Rather than send only half the amount of information to the decoder, the author chose to double the size of the GRUs.
+</p>
+<p>The biggest differences for this model are in the encoder, so let’s go over its definition:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+encoder_in = Input(
+  shape=(<span class="hljs-keyword">None</span>, in_vocab_size), name=<span class="hljs-string">"encoder_in"</span>)
+encoder_mask = Masking(name=<span class="hljs-string">"encoder_mask"</span>)(encoder_in)
+<span class="hljs-comment"># 2</span>
+fwd_enc_gru = GRU(
+  latent_dim, recurrent_dropout=<span class="hljs-number">0.3</span>, name=<span class="hljs-string">"fwd_enc_gru"</span>)
+rev_enc_gru = GRU(
+  latent_dim, go_backwards=<span class="hljs-keyword">True</span>, recurrent_dropout=<span class="hljs-number">0.3</span>,
+  name=<span class="hljs-string">"rev_enc_gru"</span>)
+fwd_enc_out = fwd_enc_gru(encoder_mask)
+rev_enc_out = rev_enc_gru(encoder_mask)
+<span class="hljs-comment"># 3</span>
+encoder_out = Concatenate(name=<span class="hljs-string">"encoder_out"</span>)(
+  [fwd_enc_out, rev_enc_out])</pre>
+<p>This encoder uses a bidirectional RNN with GRU layers. Here’s how you set it up:
+</p>
+<ol>
+<li>
+<p>The <code>Input</code> and <code>Masking</code> layers are identical to the previous chapter’s encoder.
+</p></li>
+
+<li>
+<p>Rather than creating one recurrent layer, you create two — one that processes the sequence normally and one that processes it in reverse because you set <code>go_backwards=True</code>. You feed the same masking layer into both of these layers.
+</p></li>
+
+<li>
+<p>Finally, you concatenate the outputs from the two <code>GRU</code> layers so the encoder can output them together in a single vector. Notice that, unlike in the previous chapter, here you don’t use the <code>h</code> states and instead use the layer outputs. This wasn’t mentioned before, but that works because the hidden states <i>are</i> the outputs. The reason you used the states for the LSTM was to get at the <em>cell</em> states, which are <i>not</i> returned as outputs like the hidden states are.
+</p></li>
+</ol>
+
+<p>As far as the decoder goes, one important difference is in the size of the inputs it expects. We define a new variable called <code>decoder_latent_dim</code>, like this:
+</p><pre class="code-block">decoder_latent_dim = latent_dim * <span class="hljs-number">2</span></pre>
+<p>The decoder’s recurrent layer needs twice as many units as the encoder’s did because it accepts a vector that contains the concatenated outputs from two of them — forward <i>and</i> reverse.
+</p>
+<p>The only other differences with the decoder are in the following lines:
+</p><pre class="code-block">decoder_gru = GRU(
+  decoder_latent_dim, return_sequences=<span class="hljs-keyword">True</span>,
+  return_state=<span class="hljs-keyword">True</span>, dropout=<span class="hljs-number">0.2</span>, recurrent_dropout=<span class="hljs-number">0.3</span>,
+  name=<span class="hljs-string">"decoder_gru"</span>)
+decoder_gru_out, _ = decoder_gru(
+  decoder_mask, initial_state=encoder_out)</pre>
+<p>Once again, you use a GRU layer instead of an LSTM, but use <code>decoder_latent_dim</code> instead of <code>latent_dim</code> to account for the forward and reverse states coming from the encoder. Notice the GRU only returns hidden states, which you ignore for now by assigning them to an underscore variable. This differs from the LSTM you used in the previous chapter, which returned both hidden and cell states.
+</p>
+<div class="note">
+<p><em>Note</em>: One important detail is that the decoder does <i>not</i> implement a bidirectional network like the encoder does. That’s because the decoder doesn’t actually process whole sequences — it just takes a single character along with state information.
+</p></div>
+
+<p>If you run this notebook, or look through the completed one provided, you’ll see a few things. First, this model is much larger than the last one you built — 5.3 million parameters versus 741 thousand. Part of that is because there are two recurrent layers, and part because we doubled the number of units in <code>latent_dim</code>. Still, each epoch only takes a bit longer to train.
+</p>
+<p>The other thing that stands out is the performance. This model trained to a validation loss of 0.3533 by epoch 128. Compare that to the previous model, which only achieved a 0.5905 validation loss, and it took 179 epochs to do it. So this model achieved lower loss in fewer epochs, thanks mostly to the additional information gleaned from the bidirectional encoder.
+</p>
+<p>For inference, the only difference is with the encoder’s output. Instead of outputing the encoder’s latent state, you use the concatentated layer <code>encoder_out</code>, like this:
+</p><pre class="code-block">inf_encoder = Model(encoder_in, encoder_out)</pre>
+<p>The notebook includes code to export your encoder and decoder models to Core ML. There are slight differences to match the new model architecture, but nothing should look unfamiliar to you. It includes the same workarounds you used in the last chapter.
+</p>
+<p>Looking through the inference tests in the completed notebook, it produces better translations than did the previous model for many of the samples. For example:
+</p><div class="image-100"><img src="graphics/img244.png"  alt="" title="" /></div>
+<p>It does about as well on most — but not all — of the other tests, too. Some of the most interesting are those it gets wrong, but less wrong than the last model did. Such as:
+</p><div class="image-100"><img src="graphics/img245.png"  alt="" title="" /></div>
+<p>Notice that, in each of these examples, the bidirectional model does better then the previous chapter’s model when translating words that appear near the <i>end</i> of the sentences. That makes sense, since it looks at the sequence in both directions, letting it encode more context for the decoder.
+</p>
+<p>If you’ve worked before with recurrent networks in Keras, then you might have thought this section would have used Keras’s <code>Bidirectional</code> layer. Before trying out your new model in Xcode, take a look at this brief discussion of why we didn’t use that class, here.
+</p>
+<h3 class="segment-chapter">Why not use Keras’s Bidirectional layer?</h3>
+
+<p>Keras includes a <code>Bidirectional</code> layer that simplifies the creation of bidirectional RNNs. You initialize it with a single recurrent layer, like an <code>LSTM</code> or <code>GRU</code> layer, and it handles duplicating that as a reversed layer for you. To use it, you’d write something like this for a bidirectional LSTM:
+</p><pre class="code-block">encoder_lstm = Bidirectional(
+  LSTM(latent_dim, return_state=<span class="hljs-keyword">True</span>, recurrent_dropout=<span class="hljs-number">0.3</span>),
+  name=<span class="hljs-string">"encoder_lstm"</span>)
+encoder_out, fwd_enc_h, fwd_enc_c, rev_enc_h, rev_enc_c = \
+  encoder_lstm(encoder_mask)</pre>
+<p>Or like this for a bidirectional GRU:
+</p><pre class="code-block">encoder_gru = Bidirectional(
+  GRU(latent_dim, return_state=<span class="hljs-keyword">True</span>, recurrent_dropout=<span class="hljs-number">0.3</span>),
+  name=<span class="hljs-string">"encoder_gru"</span>)
+encoder_out, fwd_enc_h, rev_enc_h = encoder_gru(encoder_mask)</pre>
+<p>Each of these examples sets <code>return_state=True</code> so the layers return their hidden and cell states (for LSTMs, which have cell states). So when you connect the <code>Bidirectional</code> layer to a network, it returns the output along with the forward and reverse states. Then you would concatentate the states like this:
+</p><pre class="code-block">encoder_h = Concatenate(name=<span class="hljs-string">"encoder_out"</span>)(
+  [fwd_enc_h, rev_enc_h])
+encoder_c = Concatenate(name=<span class="hljs-string">"encoder_out"</span>)(
+  [fwd_enc_c, rev_enc_c])</pre>
+<p>Finally, you’d pass those concatenated states to the decoder as its initial state. And in Keras all of that works great.
+</p>
+<p>Unfortunately, there are currently multiple issues with using the <code>Bidirectional</code> class. First, <code>coremltools</code> will crash if you use any recurrent layer other than <code>LSTM</code> with the <code>Bidirectional</code> layer, so that means you couldn’t use <code>GRU</code> like you did, here. But using LSTMs isn’t usually a problem, so <code>Bidirectional</code> would still be a reasonable option if that were the only issue.
+</p>
+<p>But currently there is also a bug in Core ML where bidirectional layers always return vectors filled with all zeros for their hidden and cell states. They still work, correctly passing states between timesteps internally, but they cannot pass their states <i>out</i> of the layer, which is what you need for a seq2seq model. There is a way to <i>sort of</i> work around this, where you train your decoder to ignore the initial cell state and use the LSTM’s output instead of their hidden states — remember that the output is identical to the hidden state — but this means you are forced to throw away half of the information from your LSTM. Or to put it another way, you need to train models twice as large as want to in order to pass the same amount of information from the encoder to the decoder.
+</p>
+<p>So until these issues are resolved, it’s a better idea to create bidirectional models like you did here, using multiple recurrent layers explicitly.
+</p>
+<h3 class="segment-chapter">Using your bidirectional model in Xcode</h3>
+
+<p>Open the SMDB project you’ve been working with for the past couple chapters in Xcode, or use the starter project found in this chapter’s resources. Then, add the <em>Es2EnBidirGruCharEncoder16Bit.mlmodel</em> and <em>Es2EnBidirGruCharDecoder16Bit.mlmodel</em> models to SMDB like you’ve done before. If you didn’t train your own, you can find the ones we trained in the <em>notebooks/pre-trained/BidirCharModel</em> folder.
+</p>
+<p>Here’s the encoder’s model summary, minus the unimportant bits to conserve space:
+</p><div class="image-90"><img src="graphics/img246.png"  alt="" title="Looking at the encoder mlmodel file" /></div>
+<p>One big difference is just how big the encoder is — 3.8MB versus the 734KB encoder from the previous chapter. The other thing to notice are the input and output names, which are different from what you used in your first encoder.
+</p>
+<p>The decoder’s summary (not shown) is similar to the decoder in the previous chapter, but it’s 7MB instead of 750KB. That’s nearly 10 times larger!
+</p>
+<div class="note">
+<p><em>Note</em>: If you’ve followed along building this and the previous model, or are using the provided resources, then there is no need to add the vocabulary JSON files <em>esCharToInt.json</em> and <em>intToEnChar.json</em> to the project. That’s because the files from the previous chapter are exactly the same. But if you split your training data differently, then there’s a chance your JSON files are different, too. In that case, add your new JSON files to the project with different names and then modify the declarations of <code>esCharToInt</code> and <code>intToEnChar</code> in <em>NLPHelper.swift</em> to load them.
+</p></div>
+
+<p>Now to actually use the new models. Rather than remove the code you wrote in the previous chapter, you’ll create a separate function that creates the decoder input suitable for your bidirectional model. Add the following function inside <em>NLPHelper.swift</em>:
+</p><pre class="code-block"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">getBidirDecoderInput</span><span class="hljs-params">(encoderInput: MLMultiArray)</span></span> -&gt;
+  <span class="hljs-type">Es2EnBidirGruCharDecoder16BitInput</span> {
+  <span class="hljs-keyword">let</span> encoder = <span class="hljs-type">Es2EnBidirGruCharEncoder16Bit</span>()
+  <span class="hljs-keyword">let</span> encoderOut = <span class="hljs-keyword">try</span>! encoder.prediction(
+    oneHotEncodedSeq: encoderInput,
+    fwd_enc_gru_h_in: <span class="hljs-literal">nil</span>, rev_enc_gru_h_in: <span class="hljs-literal">nil</span>)
+
+  <span class="hljs-keyword">let</span> decoderIn = initMultiArray(
+    shape: [<span class="hljs-type">NSNumber</span>(value: intToEnChar.<span class="hljs-built_in">count</span>)])
+
+  <span class="hljs-keyword">return</span> <span class="hljs-type">Es2EnBidirGruCharDecoder16BitInput</span>(
+    encodedChar: decoderIn,
+    decoder_gru_h_in: encoderOut.decodersIntialState)
+}</pre>
+<p>This is almost identical to what you wrote in <code>getDecoderInput</code> in the previous chapter. This version only changes class and parameter names to match the ones Xcode created for your new models. Notice you set <code>decoder_gru_h_in</code> to the encoder output’s <code>decodersInitialState</code> value — that’s the name of the output that concatenates the outputs of the forward and reverse GRUs.
+</p>
+<p>Now, you need to call this new function and pass its output to the decoder model that pairs with your bidirectional encoder. To do that, find the following two lines inside <code>spanishToEnglish</code>:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> decoderIn = getDecoderInput(encoderInput: encoderIn)
+<span class="hljs-keyword">let</span> decoder = <span class="hljs-type">Es2EnCharDecoder16Bit</span>()</pre>
+<p>And replace them with these two:
+</p><pre class="code-block"><span class="hljs-keyword">let</span> decoderIn = getBidirDecoderInput(encoderInput: encoderIn)
+<span class="hljs-keyword">let</span> decoder = <span class="hljs-type">Es2EnBidirGruCharDecoder16Bit</span>()</pre>
+<p>Nothing new, here: You’re just calling a different function to get the decoder’s input and using your new bidirectional decoder model.
+</p>
+<p>Finally, you need to modify the parameters on the decoder’s input. Find these two lines:
+</p><pre class="code-block">decoderIn.decoder_lstm_h_in = decoderOut.decoder_lstm_h_out
+decoderIn.decoder_lstm_c_in = decoderOut.decoder_lstm_c_out</pre>
+<p>And replace them with this one:
+</p><pre class="code-block">decoderIn.decoder_gru_h_in = decoderOut.decoder_gru_h_out</pre>
+<p>That’s it. Build and run the app, then choose <em>Spanish</em> in the <em>By Languages</em> tab to see your model in action!
+</p><div class="image-35"><img src="graphics/img247.png"  alt="" title="SMDB app with reviews translated by bidirectional character-level model" /></div>
+<p>Better than the model from last chapter? Um, <i>kind of</i>, in places, but not much. It got close on some sentences, such as, “I don’t usually like music,” instead of the expected translation, “I don’t usually like musicals,” and “How boring!” which is close to the correct “Very boring!” It also included additional correct words within translations, such as “worst” and “movie” in its translation of, “Es mi peor pesadilla hecha película,” and “bad” when translating, “Muy mala película.”
+</p>
+<p>While this doesn’t seem like much of an improvement, keep in mind that you haven’t addressed most of the problems mentioned at the end of the last chapter. For example, the dataset is still too small, and you’re still predicting characters with a greedy algorithm. But bidirectional models generally produce better results for tasks like translation, where useful context can appear before <i>and</i> after an item in a sequence.
+</p>
+<p>The rest of this chapter shows some other techniques that might lead to better performance. In the next section, you’ll learn about a popular alternative to greedy decoding called <em>beam search</em>. In the process, you’ll find out this model wasn’t as far off as it seems with many of its translations.
+</p>
+<h2 class="segment-chapter">Beam search</h2>
+
+<p>This and the previous chapter have both implied there’s a better option than greedily choosing the token predicted with the highest probability at each timestep. The solution most commonly used is called beam search, and you should strongly consider implementing it if you want to improve the quality of a model’s generated sequences.
+</p>
+<p>Beam search is a heuristic-based searching method that considers many possible sequences, and it ranks them based on the total probability of the <em>sequence</em>, regardless of the probability of individual choices at any particular timestep.
+</p>
+<p>What’s that mean? Consider the following contrived example, wherein a model attempting to predict the first word of a sequence tries <i>both</i> choices for the first character instead of just the most probable one:
+</p><div class="image-75"><img src="graphics/img248.png"  alt="" title="" /></div>
+<p>The numbers in the above image have all been fabricated, and they make the unrealistic assumption that all the unlisted characters have zero probability, but it demonstrates the issue. As you can see, choosing the highest probability character for the first choice — “H” — does <i>not</i> lead to the highest probability sequence: “Why.”
+</p>
+<p>Each prediction the model makes affects all its future predictions in that sequence, so any single bad choice can ruin the rest of the translation. That’s why using the greedy approach doesn’t usually lead to the best results. There’s no perfect neural network, so do you really want to count on a prediction with probability <code>0.0134</code> being <i>definitely</i> the right choice over one with probability <code>0.0133</code>?
+</p>
+<p>Beam search attempts to work around this issue by not committing to any one sequence. Instead, it maintains multiple possible search paths, and it expands the most promising sequences, eventually returning the one it finds with the best overall probability score. So in the above example, beam search would predict “Who” instead of “How,” even though it <i>seemed</i> like the correct first character should have been “H” when the model first started translating the sequence.
+</p>
+<p>The basic algorithm goes like this:
+</p>
+<ol>
+<li>
+<p>Define the number of sequences you’ll maintain, called the beam width, <code>B</code>.
+</p></li>
+
+<li>
+<p>Make a prediction with the model, then take the values with the top <code>B</code> probabilities and store them as the start of <code>B</code> different sequences.
+</p></li>
+
+<li>
+<p>For each of the current <code>B</code> sequences, make another prediction with the model and extend the sequence with the top <code>B</code> prediction results, giving you <code>BxB</code> sequences.
+</p></li>
+
+<li>
+<p>Store the top <code>B</code> sequences from this set.
+</p></li>
+
+<li>
+<p>Repeat steps 3–4 until you have <code>B</code> sequences that have all predicted <code>STOP</code> tokens or reached their maximum length.
+</p></li>
+
+<li>
+<p>Return the top sequence from the final <code>B</code> sequences.
+</p></li>
+</ol>
+
+<p>There are variations you can make to this basic algorithm, such as sometimes sampling randomly to include lower probability sequences (in case they surprise you and improve later), or storing previously discarded sequences in case you want to return to them if they look better after exploring other search paths.
+</p>
+<div class="note">
+<p><em>Note</em>: It’s important to realize that beam search is not guaranteed to find the best result. It does not try every possible sequence — that would be too computationally expensive — so it returns the best result if can find using its heuristics and available resources.
+</p></div>
+
+<p>Implementing beam search isn’t really related to machine learning; it’s just a useful algorithm for dealing with joint probabilities. As such, we won’t provide code for it, here. However, we do want to point out a few potential gotchas that you should be aware of for when you try to implement it yourself.
+</p>
+<p>The probability of a <i>sequence</i> is the joint probability of <i>all</i> the predictions used to create the sequence. You calculate it by multiplying these probabilities together. For example, there’s a <code>0.5</code> probability of getting heads when flipping a coin once, so the probability of getting three heads in a row is <code>0.5x0.5x0.5=0.125</code>.
+</p>
+<p>The trouble is, probabilities are small numbers between <code>0</code> and <code>1</code>, and multiplying them produces even smaller numbers. It doesn’t take long before the limited precision available on computers for floating point arithmetic introduces errors, and eventually underflows and ruins everything by multiplying by zero.
+</p>
+<p>You can avoid this by adding the logarithms of the probabilities instead of multiplying the probabilities directly. So in the earlier example, taking the log probabilities and adding them together gives you these values:
+</p><div class="image-75"><img src="graphics/img249.png"  alt="" title="" /></div>
+<p>The logs are all negative, but notice they still work out so that higher values correspond to higher probabilities. Maximizing the sum of log probabilities — or minimizing the sum of the negatives of the log probabilities, if you prefer to implement it that way — produces the same sequences as multipyling the probabilities, but the math is stable.
+</p>
+<p>The next issue relates to sequence length. Each additional token lowers the total probability for the sequence, so comparing these totals directly would penalize longer sequences. You’ll need to normalize them before making any comparisons.
+</p>
+<p>One way to do that is to divide each of the sums by the length of its sequence. However, according to Andrew Ng, it’s common to divide by the length raised to some power between zero and one; using zero turns off normalization completely, and using one normalizes by the length directly, but any value between those normalizes by the length while still preferring shorter sequences to some degree.
+</p>
+<p>Ng claims there is no good mathematically rigorous way to choose this value; it’s just something you experiment with until you find a value you like, but he says <code>0.7</code> seems to work well.
+</p>
+<p>Finally, you’ll need to decide how many resources you can dedicate to running the beam search. The more sequences you try, the longer it will take. And depending on your design, wider beams could lead to a great deal more memory use, too. You’ll have to experiment and make performance tradeoffs, especially to run it on mobile.
+</p>
+<p>So if you implemented beam search and used it with the bidirectional model you trained earlier in the chapter, without training with more data or making any other changes, would it help?
+</p>
+<p>Consider when it translates this sentence: “Entonces esta película te sorprenderá.” By choosing the character with the highest prediction probability at each step, it currently outputs, “So what this movie will surprise you.” This sentence has a normalized sum of log probabilities of <code>-0.341630</code>.
+</p>
+<p>However, the correct translation — according to <i>Google Translate</i> — is, “This movie will surprise you.” And <i>this</i> sentence has a normalized sum of log probabilities of <code>-0.300456</code>.
+</p>
+<p>Producing this better translation requires making three choices that are not the highest probability character for those steps — the fourth highest for the first character, and the second highest for two others. Depending on how you implement it and the beam width you use, beam search could find this correct translation. That means the current model can produce better translations just with the help of some smarter decoding processing.
+</p>
+<div class="note">
+<p><em>Note</em>: This chapter’s bidirectional model can translate quite a few of the review and test sentences correctly if we occasionally choose lower-probability characters. For example, choosing “u” instead of “o” when translating, “Hay un gato debajo de la mesa,” correctly outputs, “There is a cat under the table,” instead of, “There is a cat on the table.” Just adding beam search doesn’t mean you’ll get these translations. That’s because they still end up with lower total probabilities than what the model finds using greedy search.
+</p>
+<p>However, that’s because of the training data more than the model or the search algorithm; training with larger datasets means gathering better language usage statistics, so once you have a model trained with a lot of data, coupling it with beam search gives you the best chance of producing high quality results.
+</p></div>
+
+<h2 class="segment-chapter">Attention</h2>
+
+<p>The previous chapter mentioned an important problem with the encoder portion of your seq2seq model: It needs to encode the entire sequence into a single, fixed-length vector. That limits the length of the input sequences it can successfully handle, because each new token essentially dilutes the stored information.
+</p>
+<p>To combat this issue, you can use a technique called <em>attention</em>. The most basic implementation of attention works like this: Instead of using one vector to represent the entire sequence, the encoder uses a vector <i>per input token</i>. Then the decoder learns to apply different weights to each vector at each <i>output</i> timestep, essentially <i>paying attention</i> to specific combinations of words. The weights are often visualized as attention maps, like in the following image:
+</p>
+<p>There’s a column for each token in the input sequence — in this case, the tokens are words, not characters — and a row for each output token. The colors in the rows indicate how much each column’s input token was considered for that timestep, from black=0 to white=1.
+</p>
+<p>Notice how it doesn’t necessarily focus on the word aligned with the same timestep. For example, it needs to look at terms out of order when translating “the European Economic Area” to “la zone économique européenne.” Using attention, models learn to relate specific parts of their output with specific parts of their input, which produces much better results than the basic seq2seq models you’ve built here, especially on longer sequences. It has proven so powerful that it’s now used in most state-of-the-art models for NLP, as well as for other tasks like some computer vision problems.
+</p>
+<p>There’s a variation of attention called <em>self-attention</em> that gives even better results. Whereas regular attention works between the encoder and decoder, self-attention gains additional information by allowing the encoder to apply attention between the input tokens, and it lets the decoder apply attention between its output tokens. That is, regular attention only relates the inputs to output tokens, but self-attention relates tokens within each sequence to other tokens in the <i>same</i> sequence, as well.
+</p>
+<p>Self-attention performs even better than regular attention because it lets the encoder fine tune its encodings based on relationships it finds between input tokens, such as noun-verb agreement or to whom a pronoun refers in a sentence. In fact, self-attention is <i>so</i> good that current state-of-the-art models, often based on a network architecture called a Transformer, do away with the recurrent portions of the encoder and decoder and rely <i>entirely</i> on self-attention. Not only do they perform better, but they train faster, too!
+</p>
+<p>These state-of-the-art models are quite large, so they usually run in the cloud. However, you can take advantage of these techniques in smaller models, too, depending on the task and the details of your implementation. If you decide to explore adding attention to your own networks, you may want to look at some of the important papers related to it:
+</p>
+<ul>
+<li>
+<p>“Neural Machine Translation by Jointly Learning to Align and Translate” <a href="https://arxiv.org/abs/1409.0473">arxiv.org/abs/1409.0473</a>
+</p></li>
+
+<li>
+<p>“A Structured Self-attentive Sentence Embedding”, <a href="https://arxiv.org/abs/1703.03130">arxiv.org/abs/1703.03130</a>
+</p></li>
+
+<li>
+<p>“Attention Is All You Need”, <a href="https://arxiv.org/abs/1706.03762">arxiv.org/abs/1706.03762</a>
+</p></li>
+</ul>
+
+<p>We glossed over how the previous image showed whole word tokens, not characters like what you’ve used in your models. The next section discusses the choice to work with characters instead of words in these chapters.
+</p>
+<h2 class="segment-chapter">Why use characters at all?</h2>
+
+<p>The seq2seq models you’ve made in this book work with sequences at the character level, but why? How much information does a model get from each token when it views sequences this way? People can easily read and correctly interpret sentences where every word is misspelled, but replacing a few <i>words</i> can make a sentence unintelligible. It seems like most individual characters don’t add much information to a sentence, whereas most words do, so shouldn’t translation models consider words instead?
+</p>
+<p>The answer to that is yes — and also maybe not.
+</p>
+<p>Researchers are always exploring different options, e.g., combining words into phrases or going the other way and breaking them into subwords. There are hybrid approaches that look at tokens in multiple ways, e.g., as words <i>and</i> as characters, which can help when dealing with OOV tokens. They’ve even made models that work with text as sequences of <i>bytes</i>! Working with whole words is probably the most common approach, but there are some difficulties involved that you should be aware of before attempting to build such models.
+</p>
+<p>First, there’s vocabulary size. It may not be obvious if you haven’t dealt much with these models, but vocabulary size matters quite a bit, for these three reasons:
+</p>
+<ol>
+<li>
+<p>The model’s output layer performs a softmax calculation across the entire vocabulary to produce the probabilities for each token — the more tokens, the longer that calculation takes. A byte-level model has a vocabulary of just 256 values and is capable of representing anything; a character-level model for a <i>restricted</i> character set, like ASCII, will vary but likely will be in the hundreds or low thousands; full Unicode support would include over 1.1 million characters; and using word level tokens means a potential vocabulary size of many millions.
+</p>
+<p>In fact, working with words basically <i>requires</i> limiting the vocabulary to some subset of common words, and then you need to add in ways to deal with OOV tokens. There are some tricks you can implement to reduce the computations required at this softmax level to speed up training — look up terms like “adaptive softmax” and “hierarchical softmax” for some ideas — but it’s still easier to deal with fewer items.
+</p></li>
+
+<li>
+<p>The larger the vocabulary, the larger the model. That’s because it increases the width of your input and output layers (at least), and those layers end up contributing most of your model’s trainable parameters. Mobile devices don’t have the resources to deal with very large models, so it may not be feasible to support very large vocabularies on them.
+</p></li>
+
+<li>
+<p>The dreaded <em>curse of dimensionality</em>. You’ll hear this term a lot in machine learning. It refers to the fact that, as you increase the number of input features, the possible combinations of inputs can grow exponentially. (See the upcoming <em>Note</em> for an example.) As the possible combinations grow, each specific training sample covers a smaller percentage of those possibilities. The primary result: As you add features, you need to increase the size of your training set — possibly exponentially. Now consider that each token in the vocabulary is a unique input dimension, and you’ll see you need ever more training data as the size of your vocabulary grows.
+</p></li>
+</ol>
+
+<div class="note">
+<p><em>Note</em>: Here’s an example of the curse of dimensionality. Consider a model that takes only one input feature — an integer from <code>1</code> to <code>10</code>. There are only 10 possible inputs, so each training sample essentially covers 10% of all possible inputs this model can ever see.
+</p>
+<p>Adding a second input feature — again an integer from <code>1</code> to <code>10</code> — gives you a two-dimensional input with 100 possible combinations, so each training sample now only covers 1% of the possible inputs. And adding a similar third dimension brings the possible combinations up to 1,000, which would mean each sample then covers only one tenth of 1%.
+</p>
+<p>As the number of dimensions goes up, a model must train on drastically more data in order to learn an accurate representation of the input space.
+</p></div>
+
+<p>Secondly, working with subword tokens makes it easier to deal with OOV tokens. At the byte level, you can remove the problem entirely — there will only ever be 256 possible values; with characters you can delete OOV tokens and rarely lose much information. But with words, it becomes a difficult problem that’s still an open area of research. You’ll read more about it in the next section.
+</p>
+<p>Even with those things going against it, using words still has one overwhelming advantage: Words convey <i>meaning</i>. Computers can’t really <i>understand</i> what they read — not yet, anyway — but they can definitely learn to identify important things like semantic relationships between words. The next section points out a few things you’ll need to do differently when dealing with word tokens instead of characters, and it introduces a popular way to represent them: <em>embeddings</em>.
+</p>
+<h2 class="segment-chapter">Working with word tokens</h2>
+
+<p>Recall that neural networks require numerical inputs. So far, you’ve been one-hot encoding text prior to using it, but that essentially means your network sees mostly just zeros. What if you could provide more useful information?
+</p>
+<p>It turns out, you can, with something called word <em>embeddings</em>, or word vectors; you’ll see these terms used interchangeably. These are vectors that represent words in some theoretical n-dimensional space, and in the process, capture meaningful information about them. You can then use these vectors as inputs to your networks instead of one-hot encodings. This essentially lets you provide information <i>about</i> a word instead of just a Boolean flag indicating the <i>presence</i> of a word.
+</p>
+<p>But what’s all that mean?
+</p>
+<p>To make a 2D map of Earth, you need to project 3D geographic positions into a 2D coordinate system. While that isn’t hard to imagine for positions, you can actually project any set of values into a different coordinate system. For example, consider the following graph, which projects Marvel characters onto the two alignment axes from Dungeons &amp; Dragons — one represents their morality from good to evil, and one represents their behavior from lawful to chaotic:
+</p><div class="image-60"><img src="graphics/img250.png"  alt="" title="Marvel characters projected onto D&amp;D alignments" /></div>
+<p>The specific alignments given for each character are from the <i>ComicsVerse</i> blog post, “Good? Evil? The Alignment of MCU Characters” <a href="https://comicsverse.com/good-evil-mcu-alignment/">https://comicsverse.com/good-evil-mcu-alignment/</a>.
+</p>
+<p>Check it out if you’re curious about the arguments behind each assignment. It’s not important if you don’t know these characters or the details of D&amp;D’s alignment system. What <i>is</i> important is how this shows words plotted in 2D space, where each axis represents some qualitative feature and the word’s position along that axis gives you some quantitative value of how much that word represents or manifests that quality.
+</p>
+<div class="note">
+<p><em>Note</em>: This example uses discrete values of good-neutral-evil and lawful-neutral-chaotic, but there’s no reason we couldn’t plot these values in a continuous feature space instead. For example, it’s not difficult to imagine a character that is not <i>totally</i> good, but still leans toward being mostly good.
+</p></div>
+
+<p>While this example was a bit contrived, it demonstrates how you can plot <em>qualities</em> along axes just like you plot <em>quantities</em>. That’s the essential idea behind word embeddings: Take a word and plot it into n-dimensional space to describe how it relates to various qualities. This example only had two dimensions, but using a higher number lets you capture more features. In practice, word embeddings often use between 50 and several hundred dimensions, and we don’t specify what they represent. It may be that no single dimension represents any specific quality, but rather combinations of dimensions end up representing useful things.
+</p>
+<p>There are several ways to create such embeddings and we won’t go into the details here, but they all revolve around the same basic premise: Words are given random positions in some n-dimensional vector space, and their positions are adjusted a bit each time the word is used in the dataset. After processing a large text corpus, words that are used in similar ways end up closer to each other in vector space.
+</p>
+<p>One interesting side effect of this process is that the embeddings seem to encode relationships between words. For example, the following image shows one such relationship — that of gender — between the words “man” and “woman.”
+</p>
+<p>Other words that have a similar gender relationship, such as “king” and “queen” or “uncle” and “aunt,” display similar mathematical relationships in vector space:
+</p><div class="image-35"><img src="graphics/img251.png"  alt="" title="Word relationship example from Pennington, J., Socher, R., and Manning, C. D. (2014) GloVe: Global Vectors for Word Representation." /></div>
+<p>You can learn more about word embeddings and the algorithms used to make them, as well as find many pre-trained vectors, by searching online for “word embeddings” or “word vectors.” Word2Vec, GloVe and fastText are common embedding options. You could train your own, but learning high-quality embeddings requires lots of data. For example, one set of GloVe embeddings you can download was trained on a corpus of 840 <i>billion</i> tokens.
+</p>
+<p>Using word embeddings instead of one-hot encodings greatly increases performance on most NLP tasks. They are one of unsupervised learning’s greatest success stories.
+</p>
+<h4 class="segment-chapter">Building models with word embeddings</h4>
+
+<p>This section points out some changes you’d need to make to your existing seq2seq models in order to have them use word tokens instead of characters. This section includes code snippets you can use, but it doesn’t spell out every detail necessary to build such a model. Don’t worry! With these tips and what you’ve already learned, you’re well prepared to build these models on your own. Consider it a challenge!
+</p>
+<p>We’ll assume you’re starting with pre-trained word embeddings. The first thing you’ll need to decide is how many words you want to include in your vocabulary. Just because you have an embedding for a word doesn’t mean you’ll want to use it in your model. Remember, vocabulary size affects model size, so you’ll need to keep things manageable. But there’s another reason you might not want to use all the embeddings you download: some of them may be garbage.
+</p>
+<p>Word embeddings are trained in an unsupervised manner with huge datasets often scraped from the internet, so it’s not uncommon for bad tokens to slip through. For example, there are two million tokens in the Spanish embeddings you can download at <a href="https://fasttext.cc/docs/en/crawl-vectors.html">https://fasttext.cc/docs/en/crawl-vectors.html</a>. However, these include thousands of tokens like “112345678910111213141516173” and “PaísEnglishEspañolPortuguêsCanadaUnited” that would just take up space in your model without serving any useful purpose.
+</p>
+<div class="note">
+<p><em>Important</em>: The more embeddings you include, the larger your model will be. It’s common to choose a few tens of thousands of the most commonly used words, but whatever you do, try to limit it to a reasonable set for your task.
+</p></div>
+
+<p>An important step when dealing with word tokens is... tokenizing your text into words. You’ve got different choices for how to do this. For example, the English contraction “don’t” could become the tokens <code>don&apos;t</code>, <code>do</code> and <code>n&apos;t</code>, <code>don</code> and <code>&apos;t</code>, or <code>don</code>, <code>&apos;</code> and <code>t</code>. The first two options are the ones you’re most likely to come across, but whatever you choose, you need to make sure of a couple things:
+</p>
+<ol>
+<li>
+<p>If you’re using pre-trained word embeddings, make sure you create tokens in the same way as the creators of the embeddings did, otherwise you’ll end up with more OOV tokens than you should because you won’t have embeddings for some of your tokens that you otherwise would have. For example, if you parse the word “don’t” as the token <code>don&apos;t</code>, but the pre-trained embeddings contain the two tokens <code>do</code> and <code>n&apos;t</code>, you’ll end up having to treat every “don’t” you encounter as an OOV token.
+</p></li>
+
+<li>
+<p>Tokenize text in your iOS code the same way you do in Python. The Natural Language framework’s <code>NLTokenizer</code> doesn’t let you configure its tokenization settings like you can with Python packages like <code>nltk</code>, so you may have to write your own tokenization logic to produce the tokens your model expects.
+</p></li>
+</ol>
+
+<p>For your special <code>START</code> and <code>STOP</code> tokens, you should add some word to your vocabulary you know <i>never</i> appears in the data, e.g., <code>&lt;START&gt;</code> and <code>&lt;STOP&gt;</code>. You’ll need to deal with OOV tokens quite differently, too. You can’t just remove them like you did with the characters, so you’ll replace them with a special token, such as <code>&lt;UNK&gt;</code>.
+</p>
+<div class="note">
+<p><em>Note</em>: You learned in the first NLP chapter that it’s possible to tag text with its parts of speech. Instead of using a single <code>&lt;UNK&gt;</code> token for all OOV tokens, you may get better performance if you replace words with part-of-speech-specific tokens, such as <code>&lt;UNK_NOUN&gt;</code>, <code>&lt;UNK_VERB&gt;</code>, etc. This gives the model additional context that might help when translating sequences that contain OOV tokens.
+</p></div>
+
+<p>Once you’ve loaded your vocabulary of pre-trained embeddings, you’ll need to add embeddings for the OOV token(s) you defined, too. Assuming your embeddings are in a NumPy array called <code>es_token_vectors</code>, and you have an OOV token in the variable <code>unk_token</code>, you could add a random embedding like this:
+</p><pre class="code-block">es_token_vectors[unk_token] =
+  <span class="hljs-number">2</span> * np.random.rand(embedding_dim).astype(np.float32) - <span class="hljs-number">1</span></pre>
+<p>This assigns an <code>&lt;UNK&gt;</code> token an embedding filled with <code>embedding_dim</code> random values in the range <code>[-1,1)</code>. That’s not necessarily the best range to use — you might want to check the pre-trained embeddings you’ve got to see the range of values you’re already dealing with — but the point of using random values is to hopefully keep your OOV tokens from being too similar to any other words in the vocabulary.
+</p>
+<div class="note">
+<p><em>Note</em>: You could try various options for the embeddings for your unknown token(s). For example, take an average of all or some set of noun embeddings for an <code>UNK_NOUN</code> token, an average of verb embeddings for an <code>UNK_VERB</code> token, etc. It’s unclear whether that would be helpful, but trying out different ideas is part of the fun of machine learning, right?
+</p></div>
+
+<p>You’d identify which tokens are OOV by checking the tokens in your training set against your word embeddings. That is, if your training set contains a token that does not exist in your pre-trained embeddings, you’d remove that term from your vocabulary.
+</p>
+<div class="note">
+<p><em>Note</em>: If you’re training your own embeddings, you would define your vocabulary differently. You’d most likely start by counting the uses of each token in your training data, and then choosing some number of most commonly used terms. Those terms then define the vocabulary for which you’d train embeddings.
+</p></div>
+
+<p>Once you’ve settled on the vocabulary you’ll support — let’s assume it’s a <code>set</code> of tokens stored in <code>in_vocab</code> — you need to go through all your training, validation and test data and replace any OOV tokens with the appropriate <code>&lt;UNK&gt;</code> token(s). This is different from how you removed OOV from your datasets when you work with characters.
+</p>
+<p>At this point your embeddings are likely in a dictionary keyed off of tokens, and it may contain more embeddings than you actually plan to use in your vocabulary. You’ll need to put the embeddings for these individual vocabulary words into a single NumPy array to use with your network, like this:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+num_enc_embeddings = in_vocab_size + <span class="hljs-number">1</span>
+<span class="hljs-comment"># 2</span>
+pretrained_embeddings = np.zeros(
+  (num_enc_embeddings, embedding_dim), dtype=np.float32)
+<span class="hljs-comment"># 3</span>
+<span class="hljs-keyword">for</span> i, t <span class="hljs-keyword">in</span> enumerate(in_vocab):
+  pretrained_embeddings[i+<span class="hljs-number">1</span>] = es_token_vectors[t]</pre>
+<p>Here’s how you’d grab the embeddings for the words in your vocabulary:
+</p>
+<ol>
+<li>
+<p>Your encoder will need to embed each token in your vocabulary, plus an <i>additional</i> embedding to act as a padding token during training.
+</p></li>
+
+<li>
+<p>Create a NumPy array of all zeros, shaped to hold the correct number of embeddings of size <code>embedding_dim</code>. You can find pre-trained embeddings in various dimensions, especially for English, but it seems 300 is the most common. Embeddings of that size for a reasonably-sized vocabulary may give you models that are too big for mobile devices, so you may need to train your own if you cannot find smaller embeddings for the language you need.
+</p></li>
+
+<li>
+<p>Notice how each embedding is stored with the index <code>i+1</code>. This leaves index zero unassigned, which is the value reserved by Keras’s <code>Embedding</code> layer for the padding token. You’ll read about the <code>Embedding</code> layer next.
+</p></li>
+</ol>
+
+<p>Next, you’d replace the <code>Masking</code> layers you were using in your earlier seq2seq models with <code>Embedding</code> layers. These can perform the same masking, but additionally they map scalar integers into higher dimensional vector coordinates. Here’s how you would define your encoder’s embedding layer:
+</p><pre class="code-block"><span class="hljs-comment"># 1</span>
+enc_embeddings = Embedding(
+  num_enc_embeddings, embedding_dim,
+  weights=[pretrained_embeddings], trainable=<span class="hljs-keyword">False</span>,
+  mask_zero=<span class="hljs-keyword">True</span>, name=<span class="hljs-string">"encoder_embeddings"</span>)
+<span class="hljs-comment"># 2</span>
+enc_embedded_in = enc_embeddings(encoder_in)</pre>
+<p><code>Embedding</code> layers usually go at the start of a network, like this:
+</p>
+<ol>
+<li>
+<p>When creating an <code>Embedding</code> layer, you specify the number of possible input tokens — defined here as <code>num_enc_embeddings</code> — and the number of dimensions to map those values into, defined here as <code>embedding_dim</code>. When using pre-trained embeddings, you provide them using the <code>weights</code> parameter and then set <code>trainable=False</code> so the model doesn’t modify their values while training.
+</p></li>
+</ol>
+
+<ol>
+<li>
+<p>Then you pass your <code>Input</code> layer into the <code>Embedding</code> layer, just like what you did before with the <code>Masking</code> layers. The <code>Embedding</code> layer will still perform masking because you created it with <code>mask_zero=True</code>. That tells it to treat the input value zero as a padding token, but you <i>must</i> include that extra token in your input token count. That’s why you had to add one to the size of the vocabulary when you declared <code>num_enc_embeddings</code>.
+</p></li>
+</ol>
+
+<p>You could declare the decoder’s <code>Embedding</code> layer the same way, using pre-trained embeddings for your target language. However, Keras can also learn its own embedding values during training. To do that in your decoder, for example, you’d declare your <code>Embedding</code> layer like this:
+</p><pre class="code-block">num_dec_embeddings = out_vocab_size + <span class="hljs-number">1</span>
+dec_embeddings = Embedding(
+  num_dec_embeddings, embedding_dim,
+  mask_zero=<span class="hljs-keyword">True</span>, name=<span class="hljs-string">"decoder_embeddings"</span>)</pre>
+<p>The difference here is that you don’t supply an argument for the <code>weights</code> parameter, and you rely on the default value of <code>True</code> for the <code>trainable</code> parameter. This <code>Embedding</code> layer will initialize its embeddings to random values and modifying them during training, just like it modifies the weights of other layers in the network.
+</p>
+<div class="note">
+<p><em>Note</em>: Another option for your <code>Embedding</code> layers is to start with pre-trained embeddings but set <code>trainable=True</code>. Or even train for a while with it set to <code>False</code> before training for additional epochs with it set to <code>True</code>. In either case, the idea is to take advantage of the information the embeddings contain while fine-tuning them to be more appropriate for your model’s specific task.
+</p></div>
+
+<p>The <code>Embedding</code> layers reserve zero for the padding token, so you’ll need to avoid that ID for your real tokens. One option is to shift all your token IDs by one when making your conversion maps, like this:
+</p><pre class="code-block">in_token2int = {token : i + <span class="hljs-number">1</span>
+                <span class="hljs-keyword">for</span> i, token <span class="hljs-keyword">in</span> enumerate(in_vocab)}
+out_token2int = {token : i + <span class="hljs-number">1</span>
+                 <span class="hljs-keyword">for</span> i, token <span class="hljs-keyword">in</span> enumerate(out_vocab)}</pre>
+<p>You’d need to make minor differences in <code>make_batch_storage</code> and <code>encode_batch</code>, too, because the input sequences are no longer one-hot encoded. For example, you would set tokens like this:
+</p><pre class="code-block">enc_in_seqs[i, time_step] = in_token2int[token]</pre>
+<p>Instead of:
+</p><pre class="code-block">enc_in_seqs[i, time_step, in_token2int[token]] = <span class="hljs-number">1</span></pre>
+<p>You still one-hot encode the target sequence, since the decoder still outputs a probability distribution over the vocabulary. However, make sure the decoder’s output layer has the correct size.
+</p>
+<p>You can use <code>num_dec_embeddings</code>, but that includes an extra padding token that your model should never output. Or you can use <code>out_vocab_size</code>, but then you’ll need to subtract <code>1</code> from its training output targets so it doesn’t try one-hot encoding values larger than its max.
+</p>
+<h4 class="segment-chapter">Using word embeddings in iOS</h4>
+
+<p>When it comes to using your trained model in an app, it’s similar to what you did in the SMDB project. However, there are a few important caveats:
+</p>
+<ul>
+<li>
+<p>You’ll have to include mappings for your tokens, just like you did with the character-based models. However, these will be quite a bit larger due to the larger vocabulary and the fact that the tokens aren’t single characters. You’ll also need to know the indices of any special tokens, like <code>&lt;START&gt;</code>, <code>&lt;STOP&gt;</code> and <code>&lt;UNK&gt;</code>.
+</p></li>
+
+<li>
+<p>Pre-trained word embeddings are often produced for lower-case tokens. That means that you’ll need to convert your input sequences to lower case prior to translating them, then figure out what to capitalize in the output. You can use specific rules or heuristic-based approaches, or you might try training a separate neural network to capitalize text.
+</p></li>
+
+<li>
+<p>As mentioned earlier, tokenize input text the same way you did when training. You didn’t have to worry about that when working with characters, because there’s no ambiguity about what constitutes a token in that case.
+</p></li>
+
+<li>
+<p>Be sure to replace any OOV tokens with the proper <code>&lt;UNK&gt;</code> token(s). You just dropped OOV tokens when working with characters, but you’ll lose too much information if you do that with whole words.
+</p></li>
+
+<li>
+<p>After running your model —  maybe with a nice beam search — you’ll be left with a list of tokens that might look like this: <code>[&apos;i&apos;, &apos;do&apos;, &quot;n&apos;t&quot;, &apos;like&apos;, &apos;&lt;UNK&gt;&apos;, &apos;or&apos;, &apos;bugs&apos;, &apos;.&apos;]</code>. You’ll need to perform post-processing to properly capitalize words, insert spaces appropriately and connect contractions. You’ll also need a plan for dealing with any <code>&lt;UNK&gt;</code> tokens. One option is to align the sentence in some way and copy over words that seem to match. For example, if there is one <code>&lt;UNK&gt;</code> token in each of the input and output sequences, just copy the original unknown input token directly into the output. Translating between some language pairs requires a reordering of terms, and sometimes the numbers of missing terms won’t match up. Even when things seem to line up, that won’t always produce a good result. Dealing with OOV tokens is an open area of research and there isn’t any easy answer that always works. When in doubt, you always have the option of leaving them unknown.
+</p></li>
+</ul>
+
+<p>To conclude this introduction to using word tokens, keep these tips in mind:
+</p>
+<ul>
+<li>
+<p>Pre-trained embeddings learn the biases of the data they are trained on. For example, embeddings trained on internet data usually place the word “apple” closer to tech companies, like Microsoft, than to fruits, like banana.
+</p></li>
+</ul>
+
+<ul>
+<li>
+<p>Each embedding represents the average of all uses for that word. That means words used in multiple different ways have diluted embeddings that don’t always represent any of their uses well. There have been attempts to deal with this issue using context-sensitive embeddings. These are more complex but may be worth looking into for some projects.
+</p></li>
+
+<li>
+<p>Try running a spell checker on your sequences prior to looking for OOV tokens. That should help reduce the number of tokens you can’t find in your vocabulary.
+</p></li>
+
+<li>
+<p>When you encounter an OOV token during preprocessing, you might want to consider lemmatizing or stemming it and checking for that instead. Sometimes, vocabularies only contain other variations of a word, but that may give you better results than using an <code>&lt;UNK&gt;</code> token.
+</p></li>
+
+<li>
+<p>Similar words should have similar embeddings. That means you <i>may</i> get reasonable results for words in your vocabulary even if they weren’t present in your training data, as long as they are similar in usage to other words that were in the data. However, training with more data that fully covers your vocabulary is still preferred.
+</p></li>
+
+<li>
+<p>There have been attempts to create vectors for OOV tokens on the fly, or to use hybrid models that treat OOV tokens at the character level instead of as whole words. You should research ideas like these if you have a project that needs to handle many rare or unknown words.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Key points</h2>
+
+<ul>
+<li>
+<p><em>Bidirectional recurrent networks</em> produce better encodings in cases wherein context appears both before and after an item in a sequence.
+</p></li>
+
+<li>
+<p>Use <em>beam search</em> with your decoder to produce better translations.
+</p></li>
+
+<li>
+<p>Seq2seq models that include <em>attention</em> mechanisms generally out perform those that do not, because they learn to focus on the most relevant parts of sequences.
+</p></li>
+
+<li>
+<p>Word <em>embeddings</em> encode information about the contexts in which words are used, capturing relationships between words in an unsupervised manner. Using them improves performance on most NLP tasks.
+</p></li>
+
+<li>
+<p>OOV tokens are more difficult to handle when using word tokens, but you’ll need a plan for dealing with them because it’s much less likely that you’ll be able to fully support your source or target languages at the word level.
+</p></li>
+</ul>
+
+<h2 class="segment-chapter">Where to go from here?</h2>
+
+<p>These past three chapters have only scratched the surface of the field of NLP. Hopefully, they’ve shown you how to accomplish some useful things in your apps, while sparking your interest to research other topics. So what’s next?
+</p>
+<p>The past year has brought an important advance in the field of NLP that we didn’t cover: language models. While word embeddings are essentially a type of transfer learning for NLP, the latest state-of-the-art techniques extend this concept to use neural networks to create pre-trained <em>language models</em>. These essentially learn to predict the next word in a sentence, and in doing so they seem to learn useful, transferable knowledge about the language. Building models on top of them greatly improves performance on most NLP tasks, beyond what has been achieved with word embeddings, and is the basis for exciting efforts in language generation tasks, too.
+</p>
+<p>The pre-trained language models currently available are still quite large, but they’ll make their way into smaller packages more suitable for mobile soon. They’re certainly a good candidate for inclusion as part of Core ML, the way Apple currently supplies common computer vision models, so who knows? Either way, I recommend reading up on the subject if NLP interests you.
+</p>
+<p>Finally, rather than list specific projects to consider or topics to learn, here’s a great GitHub repo that tracks the current state-of-the-art solutions and useful datasets for various NLP tasks: <a href="https://nlpprogress.com">nlpprogress.com</a>. These aren’t necessarily all feasible on mobile devices, but it shows you the types of things people are doing with natural language — and how they do it. If you’re at all interested in the field and what’s currently possible, I recommend spending some time exploring it.
+</p></body></html>
